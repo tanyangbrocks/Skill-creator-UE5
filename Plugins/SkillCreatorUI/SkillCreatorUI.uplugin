@@ -1,0 +1,15 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "SkillCreatorUI",
+    "Description": "Slate Block Editor (SGraphEditor)",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "SkillCreatorUI",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

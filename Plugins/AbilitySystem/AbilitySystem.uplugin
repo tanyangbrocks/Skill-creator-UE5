@@ -1,0 +1,15 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "AbilitySystem",
+    "Description": "Spell VM, SpellRunner, SpellCaster",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "AbilitySystem",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

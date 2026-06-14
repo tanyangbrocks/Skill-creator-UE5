@@ -1,0 +1,15 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "VoxelWorld",
+    "Description": "CA Tile World, Chunk3D, RMC Renderer",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "VoxelWorld",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
