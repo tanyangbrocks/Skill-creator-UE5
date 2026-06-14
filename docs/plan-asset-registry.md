@@ -1,258 +1,287 @@
-# 素材包系統（Asset Pack Registry）實作計畫
+# 素材參照系統（Asset Reference System）實作計畫
 
-> 撰寫日期：2026-06-14
-> 狀態：設計已確認，等待實作
-> 目標：素材路徑不寫死，支援預設包 + 外部素材包（類 Minecraft 材質包機制）
-
----
-
-## 一、設計目標
-
-1. **路徑不寫死** — 程式碼只使用邏輯鍵（Key），不直接寫 `res://` 或 `user://` 路徑
-2. **可替換** — 只要換一份 JSON 對照表，所有素材同步切換
-3. **層疊覆蓋** — 用戶素材包可只覆蓋部分鍵，其餘自動 fallback 到預設包
-4. **易維護** — 新增素材只改 JSON，不動 C# 程式碼
-5. **Godot 友善** — 正確處理 `res://`（已 import）與 `user://`（runtime 讀取）兩種路徑的差異
+> 撰寫日期：2026-06-14（原 Godot 版全面重寫）
+> 狀態：設計確認，配合 M-6 渲染模組實作
+> 目標：素材路徑不寫死，支援預設包 + 外部素材包（mod 材質包機制）
 
 ---
 
-## 二、Key 命名規格
+## 一、設計目標（與 Godot 版相同，實作方式改為 UE5 原生）
 
-格式：`{分類}.{id}.{變體}`，全小寫，`.` 分隔。
-
-| 分類前綴 | 對應素材類型 | 範例 Key |
-|----------|------------|---------|
-| `mob` | 生物模型 / 材質 | `mob.melee.model` / `mob.melee.texture` |
-| `tile` | 世界磁磚外觀 | `tile.stone.albedo` / `tile.water.normal` |
-| `material` | 材質球（`.tres`） | `material.stone.surface` |
-| `placement` | 放置物模型 | `placement.chest.model` |
-| `effect.ca` | CA 細胞自動機特效 | `effect.ca.fire.rule` |
-| `effect.skill` | 技能特效場景 | `effect.skill.fireball.scene` |
-| `effect.particle` | 粒子效果 | `effect.particle.hit.tres` |
-| `ui` | UI 圖片 / 圖示 | `ui.icon.spell_slot` |
-
-> `id` 和 `variant` 可以多段：`mob.heavy_armored.front.texture` 合法。  
-> 對照計畫文件中「預設路徑」時，Key 就是那個路徑的邏輯名稱。
+1. **路徑不寫死** — C++ 只用型別安全的索引（enum / FName），不寫任何字串路徑
+2. **可替換** — 只在 Editor 改 DataAsset，C++ 程式碼不動
+3. **層疊覆蓋** — 外部素材包（mod）可只替換部分素材，其餘 fallback 到預設包
+4. **易維護** — 新增 Tile 種類只改 `EMaterialType`（已在 MaterialType.h）+ DataAsset
+5. **非同步載入** — 所有素材走 `FStreamableManager` 非同步載入，不卡主執行緒
 
 ---
 
-## 三、素材包格式（Pack）
+## 二、Godot → UE5 對照
 
-每個素材包是一個資料夾，內含 `pack.json`：
+| Godot 方案 | UE5 方案 | 差異 |
+|-----------|---------|------|
+| `string` key（`"tile.stone.albedo"`） | `EMaterialType` enum index / `FName` | 型別安全，O(1) 查表 |
+| `pack.json` 對照表 | `UDataAsset`（Editor 可視化編輯） | 有型別檢查，不能填錯型別 |
+| `GD.Load<T>(path)` | `TSoftObjectPtr<T>` + `FStreamableManager` | 非同步，不強制同步阻塞 |
+| `res://` vs `user://` 差異 | 不存在（UE5 統一 `/Game/` 路徑） | 問題消失 |
+| AssetRegistry C# 靜態類別 | `UAssetManager`（內建）+ 輕薄自訂 DataAsset | 不需自己實作底層 |
+| `user://packs/` 外部包 | UE5 pak 檔掛載（`FPakPlatformFile`） | 更強，支援完整資源壓縮 |
+
+---
+
+## 三、核心架構：DataAsset 登記表
+
+每種素材類型有一個對應的 `UDataAsset` 子類別，在 Editor 中建立資產並填寫對應關係。
+GameInstance 啟動時載入這些 DataAsset，之後所有系統透過它查詢素材。
 
 ```
-res://assets/packs/default/      ← 專案內預設包
-  pack.json
-  mobs/
-    melee.glb
-  tiles/
-    stone.png
-    water.png
-  ...
-
-user://packs/my_pack/            ← 用戶外部包（不經 Godot importer）
-  pack.json
-  tiles/
-    stone.png                    ← 覆蓋預設的石頭材質
+Content/
+  Data/
+    DA_TileMaterialRegistry.uasset   ← UTileMaterialRegistry 的實例
+    DA_MobMeshRegistry.uasset        ← UMobMeshRegistry 的實例
+    DA_EffectRegistry.uasset         ← UEffectRegistry 的實例
 ```
 
-**pack.json 結構：**
+---
 
-```json
+## 四、UTileMaterialRegistry（M-6 最優先）
+
+Tile 材質的查詢索引直接用 `EMaterialType`（uint8），不需要字串 key。
+
+### 4-1 標頭檔
+
+```cpp
+// Plugins/VoxelWorld/Source/VoxelWorld/Public/TileMaterialRegistry.h
+#pragma once
+#include "CoreMinimal.h"
+#include "Engine/DataAsset.h"
+#include "MaterialType.h"          // EMaterialType
+#include "TileMaterialRegistry.generated.h"
+
+// 單一 Tile 種類的素材資料
+USTRUCT(BlueprintType)
+struct FTileMaterialEntry
 {
-  "id": "default",
-  "name": "預設素材包",
-  "version": "1.0.0",
-  "priority": 0,
-  "base_dir": "res://assets/packs/default/",
-  "mappings": {
-    "mob.melee.model":   "mobs/melee.glb",
-    "tile.stone.albedo": "tiles/stone.png",
-    "tile.water.albedo": "tiles/water.png",
-    "material.stone.surface": "materials/stone.tres"
-  }
+    GENERATED_BODY()
+
+    // Albedo / Surface 主材質（Greedy Mesh 用的 UMaterialInterface）
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSoftObjectPtr<UMaterialInterface> SurfaceMaterial;
+
+    // 可選：自發光材質（岩漿、發光礦石等）
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TSoftObjectPtr<UMaterialInterface> EmissiveMaterial;
+
+    bool IsValid() const { return !SurfaceMaterial.IsNull(); }
+};
+
+// Tile 材質登記表 DataAsset
+UCLASS(BlueprintType)
+class VOXELWORLD_API UTileMaterialRegistry : public UDataAsset
+{
+    GENERATED_BODY()
+
+public:
+    // 陣列 index = EMaterialType 的 uint8 值（直接 O(1) 查表）
+    // 長度必須 = (int32)EMaterialType::Count
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<FTileMaterialEntry> Entries;
+
+    // 取得材質（EMaterialType::Air 回傳 nullptr，正常）
+    UMaterialInterface* GetSurface(EMaterialType Type) const;
+    UMaterialInterface* GetEmissive(EMaterialType Type) const;
+
+    // 驗證所有非 Air 的 Entry 都有填寫（Editor Preflight 用）
+    bool Validate(TArray<FString>& OutErrors) const;
+};
+```
+
+### 4-2 實作
+
+```cpp
+// TileMaterialRegistry.cpp
+UMaterialInterface* UTileMaterialRegistry::GetSurface(EMaterialType Type) const
+{
+    int32 Idx = (int32)Type;
+    if (!Entries.IsValidIndex(Idx)) return nullptr;
+    return Entries[Idx].SurfaceMaterial.Get();  // 已同步載入時直接回傳；未載入回 nullptr
 }
-```
 
-- `base_dir` + mapping 值 = 完整路徑
-- mapping 值也可以是完整的絕對路徑（`res://` 或 `user://` 開頭）
-- `priority` 越大越優先；預設包 priority = 0，用戶包建議 10+
-
----
-
-## 四、系統架構
-
-### 新增檔案
-
-| 檔案 | 說明 |
-|------|------|
-| `Scripts/Assets/AssetPack.cs` | 單一素材包的資料記錄（id / name / priority / mappings） |
-| `Scripts/Assets/AssetRegistry.cs` | 靜態登記表，管理所有已載入的 Pack，提供 Resolve / Load |
-| `Scripts/Assets/AssetLoader.cs` | 依路徑類型選擇正確讀法（`GD.Load` vs runtime `Image.LoadFromFile`） |
-| `res://assets/packs/default/pack.json` | 預設包 JSON（素材路徑待後續填入） |
-
-### 不新增
-
-- 不動任何現有遊戲邏輯檔案（這一階段只建底層）
-- 不建 UI（Pack 切換 UI 是後期功能）
-
----
-
-## 五、AssetRegistry API
-
-```csharp
-public static class AssetRegistry
+bool UTileMaterialRegistry::Validate(TArray<FString>& OutErrors) const
 {
-    // 啟動時呼叫；自動讀 res://assets/packs/default/pack.json
-    public static void Initialize() { ... }
-
-    // 手動載入額外素材包（外部 JSON 路徑）
-    public static void LoadPack(string jsonPath) { ... }
-
-    // 依 Key 解析出完整路徑；找不到回傳 null
-    public static string? Resolve(string key) { ... }
-
-    // 載入 Godot Resource（res:// 用 GD.Load，user:// 用 AssetLoader）
-    public static T? Load<T>(string key) where T : GodotObject { ... }
-
-    // 載入貼圖（統一介面，處理 res:// / user:// 差異）
-    public static Texture2D? LoadTexture(string key) { ... }
-
-    // 查詢 Key 是否有對應（供 Debug / Preflight 使用）
-    public static bool Has(string key) { ... }
-}
-```
-
-### Resolve 優先序
-1. 已載入的 Pack 中，`priority` 最高的那個有對應此 Key → 使用它
-2. 沒有任何 Pack 有此 Key → 回傳 `null`，由呼叫方決定用 fallback 素材或靜默忽略
-
----
-
-## 六、AssetLoader — res:// vs user:// 差異處理
-
-Godot 4 的限制：
-- `res://` 資源必須透過 Godot importer 處理，用 `GD.Load<T>()` 讀取
-- `user://` 外部檔案沒有 import 記錄，必須用 runtime 讀法：
-  - 圖片 → `Image.LoadFromFile(absPath)` → `ImageTexture.CreateFromImage(img)`
-  - GLB 模型 → `GltfDocument + GltfState`（Godot 4 runtime 支援）
-  - `.tres` 文字資源 → `ResourceLoader.Load()`（`user://` 支援）
-
-```csharp
-// AssetLoader 內部邏輯（簡化）
-public static Texture2D? LoadTextureFromPath(string fullPath)
-{
-    if (fullPath.StartsWith("res://"))
-        return GD.Load<Texture2D>(fullPath);
-
-    // user:// → 轉換為系統絕對路徑再用 Image 讀
-    string absPath = ProjectSettings.GlobalizePath(fullPath);
-    var img = new Image();
-    if (img.Load(absPath) != Error.Ok) return null;
-    return ImageTexture.CreateFromImage(img);
+    bool bOk = true;
+    for (int32 i = 1; i < (int32)EMaterialType::Count; ++i) // 跳過 Air(0)
+    {
+        if (!Entries.IsValidIndex(i) || !Entries[i].IsValid())
+        {
+            OutErrors.Add(FString::Printf(TEXT("EMaterialType %d 缺少 SurfaceMaterial"), i));
+            bOk = false;
+        }
+    }
+    return bOk;
 }
 ```
 
 ---
 
-## 七、分階段實作
+## 五、其他登記表（M-6 之後）
 
-### AR-A — 純資料層（0 風險）
+### 5-1 UMobMeshRegistry
 
-> 不動任何現有程式，只建骨架。
+生物模型以 `FName` 為 key（mob ID 可由設計者自定，不需要 enum 限制數量）。
 
-- 建立 `Scripts/Assets/` 資料夾
-- `AssetPack.cs`：record，只存 id / name / priority / baseDir / mappings
-- `AssetRegistry.cs`：靜態字典，`Initialize()` 讀 default pack.json，`Resolve()` 回傳路徑
-- `AssetLoader.cs`：只實作 `LoadTextureFromPath()`（處理 res:// / user:// 分支）
-- 建立 `res://assets/packs/default/pack.json`（先空 mappings，等後續填入）
+```cpp
+USTRUCT(BlueprintType)
+struct FMobMeshEntry : public FTableRowBase
+{
+    GENERATED_BODY()
 
-Build 確認 0 錯誤後進入 AR-B。
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<USkeletalMesh>       Mesh;
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<UMaterialInterface>  Material;
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<UAnimBlueprint>      AnimBP;
+};
 
----
+// 使用 UDataTable（Editor 可 CSV 匯入 / 匯出）
+// RowName = mob id（e.g. "melee"、"heavy_armored"）
+```
 
-### AR-B — 接入第一個實際使用點（Tile 外觀）
+### 5-2 UEffectRegistry
 
-> 選 Tile 外觀作第一個接入點，因為它目前最可能先換素材。
+技能特效與 CA 特效以 `FName` 為 key。
 
-- 在 `TileWorld3D` 或 `TileWorldRenderer3D` 中，找到目前 hardcode 材質的位置
-- 改呼叫 `AssetRegistry.LoadTexture("tile.{materialKey}.albedo")`
-- 在 default/pack.json 補入對應 mapping（指向現有路徑）
-- 行為不應改變，只是把路徑移出程式碼
+```cpp
+USTRUCT(BlueprintType)
+struct FEffectEntry : public FTableRowBase
+{
+    GENERATED_BODY()
 
----
-
-### AR-C — user:// 外部包支援
-
-> 允許放在 user:// 的素材包覆蓋預設包。
-
-- `Initialize()` 額外掃描 `user://packs/` 下所有資料夾，找到 `pack.json` 就載入
-- 完成 `AssetLoader` 對 user:// 圖片的 runtime 讀取
-- 完成 `AssetLoader` 對 user:// GLB 的 runtime 讀取（`GltfDocument`）
-- 建立一份測試用外部包，手動驗證覆蓋行為
-
----
-
-### AR-D — Pack 切換 UI（後期）
-
-> 提供遊戲設定介面讓玩家選擇素材包。
-
-- 設定頁面加「素材包」Tab，列出已偵測的 user:// packs
-- 勾選/取消 → 更新 priority 排序 → 重新呼叫 `Initialize()`（或 `ReloadAll()`）
-- 設定持久化至 `user://settings.json`
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<UNiagaraSystem> NiagaraSystem;
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<USoundBase>     HitSound;
+};
+```
 
 ---
 
-## 八、Preflight 整合（可選）
+## 六、非同步載入策略
 
-可在 `preflight-check-v2.ps1` 加一道掃描：
+所有 DataAsset 內的素材宣告為 `TSoftObjectPtr`（軟參照），啟動時統一非同步預載。
+遊戲執行期不阻塞主執行緒。
 
-- 遍歷 default/pack.json 所有 mapping
-- 檢查每個路徑對應的檔案是否存在
-- 不存在 → WARN，以便早期發現路徑錯誤
+```cpp
+// SkillCreatorGameInstance.cpp（M-7 存讀檔模組實作時加入）
+void USkillCreatorGameInstance::PreloadCoreAssets()
+{
+    // 取得已在 Editor 設定好的 DataAsset 路徑（GameInstance 的 UPROPERTY）
+    TArray<FSoftObjectPath> ToLoad;
+    for (const FTileMaterialEntry& Entry : TileMaterialRegistry->Entries)
+    {
+        if (!Entry.SurfaceMaterial.IsNull())
+            ToLoad.Add(Entry.SurfaceMaterial.ToSoftObjectPath());
+    }
+
+    // 非同步載入；回調時標記 bTileMaterialsReady = true
+    StreamableHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        ToLoad,
+        FStreamableDelegate::CreateUObject(this, &USkillCreatorGameInstance::OnTileMaterialsLoaded)
+    );
+}
+```
 
 ---
 
-## 九、本次暫緩
+## 七、外部素材包（Mod 材質包）
+
+### Phase A：Editor 內建（M-6 初版）
+
+只有預設包，所有素材在 Content Browser 管理。  
+`DA_TileMaterialRegistry` 即是「預設包」。
+
+### Phase B：多 DataAsset 層疊（AR-C 等效）
+
+允許外部素材包提供第二個 DataAsset，在 `UTileMaterialRegistry` 中以 priority 疊加：
+
+```cpp
+UPROPERTY(EditAnywhere)
+TArray<TSoftObjectPtr<UTileMaterialRegistry>> OverridePacks;  // 由高到低優先序
+```
+
+查詢時從高 priority 往下找第一個非空的 entry，找不到 fallback 到預設包。
+
+### Phase C：執行期 pak 掛載（長期，AR-D 等效）
+
+玩家將 `.pak` 放入 `{SaveDir}/Mods/` 後，遊戲啟動時：
+
+```cpp
+// Pak 掛載（只列概念，M-10 之後才需要）
+FCoreDelegates::OnMountPak.Execute(PakPath, 0, nullptr);
+// 掛載後，pak 內的 Content/ 會被 UE5 視為 /Game/ 路徑的一部分
+// 外部包的 DataAsset 覆蓋預設包的同名 Entry
+```
+
+---
+
+## 八、Editor 工作流（建立 DataAsset 步驟）
+
+> M-6 渲染模組開始前做一次，之後只需填入新 Tile 的素材路徑。
+
+1. Content Browser → 右鍵 → `Miscellaneous` → `Data Asset`
+2. 選擇 `UTileMaterialRegistry` 作為 Class
+3. 命名為 `DA_TileMaterialRegistry`，存入 `Content/Data/`
+4. 打開 DataAsset，Entries 陣列長度設為 `EMaterialType::Count` 的數值
+5. 每個 index 填入對應的 `UMaterialInterface`（從 Content Browser 拖入）
+6. 在 `BP_SkillCreatorGameInstance`（或 C++ GameInstance）的 Details 面板指定此 DataAsset
+
+---
+
+## 九、Preflight 驗證
+
+M-6 Build 前呼叫 `Validate()`，確認所有 Tile 都有素材：
+
+```cpp
+// Editor Utility 或 UE5 Automation Test 呼叫
+TArray<FString> Errors;
+if (!Registry->Validate(Errors))
+{
+    for (const FString& E : Errors)
+        UE_LOG(LogVoxelWorld, Error, TEXT("[AR Preflight] %s"), *E);
+}
+```
+
+---
+
+## 十、分階段實作
+
+### AR-A — DataAsset 骨架（M-6 之前）
+
+- `TileMaterialRegistry.h/cpp` 建立，空 Entries
+- `DA_TileMaterialRegistry.uasset` 在 Editor 建立
+- `Validate()` 可以執行（全部 WARN，尚未填素材）
+- Build 0 錯誤
+
+### AR-B — 接入 M-6 渲染（M-6 同步）
+
+- `VoxelWorldRenderer` 啟動時載入 `DA_TileMaterialRegistry`
+- Greedy Mesh 提交時從 Registry 取 `UMaterialInterface*` 套用
+- 行為與 hardcode 路徑版一致，只是來源改為 DataAsset
+
+### AR-C — 多包層疊（M-8 之後）
+
+- `OverridePacks` 陣列支援，查詢邏輯加 priority fallback
+- 開發用：建一份 `DA_TileMaterialRegistry_Test` 只覆蓋石頭材質，驗證 fallback 正確
+
+### AR-D — Pak 掛載（M-10 之後）
+
+- 執行期 `FPakPlatformFile` 掛載外部 `.pak`
+- 掛載後自動偵測 `{MountPoint}/Data/DA_TileMaterialRegistry_Override.uasset`
+- 完成「類 Minecraft 材質包」功能
+
+---
+
+## 十一、本次暫緩
 
 | 項目 | 說明 |
 |------|------|
-| CA 特效 / 技能特效接入 | 視覺系統尚未穩定，AR-A/B 完成後再規劃 |
-| 生物模型接入 | 生物目前是 Mesh 程式生成，等外部模型路線確定後接入 |
-| Pack 切換 UI | AR-D，優先度低，後期功能 |
-| 動畫資源 | 等外部模型確定格式（glb 含骨骼動畫）後一起處理 |
-| 素材包驗證器 / 模式 | 後期工具，不影響核心機制 |
-
----
-
-## 十、實作順序
-
-```
-AR-A（純資料層，0 風險）→ Build 確認
-  ↓
-AR-B（接入 Tile 外觀，最小改動驗證機制有效）
-  ↓
-AR-C（user:// 外部包，runtime 讀法）
-  ↓
-AR-D（Pack 切換 UI，後期）
-```
-
----
-
-## 附錄：Key 命名速查
-
-> 後續「預設路徑」只需說明 Key 名稱與對應的檔案即可，不需要在程式碼中改路徑。
-
-```
-mob.{id}.model          生物 3D 模型（.glb）
-mob.{id}.texture        生物 albedo 貼圖
-tile.{materialKey}.albedo   磁磚 albedo 貼圖
-tile.{materialKey}.normal   磁磚法線貼圖
-tile.{materialKey}.emissive 磁磚自發光貼圖
-material.{id}.surface   Godot 材質球（.tres）
-placement.{id}.model    放置物 3D 模型
-effect.ca.{id}.scene    CA 特效場景
-effect.skill.{id}.scene 技能特效場景
-effect.particle.{id}    粒子資源（.tres）
-ui.icon.{id}            UI 圖示
-```
+| UMobMeshRegistry | 生物模型路線未定，等 M-4 角色系統後設計 |
+| UEffectRegistry | Niagara 特效 M-6 之後才規劃 |
+| Pak 掛載（AR-D） | 需 M-10 之後的穩定基礎 |
+| UI 圖示 DataTable | M-8 HUD 模組一起處理 |
