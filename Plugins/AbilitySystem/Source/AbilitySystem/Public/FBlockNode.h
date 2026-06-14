@@ -37,3 +37,12 @@ struct FBlockNode
     FBlockNode(const FBlockNode&) = delete;
     FBlockNode& operator=(const FBlockNode&) = delete;
 };
+
+// UE5 USTRUCT 含不可複製成員的標準做法：
+// 告知 TCppStructOps<FBlockNode> 不要嘗試產生複製操作
+// 否則 UHT 自動生成的 FBlockNode.gen.cpp 會呼叫已 delete 的 operator=
+template<>
+struct TStructOpsTypeTraits<FBlockNode> : public TStructOpsTypeTraitsBase2<FBlockNode>
+{
+    enum { WithCopy = false };
+};
