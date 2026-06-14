@@ -201,11 +201,200 @@ struct FBlockNode {
 
 ### M-0 — 準備期（開始前）
 
-- [ ] 在 GitHub 開 `feature/ue5-migration` branch
-- [ ] 安裝 UE5.4+、Visual Studio 2022
-- [ ] 建立空白 C++ UE5 專案，確認 build 環境
-- [ ] 建立 Module 資料夾結構（見第二節 2-5）
-- [ ] Godot `feature/3d-cutover` branch 封存，保留作邏輯對照
+**✅ 已完成（2026-06-14）：**
+- [x] 在 GitHub 建立新 repo：https://github.com/tanyangbrocks/Skill-creator-UE5.git
+- [x] 本地路徑：`C:\Users\譚揚勳\SkillCreatorUE5\`
+- [x] 複製所有計畫文件、資料夾結構、世界觀資料
+- [x] 建立 `Source/SkillCreatorCore/`、`Source/SkillCreatorRuntime/`、`Source/SkillCreatorEditor/`
+- [x] 建立 `Plugins/AbilitySystem/`、`Plugins/VoxelWorld/`、`Plugins/SkillCreatorUI/`
+- [x] Godot `main` branch 封存（feature/3d-cutover 已合併）
+- [x] 安裝 UE5.4+（進行中 → 完成後執行下方步驟）
+
+**⏳ UE5 裝好後立刻做（按順序）：**
+
+#### 步驟 1：建立 UE5 C++ 空專案（產生 .uproject + Config/）
+
+1. 開啟 UE5 Editor → New Project → Games → Blank → **C++**
+2. Location 設為 `C:\Users\譚揚勳\`，Project Name 設為 `SkillCreatorUE5`
+3. Create Project → 等待 VS 編譯
+4. 確認產生了 `SkillCreatorUE5.uproject`、`Config/`、`Source/SkillCreatorUE5/`
+
+> ⚠️ UE5 會在 Source/ 下產生一個與專案同名的預設 Module。先不刪，後面步驟再整理。
+
+#### 步驟 2：建立各 Module 的 Build.cs
+
+每個 Module 需要一個 `.Build.cs`，UE5 靠它認識模組依賴。
+
+**`Source/SkillCreatorCore/SkillCreatorCore.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class SkillCreatorCore : ModuleRules
+{
+    public SkillCreatorCore(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "StructUtils"
+        });
+    }
+}
+```
+
+**`Source/SkillCreatorRuntime/SkillCreatorRuntime.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class SkillCreatorRuntime : ModuleRules
+{
+    public SkillCreatorRuntime(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "GameplayTags",
+            "SkillCreatorCore"
+        });
+    }
+}
+```
+
+**`Source/SkillCreatorEditor/SkillCreatorEditor.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class SkillCreatorEditor : ModuleRules
+{
+    public SkillCreatorEditor(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "UnrealEd",
+            "Slate", "SlateCore", "GraphEditor",
+            "SkillCreatorCore", "SkillCreatorRuntime"
+        });
+    }
+}
+```
+
+#### 步驟 3：建立 Plugin 的 .uplugin 文件
+
+**`Plugins/AbilitySystem/AbilitySystem.uplugin`**
+```json
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "AbilitySystem",
+    "Description": "Spell VM, SpellRunner, SpellCaster",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "AbilitySystem",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
+```
+
+**`Plugins/VoxelWorld/VoxelWorld.uplugin`**
+```json
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "VoxelWorld",
+    "Description": "CA Tile World, Chunk3D, RMC Renderer",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "VoxelWorld",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
+```
+
+**`Plugins/SkillCreatorUI/SkillCreatorUI.uplugin`**
+```json
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "SkillCreatorUI",
+    "Description": "Slate Block Editor (SGraphEditor)",
+    "Category": "SkillCreator",
+    "Modules": [
+        {
+            "Name": "SkillCreatorUI",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
+```
+
+#### 步驟 4：各 Plugin 的 Build.cs
+
+**`Plugins/AbilitySystem/Source/AbilitySystem/AbilitySystem.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class AbilitySystem : ModuleRules
+{
+    public AbilitySystem(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "StructUtils",
+            "SkillCreatorCore"
+        });
+    }
+}
+```
+
+**`Plugins/VoxelWorld/Source/VoxelWorld/VoxelWorld.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class VoxelWorld : ModuleRules
+{
+    public VoxelWorld(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "RenderCore", "RHI",
+            "SkillCreatorCore"
+            // RealtimeMeshComponent 後面再加
+        });
+    }
+}
+```
+
+**`Plugins/SkillCreatorUI/Source/SkillCreatorUI/SkillCreatorUI.Build.cs`**
+```csharp
+using UnrealBuildTool;
+
+public class SkillCreatorUI : ModuleRules
+{
+    public SkillCreatorUI(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicDependencyModuleNames.AddRange(new string[] {
+            "Core", "CoreUObject", "Engine", "UnrealEd",
+            "Slate", "SlateCore", "GraphEditor",
+            "SkillCreatorCore", "SkillCreatorRuntime", "AbilitySystem"
+        });
+    }
+}
+```
+
+#### 步驟 5：確認 Build
+
+關閉 UE5 Editor → 右鍵 `.uproject` → Generate Visual Studio project files → VS 開啟 → Rebuild All
+
+確認 0 錯誤後進入 **M-1**。
 
 ---
 

@@ -4,6 +4,8 @@
 Unreal Engine 5.4+ / C++ 技能設計系統。從 Godot 4 遷移而來。
 玩家用類 Scratch 積木設計能力，效果與 CA 細胞自動機世界互動，目標支援 Grain 64+ 超大世界。
 
+**GitHub**：https://github.com/tanyangbrocks/Skill-creator-UE5.git
+**本地路徑**：`C:\Users\譚揚勳\SkillCreatorUE5\`
 **Godot 原始碼參照**：`C:\Users\譚揚勳\skill-creator\`（封存，邏輯對照用，不再修改）
 
 ---
