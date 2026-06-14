@@ -1,0 +1,45 @@
+# Unreal Engine generated folders
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Compiled object files
+*.o
+*.obj
+*.pch
+
+# Visual Studio files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# JetBrains Rider
+.idea/
+*.sln.DotSettings.user
+
+# UE5 local config
+Config/DefaultEditorPerProjectUserSettings.ini
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Packaged builds
+*.pak
+*.sig
+
+# Crash dumps
+*.dmp
+*.crash
+
+# Keep these:
+# Source/        ← C++ 原始碼
+# Plugins/       ← Plugin 原始碼
+# Content/       ← 資源（視專案大小決定是否 Git LFS）
+# Config/        ← 專案設定
+# docs/          ← 計畫文件
