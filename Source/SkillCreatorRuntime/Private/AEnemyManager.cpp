@@ -39,7 +39,8 @@ void AEnemyManager::Tick(float DeltaTime)
         {
             if (IsValid(E))
             {
-                if (auto* Sub = GetWorld()->GetGameInstance()->GetSubsystem<UCombatStateSubsystem>())
+                if (auto* GI = GetWorld()->GetGameInstance())
+                if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
                     Sub->OnEnemyKilled();
 
                 bool bDynamic = (E->Category == ESpawnCategory::Common || E->Category == ESpawnCategory::Area);

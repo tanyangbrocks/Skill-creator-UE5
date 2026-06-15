@@ -1,5 +1,6 @@
 #include "AEnemy.h"
 #include "UElementalAuraComponent.h"
+#include "AEnemyAIController.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -8,6 +9,7 @@ AEnemy::AEnemy()
     PrimaryActorTick.bCanEverTick = false;
     AuraComp = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     UniqueId = ++NextId;
+    AIControllerClass = AEnemyAIController::StaticClass();
 }
 
 void AEnemy::BeginPlay()
@@ -29,7 +31,6 @@ void AEnemy::BeginPlay()
     }
     Hp = MaxHp;
 
-    FVector Loc = GetActorLocation();
     SpawnGridPos = GridPosition;
 }
 

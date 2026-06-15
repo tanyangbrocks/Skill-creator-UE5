@@ -23,7 +23,7 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
 
     // 近戰攻擊：直接扣血；Ranged 類型透過 SpellCaster 發射投射物（M-5 stub：直接傷害）
     ASkillCreatorCharacter* Player = nullptr;
-    if (UObject* Obj = BB->GetValueAsObject(FName("TargetActor")))
+    if (UObject* Obj = BB->GetValueAsObject(PlayerKey.SelectedKeyName))
         Player = Cast<ASkillCreatorCharacter>(Obj);
 
     if (!Player || !Player->IsAlive()) return EBTNodeResult::Failed;
