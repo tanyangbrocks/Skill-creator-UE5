@@ -3,11 +3,34 @@
 #include "UElementalAuraComponent.h"
 #include "USpellCaster.h"
 #include "UCombatStateSubsystem.h"
+#include "ExecutionContext.h"
 #include "GridPos.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Components/InputComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Math/RotationMatrix.h"
+#include "InputCoreTypes.h"
 
 ASkillCreatorCharacter::ASkillCreatorCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    // Camera rig: SpringArm follows controller rotation (Minecraft style)
+    SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+    SpringArm->SetupAttachment(RootComponent);
+    SpringArm->TargetArmLength = 600.f;
+    SpringArm->bUsePawnControlRotation = true;
+    SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 64.f));
+
+    Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+    Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
+    Camera->bUsePawnControlRotation = false;
+    Camera->FieldOfView = 70.f;
+
+    bUseControllerRotationYaw   = true;
+    bUseControllerRotationPitch = false;
+    bUseControllerRotationRoll  = false;
 
     StateComp       = CreateDefaultSubobject<UCharacterStateComponent>(TEXT("StateComp"));
     AuraComp        = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
@@ -19,6 +42,13 @@ void ASkillCreatorCharacter::BeginPlay()
     Super::BeginPlay();
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
+
+    // T-01: 清除跨 PIE session 殘留的全域狀態
+    FExecutionContext::GlobalVars.Empty();
+    FExecutionContext::GlobalLists.Empty();
+    FExecutionContext::TaskCounters.Empty();
+    FExecutionContext::TaskCounterReached.Empty();
+    FExecutionContext::bTraceMode = false;
 }
 
 void ASkillCreatorCharacter::Tick(float DeltaTime)
@@ -35,14 +65,18 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     // CharacterState Tick（體力、精力、心情）
     bool bInCombat = false;
     if (auto* GI = GetWorld()->GetGameInstance())
-    if (auto* Subsystem = GI->GetSubsystem<UCombatStateSubsystem>())
-        bInCombat = Subsystem->bInCombat;
+    if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+    {
+        bInCombat = Sub->bInCombat;
+        Sub->Advance(DeltaTime);
+    }
 
     float SurvivalDamage = StateComp->TickState(DeltaTime, bInCombat);
     if (SurvivalDamage > 0.f)
         TakeDirectDamage(SurvivalDamage);
 
     AuraComp->Process(DeltaTime);
+    ActionBus.Update(DeltaTime);
 }
 
 float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -57,7 +91,11 @@ float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent
 void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 {
     if (CurrentHp <= 0.f) return;
-    CurrentHp = FMath::Max(0.f, CurrentHp - Amount);
+
+    // DamageShield 攔截：可能將傷害歸零或縮減
+    float Final = ActionBus.DispatchPlayerDamage(Amount);
+
+    CurrentHp = FMath::Max(0.f, CurrentHp - Final);
     OnHpChanged.Broadcast(CurrentHp);
 
     if (auto* GI = GetWorld()->GetGameInstance())
@@ -65,7 +103,18 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
             Sub->OnPlayerTookDamage();
 
     if (CurrentHp <= 0.f)
-        OnCharacterDied.Broadcast();
+    {
+        // DeathGuard 攔截：取消死亡，保留 1 HP
+        if (ActionBus.DispatchPlayerDeath())
+        {
+            CurrentHp = 1.f;
+            OnHpChanged.Broadcast(CurrentHp);
+        }
+        else
+        {
+            OnCharacterDied.Broadcast();
+        }
+    }
 }
 
 FGridPos ASkillCreatorCharacter::GetPosition() const
@@ -77,4 +126,69 @@ FGridPos ASkillCreatorCharacter::GetPosition() const
 void ASkillCreatorCharacter::GainXp(float Amount)
 {
     // M-7 等級系統建立後填入
+}
+
+void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)
+{
+    Super::SetupPlayerInputComponent(Input);
+
+    // WASD movement (camera-relative)
+    Input->BindAxis("MoveForward", this, &ASkillCreatorCharacter::MoveForward);
+    Input->BindAxis("MoveRight",   this, &ASkillCreatorCharacter::MoveRight);
+
+    // Mouse look
+    Input->BindAxis("TurnRate",   this, &APawn::AddControllerYawInput);
+    Input->BindAxis("LookUpRate", this, &APawn::AddControllerPitchInput);
+
+    // Jump
+    Input->BindAction("Jump", IE_Pressed,  this, &ACharacter::Jump);
+    Input->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
+
+    // Spell keys U/I/O/P — all fire HandleSpellInput which reads combination
+    Input->BindAction("SpellU", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+    Input->BindAction("SpellI", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+    Input->BindAction("SpellO", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+    Input->BindAction("SpellP", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+}
+
+void ASkillCreatorCharacter::MoveForward(float Value)
+{
+    if (Value == 0.f || !Controller) return;
+    const FRotator YawOnly(0, GetControlRotation().Yaw, 0);
+    AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X), Value);
+}
+
+void ASkillCreatorCharacter::MoveRight(float Value)
+{
+    if (Value == 0.f || !Controller) return;
+    const FRotator YawOnly(0, GetControlRotation().Yaw, 0);
+    AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Value);
+}
+
+void ASkillCreatorCharacter::HandleSpellInput()
+{
+    if (!SpellCasterComp) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    const bool bU = PC->IsInputKeyDown(EKeys::U);
+    const bool bI = PC->IsInputKeyDown(EKeys::I);
+    const bool bO = PC->IsInputKeyDown(EKeys::O);
+    const bool bP = PC->IsInputKeyDown(EKeys::P);
+
+    // Longest combination takes priority (matches Godot InputBindings logic)
+    int32 Slot = -1;
+    if      (bU && bI && bO && bP) Slot = 9;
+    else if (bI && bO && bP)       Slot = 8;
+    else if (bU && bI && bO)       Slot = 7;
+    else if (bO && bP)             Slot = 6;
+    else if (bI && bO)             Slot = 5;
+    else if (bU && bI)             Slot = 4;
+    else if (bP)                   Slot = 3;
+    else if (bO)                   Slot = 2;
+    else if (bI)                   Slot = 1;
+    else if (bU)                   Slot = 0;
+
+    if (Slot >= 0)
+        SpellCasterComp->TryCastSlot(Slot);
 }

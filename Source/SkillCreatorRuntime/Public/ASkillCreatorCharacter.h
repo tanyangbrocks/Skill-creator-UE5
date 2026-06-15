@@ -4,18 +4,21 @@
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "CharacterStats.h"
+#include "ActionBus.h"
 #include "ASkillCreatorCharacter.generated.h"
 
 class UCharacterStateComponent;
 class UElementalAuraComponent;
 class USpellCaster;
+class USpringArmComponent;
+class UCameraComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
 
 // 玩家角色（對應 Godot PlayerController.cs 角色層）。
 // EntityId 固定 -1；HP/MP 從 Stats 初始化。
-// 施法（SpellCaster）→ M-5；庫存 → M-7；攝影機 → M-8；生存系統 → M-7。
+// 施法（SpellCaster）M-5；庫存 → M-7；生存系統 → M-7。
 UCLASS()
 class SKILLCREATORRUNTIME_API ASkillCreatorCharacter
     : public ACharacter
@@ -37,6 +40,12 @@ public:
     float CurrentMp = 100.f;
 
     // ── 組件 ──────────────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
+    TObjectPtr<USpringArmComponent> SpringArm;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
+    TObjectPtr<UCameraComponent> Camera;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UCharacterStateComponent> StateComp;
 
@@ -52,6 +61,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category="Events")
     FOnCharacterDied OnCharacterDied;
+
+    // ── ActionBus（DamageShield / DeathGuard 攔截，DeltaTime 計時，pause-aware）──
+    FActionBus ActionBus;
 
     // ── 戰鬥 API ──────────────────────────────────────────────────
     UFUNCTION(BlueprintCallable, Category="Combat")
@@ -78,4 +90,10 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
+    virtual void SetupPlayerInputComponent(UInputComponent* Input) override;
+
+private:
+    void MoveForward(float Value);
+    void MoveRight(float Value);
+    void HandleSpellInput();
 };

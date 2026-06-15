@@ -5,6 +5,7 @@
 #include "ASpellProjectile.h"
 #include "AVoxelWorldActor.h"
 #include "UCombatStateSubsystem.h"
+#include "UElementalAuraComponent.h"
 #include "ExecutionContext.h"
 #include "MaterialType.h"
 #include "WorldScale.h"
@@ -111,6 +112,13 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                 }
             };
         }
+        return true;
+    }
+
+    // ── Contact 類型：前方掃描近戰命中 ───────────────────────────────
+    if (Spell.Container == EContainerType::Contact)
+    {
+        ExecuteContactHit(Spell);
         return true;
     }
 
@@ -229,9 +237,14 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
         Anchor->bValid = false;
     };
 
-    // SetActivationModeFn / RegisterFilterFn：M-9 實作
+    // SetActivationModeFn：M-9 實作
     Ctx->SetActivationModeFn = [](int32) {};
-    Ctx->RegisterFilterFn    = [](FName, FName, bool, float, float) {};
+    // RegisterFilterFn：轉送到 ActionBus（DeltaTime 計時，pause-aware）
+    Ctx->RegisterFilterFn = [Char](FName FilterType, FName Mode, bool bOneShot,
+                                   float Threshold, float CapValue)
+    {
+        if (Char) Char->ActionBus.RegisterFilter(FilterType, Mode, bOneShot, Threshold, CapValue);
+    };
 
     Runner.Submit(MoveTemp(Ctx));
     return true;
@@ -248,6 +261,73 @@ void USpellCaster::CycleSlot(int32 Delta)
     if (HotBar.IsEmpty()) return;
     const int32 N = HotBar.Num();
     ActiveSlot = ((ActiveSlot + Delta) % N + N) % N;
+}
+
+void USpellCaster::TryCastSlot(int32 SlotIndex)
+{
+    if (!HotBar.IsValidIndex(SlotIndex)) return;
+    SwitchSlot(SlotIndex);
+    // M-9: full SpellCompiler pipeline here. For M-5: pass empty code.
+    TryCast(HotBar[SlotIndex], {});
+}
+
+void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
+{
+    ASkillCreatorCharacter* Char = GetOwnerCharacter();
+    if (!Char || !CachedEnemyMgr) return;
+
+    const FVector  Fwd    = Char->GetActorForwardVector();
+    const FGridPos Origin = Char->GetPosition();
+    constexpr int32 MeleeRange = 3;
+
+    // 前方 MeleeRange 格 3D 掃描，找第一個存活敵人
+    AEnemy*   Target = nullptr;
+    FGridPos  HitPos;
+    for (int32 Step = 1; Step <= MeleeRange && !Target; ++Step)
+    {
+        FGridPos Check(
+            Origin.X + FMath::RoundToInt(Fwd.X * (float)Step),
+            Origin.Y + FMath::RoundToInt(Fwd.Y * (float)Step),
+            Origin.Z + FMath::RoundToInt(Fwd.Z * (float)Step)
+        );
+        for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+        {
+            if (!E || !E->IsAlive()) continue;
+            const FGridPos EP = E->GetPosition();
+            if (EP.X == Check.X && EP.Y == Check.Y && EP.Z == Check.Z)
+            {
+                Target = E;
+                HitPos = EP;
+                break;
+            }
+        }
+    }
+
+    if (!Target) return;
+
+    // 元素 Aura 施加（無冷卻命中）
+    if (Spell.SpellElement != ESkillElementType::None && Target->AuraComp)
+        Target->AuraComp->ApplyImmediate(Spell.SpellElement, UElementalAuraComponent::DefaultAuraDuration, Target);
+
+    // 傷害（基礎值；M-9 接 SpellRunner 後改由 VM 計算）
+    constexpr float BaseDamage = 10.f;
+    const float HpBefore = Target->GetHp();
+    Target->TakeDamageAmount(BaseDamage);
+
+    if (auto* GI = GetWorld()->GetGameInstance())
+    if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+    {
+        Sub->OnPlayerDealtDamage(BaseDamage);
+        if (HpBefore > 0.f && Target->GetHp() <= 0.f)
+            Sub->OnEnemyKilled();
+    }
+
+    // SpawnEffect：命中 tile 觸發元素 CA 反應
+    if (Spell.SpellElement != ESkillElementType::None && CachedVoxelWorld)
+    {
+        if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+            TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Spell.SpellElement);
+    }
 }
 
 void USpellCaster::TickComponent(float DeltaTime, ELevelTick TickType,

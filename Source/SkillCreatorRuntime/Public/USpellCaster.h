@@ -46,6 +46,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="SpellCaster|HotBar")
     void CycleSlot(int32 Delta);
 
+    // Select slot SlotIndex and attempt to cast it (compiles from HotBar[SlotIndex]).
+    // M-9: full SpellCompiler pipeline; M-5: passes empty code for Projectile/DirectCast test.
+    void TryCastSlot(int32 SlotIndex);
+
 private:
     FSpellRunner Runner;
     float        CooldownRemaining = 0.f;
@@ -54,6 +58,9 @@ private:
     UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
 
     ASkillCreatorCharacter* GetOwnerCharacter() const;
+
+    // Contact 類型：前方 MeleeRange 格 3D 掃描，命中後施加元素 Aura + 傷害 + SpawnEffect
+    void ExecuteContactHit(const FSpellArray& Spell);
 
     virtual void BeginPlay() override;
 };

@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "ManaType.h"
+#include "ElementType.h"
 #include "SpellArray.generated.h"
 
 // 容器施放方式（對應 Godot ContainerType.cs）
@@ -9,6 +10,7 @@ enum class EContainerType : uint8
 {
     DirectCast   UMETA(DisplayName="直接施放"),
     Projectile   UMETA(DisplayName="投射物"),
+    Contact      UMETA(DisplayName="接觸命中"),  // 即時近戰：前方掃描 + 元素 CA
     Summon       UMETA(DisplayName="召喚物"),
     Area         UMETA(DisplayName="區域"),
 };
@@ -53,6 +55,7 @@ struct FSpellArray
     UPROPERTY(EditAnywhere) float                  BaseMpCost     = 0.f;
     UPROPERTY(EditAnywhere) FString                NextInCombo;   // 空字串 = 連段終止
     UPROPERTY(EditAnywhere) int32                  SceneUseLimit  = 0; // 0 = 無限制
+    UPROPERTY(EditAnywhere) ESkillElementType      SpellElement   = ESkillElementType::None; // Contact/Projectile 命中元素
 
     // 容器效果（最深 SafetyGuard::MaxContainerDepth 層）
     // TUniquePtr 不能加 UPROPERTY → 用 TSharedPtr 讓 BP/序列化可見
