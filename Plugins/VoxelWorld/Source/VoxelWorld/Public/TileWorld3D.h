@@ -46,6 +46,8 @@ public:
     FRaycastResult3D Raycast(FVector Start, FVector Dir, float MaxDist) const;
     TArray<FTileCell> SnapshotRegion(FIntVector Min, FIntVector Max) const;
     void              RestoreRegion(FIntVector Min, FIntVector Max, const TArray<FTileCell>& Snapshot);
+    // 法術命中後元素 CA 效果：沸騰→Steam / 流沙→Sand / 燃燒→IgniteMaterial（M-5）
+    void              ApplyElementalImpact(int32 x, int32 y, int32 z, ESkillElementType ImpactElement);
 
     // --- Chunk 管理 ---
     FChunk3D*  GetOrCreateChunk(FIntVector ChunkCoord);
@@ -85,6 +87,7 @@ private:
     void UpdateLiquid(int32 x, int32 y, int32 z);
     void UpdateGas(int32 x, int32 y, int32 z);
     void UpdateStatic(int32 x, int32 y, int32 z);
+    void CheckElementalCaReactions(int32 x, int32 y, int32 z); // 每幀 UpdateLiquid 末尾呼叫
 
     // --- 火焰輔助 ---
     void IgniteMaterial(int32 x, int32 y, int32 z);

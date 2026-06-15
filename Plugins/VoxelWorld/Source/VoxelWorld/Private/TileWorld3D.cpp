@@ -1,6 +1,7 @@
 #include "TileWorld3D.h"
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
+#include "ElementalReactionTable.h"
 
 // ============================================================
 // 構造 / 解構
@@ -304,6 +305,8 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
 
     if (Mat == EMaterialType::Lava)
         TryIgniteAround(x, y, z, 0.005f);
+
+    CheckElementalCaReactions(x, y, z);
 }
 
 void FTileWorld3D::UpdateGas(int32 x, int32 y, int32 z)
@@ -496,6 +499,74 @@ void FTileWorld3D::RestoreRegion(FIntVector Min, FIntVector Max, const TArray<FT
     for (int32 y = Min.Y; y <= Max.Y; ++y)
     for (int32 x = Min.X; x <= Max.X; ++x)
         WriteCell(x, y, z, Snapshot[Idx++]);
+}
+
+// ============================================================
+// 元素 CA 反應
+// ============================================================
+
+// 在 UpdateLiquid 末尾呼叫：掃描 6 鄰格，處理兩條硬碼 CA 反應
+// ・Water NativeElement 鄰格 Dirt → Sand（0.5%）
+// ・Lava + Water NativeElement 鄰格 → Stone + Steam（3%）
+void FTileWorld3D::CheckElementalCaReactions(int32 x, int32 y, int32 z)
+{
+    EMaterialType Mat = GetTile(x, y, z);
+    const FMaterialData& MatData = FMaterialRegistry::Get(Mat);
+    if (MatData.NativeElement == ESkillElementType::None) return;
+
+    constexpr int32 Dx[] = { 1,-1, 0, 0, 0, 0 };
+    constexpr int32 Dy[] = { 0, 0, 1,-1, 0, 0 };
+    constexpr int32 Dz[] = { 0, 0, 0, 0, 1,-1 };
+
+    for (int32 i = 0; i < 6; ++i)
+    {
+        int32 nx = x + Dx[i], ny = y + Dy[i], nz = z + Dz[i];
+        if (!InBounds(nx, ny, nz)) continue;
+        EMaterialType NMat = GetTile(nx, ny, nz);
+        const FMaterialData& NData = FMaterialRegistry::Get(NMat);
+
+        // Water（NativeElement） + Dirt 鄰格 → Sand（慢速 0.5%）
+        if (MatData.NativeElement == ESkillElementType::Water &&
+            NMat == EMaterialType::Dirt &&
+            Rng.GetFraction() < 0.005f)
+        {
+            SetTile(nx, ny, nz, EMaterialType::Sand);
+            MarkUpdated(nx, ny, nz);
+        }
+
+        // Lava + Water（NativeElement）鄰格 → Stone + Steam（快速 3%）
+        if (Mat == EMaterialType::Lava &&
+            NData.NativeElement == ESkillElementType::Water &&
+            Rng.GetFraction() < 0.03f)
+        {
+            SetTile(x,  y,  z,  EMaterialType::Stone);
+            SetTile(nx, ny, nz, EMaterialType::Steam);
+            MarkUpdated(nx, ny, nz);
+            return;  // 當前格已從 Lava 變 Stone，不需再繼續掃鄰格
+        }
+    }
+}
+
+// 法術命中 API：根據衝擊元素與格子 NativeElement 查反應表，套用 CA 效果
+void FTileWorld3D::ApplyElementalImpact(int32 x, int32 y, int32 z, ESkillElementType ImpactElement)
+{
+    if (!InBounds(x, y, z) || ImpactElement == ESkillElementType::None) return;
+
+    EMaterialType Mat = GetTile(x, y, z);
+    const FMaterialData& TileData = FMaterialRegistry::Get(Mat);
+    ESkillElementType TileElem = TileData.NativeElement;
+    if (TileElem == ESkillElementType::None) return;
+
+    const FReactionDef* Reaction = FElementalReactionTable::Lookup(ImpactElement, TileElem);
+    if (!Reaction) return;
+
+    if (Reaction->Name == TEXT("沸騰"))          // Fire hits Water → Steam
+        SetTile(x, y, z, EMaterialType::Steam);
+    else if (Reaction->Name == TEXT("流沙") && Mat == EMaterialType::Dirt)  // Water hits Dirt → Sand
+        SetTile(x, y, z, EMaterialType::Sand);
+    else if (Reaction->Name == TEXT("燃燒"))     // Fire hits Wood → ignite
+        IgniteMaterial(x, y, z);
+    // 其餘反應（W-3b 待填）：CA 效果保留給未來里程碑
 }
 
 // ============================================================

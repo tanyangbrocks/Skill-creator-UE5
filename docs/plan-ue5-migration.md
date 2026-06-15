@@ -415,7 +415,7 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
   // Game Thread 頧?嚗 MaterialID ??MaterialRegistry嚗???UMaterialInstanceDynamic*
   ```
 - [ ] `Chunk3D.h/cpp`嚗?6糧 FTileCell ??? + dirty tracking
-- [ ] `TileWorld3D.h/cpp`嚗hunk 摮嚗TMap<FIntVector, TUniquePtr<FChunk3D>>`嚗IntVector 撌脫? UE5 ?批遣 hash嚗etTile/SetTile?A ?湔餈游?
+- [x] `TileWorld3D.h/cpp`嚗hunk 摮嚗TMap<FIntVector, TUniquePtr<FChunk3D>>`嚗IntVector 撌脫? UE5 ?批遣 hash嚗etTile/SetTile?A ?湔餈游?
 - [ ] `WorldSaveData.h/cpp`嚗hunk 鈭脖?摨???`FArchive << uint8`嚗? POD嚗ackground thread 摰嚗?- [ ] `MapGenerator3D.h/cpp`嚗?摨敶Ｙ???Perlin noise ??tile嚗?- [ ] ?亙 UE5 Task Graph ???瑁?蝺?Chunk ?湔
 
 ---

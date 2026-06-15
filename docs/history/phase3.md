@@ -244,3 +244,16 @@ Auto-archived from C:\Users\譚揚勳\skill-creator\實作進度.md by docs/arch
 | act_fire_projectile 真實投射物 | `Scripts/AbilitySystem/SpellCaster.cs` `Scripts/Main.cs` | 移除 TODO-STUB；建立繼承來源刻印的迷你 SpellArray（命中執行 act_area_around）；SpellCaster 靜態 pending 佇列 + Main.cs 兩處 flush |
 | 敵人攻擊 Y 座標修正 | `Scripts/World/Enemy.cs` | `Update()` 距離計算改用 `playerFeetY = player.Position.Y + BodyH - 1`（腳底格）對齊 `enemy.Position.Y`；原來用 HEAD tile 導致同一地面 Y 差 ≈31 格，Melee AttackRange=2 永遠不觸發 |
 | ManaTypeKey OptionButton 重整修正 | `Scripts/UI/ScratchCanvas.cs` | `AddParams` 在 Totem 積木 `BuildUI` 後，對 row 內 OptionButton 補掛 `OnChanged()`；原本 ItemSelected 只更新 params 而不觸發 Changed，導致右側 MP 分解列表不刷新 |
+| M-0 環境準備 | `.gitignore` `CLAUDE.md` `Source/` `Plugins/` | 新 repo 初始化、計畫文件複製、模組資料夾結構建立 |
+| M-0 Build 設定 | `*.Build.cs` × 6、`*.uplugin` × 3 | 所有 Module 與 Plugin 設定檔 |
+| M-1 核心型別 | `WorldScale.h` `GridPos.h` `MaterialType.h` | 世界常數 / FGridPos+hash / ETileCategory+FTileCell POD |
+| M-1 積木系統 | `BlockType.h` `OpCode.h` `FBlockNode.h` | EBlockType(80) / EOpCode 全集 / TUniquePtr 樹（WithCopy=false）|
+| M-1 MP 系統 | `ManaType.h` `ManaTypeRegistry.h/.cpp` | 18 種基礎 MP + 靜態登記表 |
+| M-1 技能整構 | `SpellArray.h` | FSpellSlot / FSpellArray |
+| Module 入口點 | `*Module.cpp` × 6 | 全 Module IMPLEMENT_MODULE，build 必要 |
+| M-2 VM 型別預寫 | `Instruction.h` | FInstruction + 全部 Args structs（25 種） |
+| M-3 世界模擬 | `MapGenerator3D.h/.cpp` `Chunk3D.h/.cpp` `TileWorld3D.h/.cpp` | CPU CA 世界：格狀地圖生成 / 3D Chunk / 全局 TileWorld 管理 |
+| M-4 角色與 AI | `ASkillCreatorCharacter.h/.cpp` `AEnemy.h/.cpp` `AEnemyManager.h/.cpp` | 角色移動+屬性 / 敵人 AI 行為樹 / 敵人生成管理 |
+| M-4 VM 執行層 | `USpellCaster.h/.cpp` `ExecutionContext.h` `SpellRunner` | SpellCompiler / SpellRunner（手動 Tick 累加器）/ ExecutionLoop |
+| M-5 元素反應表 | `ElementType.h` `ElementalStatusEffect.h` `ElementalReactionTable.h/.cpp` | ESkillElementType（注意：EElementType 被 SlateCore 佔用）/ 5 種效果 / 22 條反應 |
+| M-5 Aura 元件 | `UElementalAuraComponent.h/.cpp` | Apply/ApplyImmediate（帶/無冷卻）/ Process（每幀 tick）/ RecalcAggregates |
