@@ -5,6 +5,12 @@
     "FriendlyName": "SkillCreatorUI",
     "Description": "Slate Block Editor (SGraphEditor)",
     "Category": "SkillCreator",
+    "Plugins": [
+        {
+            "Name": "AbilitySystem",
+            "Enabled": true
+        }
+    ],
     "Modules": [
         {
             "Name": "SkillCreatorUI",

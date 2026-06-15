@@ -420,13 +420,65 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
 
 ---
 
-### M-4 ??閫?鈭綽?Gameplay 撅歹?
+### M-4 核心實體 Gameplay 層（設計決策已定稿）
 
-> ?格?嚗摰嗅??萎犖?其??ㄐ?賜宏????
-- [ ] `PlayerController` ??`ASkillCreatorCharacter`嚗Actor + movement嚗?- [ ] `CharacterStats.h/cpp`嚗P/MP/撅祆改?撠? CharacterStats.cs
-- [ ] `CharacterState.h/cpp`嚗?摮?潘?瘞扳除??皞怒ㄑ擗?嚗?- [ ] `ElementalAuraComponent.h/cpp`嚗?蝝?Aura + ??銵?- [ ] `Enemy.h/cpp` + `EnemyManager.h/cpp`嚗?蝔?AI ???嚗????Behavior Tree嚗?- [ ] `CombatState.h/cpp`嚗擛??擛亦?????
+> 目標：玩家、敵人、戰鬥狀態的 C++ 骨架，純 code-only（不開 Editor）
+
+#### 已確認決策（2026-06-14）
+
+| 決策點 | 結論 |
+|--------|------|
+| Q1 CharacterState 範圍 | **骨架模式**：M-4 只做戰鬥相關（Stamina/MentalEnergy/Mood 存根），W-5b 完整生存系統 → M-7 |
+| Q2 Enemy AI 架構 | **BehaviorTree（B方案）+ 自製 Tile A***：`UBTTask_MoveOnGrid` 做格子尋路，**禁止**用標準 `MoveTo`（NavMesh 不適合 voxel 世界）。M-4 寫 C++ 框架；BT/BB `.uasset` → M-8 Editor 補建 |
+| Q3 PlayerController 範圍 | **框架層只**：移動 + HP/MP 追蹤；施法→M-5、庫存→M-7、攝影機→M-8、溫度/生存→M-7（這些**必須**在對應 Module 實作，非可選） |
+| Q4 玩家移動方式 | **物理移動**：`ACharacter` + `UCharacterMovementComponent`；敵人 = `APawn` 計時步進 tile 移動（Godot 原版邏輯） |
+
+#### Build.cs 追加（SkillCreatorRuntime.Build.cs）
+
+```
+"EnhancedInput", "AIModule", "NavigationSystem", "GameplayTasks"
+```
+
+#### 待建立檔案清單
+
+**SkillCreatorCore（純 C++，無 gameplay 依賴）**
+- [ ] `Source/SkillCreatorCore/Public/CharacterStats.h` — USTRUCT(BlueprintType)，移植自 CharacterStats.cs 的 30+ float 欄位（MaxHpBase=100, MaxMpBase=100, MpRegenRate=8, CritRate=0.05, CritDmgMult=1.5, MoveSpeedMult=1.0 等）
+- [ ] `Source/SkillCreatorCore/Public/IElementalTarget.h` — 純虛擬 C++ interface（非 UINTERFACE）：`ApplyAura / RemoveAura`
+- [ ] `Source/SkillCreatorCore/Public/ICreature.h` — 純虛擬 C++ interface：`GetHp / GetMaxHp / IsAlive / GetTilePos`
+
+**SkillCreatorRuntime（Gameplay Module）**
+- [ ] `Source/SkillCreatorRuntime/Public/ASkillCreatorCharacter.h + cpp` — ACharacter 子類，持有 HP/MP、UCharacterStateComponent、UElementalAuraComponent，死亡/重生存根
+- [ ] `Source/SkillCreatorRuntime/Public/ASkillCreatorPlayerController.h + cpp` — APlayerController，EnhancedInput 存根，施法觸發存根（M-5 填實）
+- [ ] `Source/SkillCreatorRuntime/Public/UCharacterStateComponent.h + cpp` — UActorComponent：float Stamina=100, MentalEnergy=100, Mood=100；Tick 更新存根（M-7 填實）
+- [ ] `Source/SkillCreatorRuntime/Public/UElementalAuraComponent.h + cpp` — FAuraEntry{EElementType, float Remaining}；TArray<FAuraEntry> Auras；聚合輸出：SpeedPenalty, bIsImmobilized, DamageTakenBonus, DefensePenalty；Advance(DeltaTime)
+- [ ] `Source/SkillCreatorRuntime/Public/AEnemy.h + cpp` — APawn，EEnemyType(Melee/Ranged/Patrol/Heavy)，float MoveInterval=0.4f 計時器，離散 tile 移動，實作 ICreature + IElementalTarget
+- [ ] `Source/SkillCreatorRuntime/Public/AEnemyAIController.h + cpp` — AAIController；Possess() 時設定 Blackboard + 啟動 BT（BT asset 在 M-8 補）
+- [ ] `Source/SkillCreatorRuntime/Public/UBTTask_MoveOnGrid.h + cpp` — 向 Blackboard 取目標 tile，執行一步 tile A*（A* 完整實作 → M-5，M-4 先做 Manhattan 直線移動存根）
+- [ ] `Source/SkillCreatorRuntime/Public/UBTTask_AttackPlayer.h + cpp` — 攻擊判定存根（M-5 接 SpellCaster 後填實）
+- [ ] `Source/SkillCreatorRuntime/Public/UBTService_UpdateTarget.h + cpp` — 每幀更新 Blackboard 中的玩家位置 key
+- [ ] `Source/SkillCreatorRuntime/Public/AEnemyManager.h + cpp` — 敵人生成/管理 Actor
+- [ ] `Source/SkillCreatorRuntime/Public/UCombatStateSubsystem.h + cpp` — UGameInstanceSubsystem：bInCombat, BattleId(FGuid), CastCount/DamageDealt/KillCount, OutOfCombatTimeout=5.0f, EnterCombat/ExitCombat
+
+#### Godot 對照原始碼
+
+| Godot 檔案 | 對應 UE5 類別 |
+|-----------|-------------|
+| `C:\skill-creator\Scripts\World\CharacterStats.cs` | `CharacterStats.h`（30+ float 欄位） |
+| `C:\skill-creator\Scripts\World\Enemy.cs` | `AEnemy` + `UBTTask_*`（3狀態 FSM 升級為 BT） |
+| `C:\skill-creator\Scripts\World\CombatState.cs` | `UCombatStateSubsystem` |
+| `C:\skill-creator\Scripts\AbilitySystem\Elemental\ElementalAuraComponent.cs` | `UElementalAuraComponent` |
+| `C:\skill-creator\Scripts\World\CharacterState.cs` | `UCharacterStateComponent`（M-4 骨架，M-7 完整） |
+
+#### M-4 不實作（強制延後）
+
+- 施法邏輯（SpellCaster 連接）→ M-5
+- 物品欄系統 → M-7
+- 攝影機系統 → M-8
+- 溫度/生存系統完整實作 → M-7
+- BT/BB `.uasset` 資產建立 → M-8（Editor 開啟後）
+- BT 路徑中的完整 tile A* 實作 → M-5
+
 ---
-
 ### M-5 ????賣?暹??
 > ?格?嚗摰嗉?賣??踝?VM ?瑁?蝯?敶梢銝?
 
@@ -442,9 +494,9 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
 > **閫??嚗ega-Chunk嚗??4?4 = 64糧嚗??箔???Section ??鈭文雿?*嚗?> - 4?4?4 ??16糧 chunk ?梁銝??RMC Section嚗?? Section ?詨??啣嗾??> - ?嗡葉隞颱?撠?chunk dirty ????Task Graph 鋆⊿?蝞??64糧 ??? Greedy Mesh ??銝甈⊥??Section
 > - 甇文?瘜? Draw Call ?????詨?詨??????Grain 64+ 銝雁????> - M-6 ???臬? 1:1 撖虫?撽?甇?Ⅱ?改?**M-6 銝?????? Mega-Chunk 璅∪?**
 
-- [ ] 撱箇? `VoxelWorldRenderer` Actor嚗???RealtimeMeshComponent嚗?- [ ] 蝘餅? Greedy Meshing ?摩嚗# ??C++嚗?蝞?銝?嚗?- [ ] **Mega-Chunk嚗?4糧嚗???RMC Section ?桐?**嚗???1:1 chunk ??section
-- [ ] 撠?chunk dirty ????Task Graph 鋆⊿?蝞?撅?Mega-Chunk ??Greedy Mesh
-- [ ] ?箇??釭嚗???vertex color ???tile 憿?
+- [x] 撱箇? `VoxelWorldRenderer` Actor嚗???RealtimeMeshComponent嚗?- [x] 蝘餅? Greedy Meshing ?摩嚗# ??C++嚗?蝞?銝?嚗?- [x] **Mega-Chunk嚗?4糧嚗???RMC Section ?桐?**嚗???1:1 chunk ??section
+- [x] 撠?chunk dirty ????Task Graph 鋆⊿?蝞?撅?Mega-Chunk ??Greedy Mesh
+- [x] ?箇??釭嚗???vertex color ???tile 憿?
 - [ ] ?豢??批嚗?D 閬?嚗?曌?頧??脰憚蝮格嚗?
 ---
 
@@ -456,25 +508,25 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
 > ?? **Grain 64+ ??撖衣?豢 Chunk 銝脫?嚗???JSON**嚗?> - ?拙振蝘餃???脣閬???chunk 敹???background thread ???? + 撱?Greedy Mesh
 > - 銝?其蜓?瑁?蝺? ??撱箇? `ChunkStreamingManager`嚗E5 `AsyncTask` 蝞∠?鞎痊 chunk 頛
 
-- [ ] `FlowSaveSystem.h/cpp`嚗Archive 鈭脖?嚗hunk嚗? JSON嚗haracter/spell嚗毽??- [ ] `CharacterSaveData.h/cpp`嚗pellGroup?anaSlots?????JSON 摨???
-- [ ] `ChunkStreamingManager.h/cpp`嚗摰嗥宏?? async ???? chunk嚗UE::Tasks::Launch` ??`AsyncTask`嚗?- [ ] Chunk 鈭脖?摮?嚗FArchive <<` ??摮??? TileCell ???嚗?- [ ] ?????摮?嚗???Godot ?撽?鞈?甇?Ⅱ??
+- [x] `FlowSaveSystem.h/cpp`嚗Archive 鈭脖?嚗hunk嚗? JSON嚗haracter/spell嚗毽??- [x] `CharacterSaveData.h/cpp`嚗pellGroup?anaSlots?????JSON 摨???
+- [x] `ChunkStreamingManager.h/cpp`嚗摰嗥宏?? async ???? chunk嚗UE::Tasks::Launch` ??`AsyncTask`嚗?- [x] Chunk 鈭脖?摮?嚗FArchive <<` ??摮??? TileCell ???嚗?- [x] ?????摮?嚗???Godot ?撽?鞈?甇?Ⅱ??
 ---
 
 ### M-8 ???箇? HUD嚗MG嚗?
 > ?格?嚗? HUD ?臭誑?嚗??賜楊頛臬??蝪∠?
 
-- [ ] HP / MP 璇?1?? 璇???賜????Ｙ?嚗?- [ ] ??賜?菜?嚗?0 ?潘?
-- [ ] ??賢?銵剁??舫????踝?
-- [ ] 蝪⊥?蝛蝺刻摩?剁??怎 ListView ?嚗??喳??賢?蝥?嚗?
+- [x] HP / MP 璇?1?? 璇???賜????Ｙ?嚗?- [x] ??賜?菜?嚗?0 ?潘?
+- [x] ??賢?銵剁??舫????踝?
+- [x] 蝪⊥?蝛蝺刻摩?剁??怎 ListView ?嚗??喳??賢?蝥?嚗?
 ---
 
 ### M-9 ??蝛蝺刻摩??UI嚗late嚗?
 > ?格?嚗???ScriptCanvas ?嚗?璅??Godot ?
 
 > **runtime / editor ??**嚗-1 ??`FBlockNode`嚗STRUCT + TUniquePtr 璅對??臬銵??嚗??湔?冽 Slate?-9 ??`UMyEdGraphNode : UEdGraphNode`嚗Object嚗C 蝞∠?嚗 editor 撠惇????交??賣???甈∟???`FBlockNode` ??`UMyEdGraphNode`嚗摮???頧??見 Slate ?臭誑??UObject ??DetailsView ?芸??? UPROPERTY ??UI ?批???銵?摰銝? GC 敶梢??
-- [ ] ?芾? `UMyEdGraphNode : UEdGraphNode`嚗???FBlockNode嚗???EBlockType ??UPROPERTY Params嚗?- [ ] ?芾? `SGraphPanel`嚗??函撣?????詻??嚗?- [ ] 隤輯?歹?蝛摨怠甈?????憿?
-- [ ] 蝛?∠?嚗＊蝷粹??憛???SpinBox / OptionButton嚗?- [ ] ?脣?撽??摩嚗? M-1 鞈?撅斗窒?剁?
-- [ ] ??賜???嚗 ?蛛?5 蝯?
+- [x] ?芾? `UMyEdGraphNode : UEdGraphNode`嚗???FBlockNode嚗???EBlockType ??UPROPERTY Params嚗?- [x] ?芾? `SGraphPanel`嚗??函撣?????詻??嚗?- [x] 隤輯?歹?蝛摨怠甈?????憿?
+- [x] 蝛?∠?嚗＊蝷粹??憛???SpinBox / OptionButton嚗?- [x] ?脣?撽??摩嚗? M-1 鞈?撅斗窒?剁?
+- [x] ??賜???嚗 ?蛛?5 蝯?
 
 ---
 
