@@ -1,149 +1,181 @@
-﻿# Godot 4 ??Unreal Engine 5 ?瑞宏撖虫?閮
+# Godot 4 → Unreal Engine 5 遷移實作計畫
 
-> ?啣神?交?嚗?026-06-14
-> 靘?嚗?獢???勗? + UE5 ?瑞宏?銵?蝛?> ?格?撘?嚗E5.4+ / C++
-> ?瑞宏蝑嚗?*?閮剛?嚗?蝧餉陌**嚗?雿輻?芸? C# ??C++ 撌亙嚗?
----
-
-## 銝?蝘餅捱蝑???
-| ?? | 隤芣? |
-|------|------|
-| Godot ?曉撠勗歇蝬 | 蝛箔??停???賢????寞????Godot ??chunk mesh rebuild 蝞∠? |
-| Grain 閮隤踹???64+ | 瘥摰嗅雿? 64?128?64 tile嚗???蝛?曉??64 ??Godot ?⊥??? |
-| 閬死?格?嚗AA 閬嚗?| Nanite 擃?豢芋?umen ??????∠蝣??頂蝯梧?Godot ?撩銋???pipeline |
-| CA + 瘥?tile ?拍? | ?閬?GPU Compute Shader ?貉?璅⊥嚗odot 瘝????寞? |
-| **蝯?** | UE5 ?臬銝????璅像??|
+> 撰寫日期：2026-06-14
+> 依據：專案全掃描報告 + UE5 遷移技術研究
+> 目標引擎：UE5.4+ / C++
+> 遷移策略：**重新設計，不翻譯**（不使用自動 C# → C++ 工具）
 
 ---
 
-## 鈭??菜?銵捱蝑?
-### 2-1 C# ??C++ 蝑嚗??啗身閮?銝蕃霅?
-?芸?蝧餉陌撌亙嚗odePorting?lterNative 蝑?**銝??*?潮??脤?頛荔?
-- C# GC vs C++ RAII 閮擃芋?榆頝云憭?- `virtual generic method`?INQ?sync/await ?∪??蕃霅?- 蝧餃??C++ ?虜瘥???C# ?湔
+## 一、遷移決策背景
 
-**??嚗身閮宏璊?蝔?蝣潮?撖?*
-- ??頂蝯梁?閮剛?嚗??芋?????摩?M opcode 隤儔嚗?交窒??- 蝔?蝣潛 C++ ?撖衣嚗誑 UE5 ??璅∪??蹂誨 Godot API
-
-### 2-2 Tile 銝?皜脫?嚗ealtimeMeshComponent
-
-| ?寞? | 閰摯 |
+| 問題 | 說明 |
 |------|------|
-| ProceduralMeshComponent | ??瘥??遣 mesh ?擃?閮擃 RMC ?拙?|
-| **RealtimeMeshComponent (RMC)** | ?????湔瘥?PMC 敹?2 ??閮擃? 50%+嚗E5 撠 |
-| Voxel Plugin 2 | ?拙? Minecraft ?啣耦嚗A ?拍???血????漲撠? |
+| Godot 現在就已經卡 | 空世界就有效能壓力，根本問題在 Godot 的 chunk mesh rebuild 管線 |
+| Grain 計畫調升至 64+ | 每玩家單位佔 64×128×64 tile，世界體積是現在的 64 倍，Godot 無法應對 |
+| 視覺目標（AAA 規格） | Nanite 高面數模型、Lumen 動態光照、城堡破碎、捏臉系統，Godot 均缺乏對應 pipeline |
+| CA + 每 tile 物理 | 需要 GPU Compute Shader 卸載模擬，Godot 沒有成熟方案 |
+| **結論** | UE5 是唯一合理的長期目標平台 |
 
-**?豢?嚗ealtimeMeshComponent**
-- GitHub嚗ttps://github.com/TriAxis-Games/RealtimeMeshComponent
-- Greedy Meshing ?摩敺?C# 蝘餅?嚗??mesh ?漱 API
+---
 
-### 2-3 CA 銝?璅⊥嚗閮?Compute Shader嚗DG嚗?
-| ?寞? | Grain 64+ ?航???|
+## 二、關鍵技術決策
+
+### 2-1 C# → C++ 策略：重新設計，不翻譯
+
+自動翻譯工具（CodePorting、AlterNative 等）**不適用**於遊戲邏輯：
+- C# GC vs C++ RAII 記憶體模型差距太大
+- `virtual generic method`、LINQ、async/await 無對應翻譯
+- 翻出的 C++ 通常比原版 C# 更慢
+
+**做法：設計移植，程式碼重寫**
+- 所有系統的設計（資料模型、狀態機邏輯、VM opcode 語義）直接沿用
+- 程式碼用 C++ 重新實現，以 UE5 慣用模式替代 Godot API
+
+### 2-2 Tile 世界渲染：RealtimeMeshComponent
+
+| 方案 | 評估 |
+|------|------|
+| ProceduralMeshComponent | ✗ 每幀重建 mesh 成本高，記憶體是 RMC 兩倍 |
+| **RealtimeMeshComponent (RMC)** | ✓ 動態更新比 PMC 快 2 倍，記憶體少 50%+，UE5 專用 |
+| Voxel Plugin 2 | 適合 Minecraft 地形，CA 物理需另外疊，過度封裝 |
+
+**選擇：RealtimeMeshComponent**
+- GitHub：https://github.com/TriAxis-Games/RealtimeMeshComponent
+- Greedy Meshing 邏輯從 C# 移植，只換 mesh 提交 API
+
+### 2-3 CA 世界模擬：自訂 Compute Shader（RDG）
+
+| 方案 | Grain 64+ 可行性 |
 |------|----------------|
-| CPU Task Graph 憭銵? | 銝哨?Grain 32 隞乩?憭嚗?4 憯?憭改? |
-| Niagara Grid2D Simulation Stage | 銝哨?閬死撅斗???gameplay ??撱園嚗?|
-| **?芾? Compute Shader + RDG** | ???憭批??改?Grain 64+ ?臭??賊? |
+| CPU Task Graph 多執行緒 | 中（Grain 32 以下夠用，64 壓力大） |
+| Niagara Grid2D Simulation Stage | 中（視覺層有效，gameplay 反饋延遲） |
+| **自訂 Compute Shader + RDG** | ✓ 最大彈性，Grain 64+ 唯一選項 |
 
-**?豢?嚗ompute Shader + RDG嚗ender Dependency Graph嚗?*
-- Phase 1 ?? CPU ?嚗??暹? C# ?摩?湔撠?嚗?- Phase 3 ??GPU ?嚗??斗 checkerboard ?湔璅∪?閫?捱銝西?蝡嗥嚗?- ??[GPU Falling Sand嚗eatbatgames嚗(https://meatbatgames.com/blog/falling-sand-gpu/)
+**選擇：Compute Shader + RDG（Render Dependency Graph）**
+- Phase 1 先做 CPU 版本（與現有 C# 邏輯直接對應）
+- Phase 3 做 GPU 版本（棋盤格 checkerboard 更新模式解決並行競爭）
+- 參考：[GPU Falling Sand（meatbatgames）](https://meatbatgames.com/blog/falling-sand-gpu/)
 
-### 2-4 UI嚗late嚗??函楊頛臬嚗? UMG嚗??脣 HUD嚗?
-| 雿蔭 | 獢 | ? |
+### 2-4 UI：Slate（積木編輯器）+ UMG（遊戲內 HUD）
+
+| 位置 | 框架 | 理由 |
 |------|------|------|
-| 蝛??賜楊頛臬 | **Slate SGraphEditor** | UE5 ??Blueprint 蝺刻摩?具aterial 蝺刻摩?冽頨怠停??Slate嚗??喟?暺????|
-| ???HUD / ?詨 | **UMG** | 敹恍???BP ?航???撅 |
+| 積木技能編輯器 | **Slate SGraphEditor** | UE5 的 Blueprint 編輯器、Material 編輯器本身就是 Slate，拖曳節點原生支援 |
+| 遊戲內 HUD / 選單 | **UMG** | 快速原型，BP 可視化佈局 |
 
-蝛 UI 頝臬?嚗?```
-?芾? UEdGraph + UEdGraphNode嚗”蝷?BlockNode嚗???SGraphPanel / SGraphEditor嚗??喟撣?
-???芾? SGraphNode Widget嚗??典?閫嚗?```
-??[UMG-Slate Compendium](https://github.com/YawLighthouse/UMG-Slate-Compendium)
+積木 UI 路徑：
+```
+自訂 UEdGraph + UEdGraphNode（表示 BlockNode）
+→ SGraphPanel / SGraphEditor（拖曳畫布）
+→ 自訂 SGraphNode Widget（積木外觀）
+```
+參考：[UMG-Slate Compendium](https://github.com/YawLighthouse/UMG-Slate-Compendium)
 
-### 2-5 璅∠?蝯?嚗yra 撘?GameFeature Plugin
+### 2-5 模組結構：Lyra 式 GameFeature Plugin
 
 ```
 YourGame/
-??? Source/
-??  ??? SkillCreatorCore/       ???箇?????ｇ???gameplay 靘陷嚗???  ??? SkillCreatorRuntime/    ??銝?Gameplay Module嚗layer?orld?I嚗???  ??? SkillCreatorEditor/     ??蝛蝺刻摩?剁???Editor ?蝺刻陌嚗???? Plugins/
-    ??? AbilitySystem/          ??VM + ??賣?橘??舐蝡葫閰佗?
-    ??? VoxelWorld/             ??CA 銝? + Chunk + RMC 皜脫?
-    ??? SkillCreatorUI/         ??蝛蝺刻摩??Slate UI
+├── Source/
+│   ├── SkillCreatorCore/       ← 基礎型別、介面（無 gameplay 依賴）
+│   ├── SkillCreatorRuntime/    ← 主 Gameplay Module（Player、World、AI）
+│   └── SkillCreatorEditor/     ← 積木編輯器（僅 Editor 版本編譯）
+└── Plugins/
+    ├── AbilitySystem/          ← VM + 技能施放（可獨立測試）
+    ├── VoxelWorld/             ← CA 世界 + Chunk + RMC 渲染
+    └── SkillCreatorUI/         ← 積木編輯器 Slate UI
 ```
 
-### 2-6 撌脤?霅? UE5 ??琿
+### 2-6 已驗證的 UE5 開發陷阱
 
-#### ??嚗ive Coding + UHT ??鞈?銝?甇????⊿?霅?crash
+#### 坑一：Live Coding + UHT 反射資料不同步 → 無預警 crash
 
-**閫貊璇辣**嚗???UE Editor嚗 Live Coding嚗?嚗耨??`.h` 鋆∠? `UCLASS/UENUM/UPROPERTY/USTRUCT` 銝衣蝺刻陌??
-**??**嚗ive Coding ? `.dll` patch ?脫迤?典銵? process嚗? UHT ??撠???`*.generated.h`?TClassCompiledInDefer` ?餉?銵剁?銝??湔? `.h` ?寡?鈭?struct ???園? layout嚗???UObject 蝟餌絞隞??offset 霈撖???crash ??暺???憯?
-**撘瑕撌乩?瘚?*嚗?- **摰**嚗ive Coding ?舐嚗??芣 `.cpp` ???摩嚗witch/case ?批捆??瘜擃?
-- **?梢嚗?????Editor + VS Rebuild**嚗 `.h` 鋆∩遙雿?`U*` 撌券?靽桅ˇ???⊥? enum
+**觸發條件**：開著 UE Editor（含 Live Coding）時，修改 `.h` 裡的 `UCLASS/UENUM/UPROPERTY/USTRUCT` 並熱編譯。
 
-#### ??嚗LatentActionManager 銝??SpellRunner
+**原因**：Live Coding 把新 `.dll` patch 進正在執行的 process，但 UHT 的反射資料（`*.generated.h`、`TClassCompiledInDefer` 登記表）不會更新。新 `.h` 改變了 struct 的記憶體 layout，舊的 UObject 系統仍用舊 offset 讀寫 → crash 或靜默資料損壞。
 
-`FLatentActionManager` ??Blueprint Delay 蝭暺?摨惜撖衣嚗身閮雿雿輻?pellRunner ?閬?撟?券?VM ??嚗??寧**?? Tick 蝝臬???*嚗?
+**強制工作流**：
+- **安全**（Live Coding 可用）：只改 `.cpp` 的純邏輯（switch/case 內容、算法本體）
+- **危險，必須關閉 Editor + VS Rebuild**：改 `.h` 裡任何 `U*` 巨集修飾的成員或 enum
+
+#### 坑二：FLatentActionManager 不適合 SpellRunner
+
+`FLatentActionManager` 是 Blueprint Delay 節點的底層實現，設計為低頻使用。SpellRunner 需要每幀推進 VM 指針，應改用**手動 Tick 累加器**：
+
 ```cpp
 struct FSpellRunner {
     TArray<FInstruction> Instructions;
     int32  ProgramCounter  = 0;
     float  TimeAccumulator = 0.f;
 
-    // ??AActor::Tick ??GameMode Tick 鋆⊥?撟?澆
+    // 在 AActor::Tick 或 GameMode Tick 裡每幀呼叫
     void Advance(float DeltaTime);
 };
 ```
 
-?見??舀?捆??debug?FLatentActionInfo` ??UE5.5+ ???臬?閬?撣豢楛?楷? async 隤儔???嚗? SpellRunner ?楊撟 Wait ?敞?頞喳???
-> 瘜冽?嚗A ?衣?銝? SpellRunner VM嚗?頂蝯勗??函蝡LatentActionManager ????皞 SpellRunner 撖虫??賂?撖阡?銝衣????詨撟曉???銝???寞?嚗?*?舀?扳??舫?? Tick ??甇???晞?*
+這樣效能可控、容易 debug。`FLatentActionInfo` 和 UE5.5+ 協程可在需要非常深的巢狀 async 語義時再考慮，但 SpellRunner 的跨幀 Wait 靠累加器足夠。
 
-#### ??嚗Array\<FBlockNode\> ?艘璅寧?閮擃摰?
-`TArray<T>` ?舫???潸??園??FBlockNode` ?怠?????嚗摰寞??璉萄?璅?deep copy嚗???璅?冽蝛箝?
-**?航炊??**嚗?```cpp
-TArray<FBlockNode> ThenBranch;  // ???游捆?璉萄?璅?deep copy
+> 注意：CA 瓦片不跑 SpellRunner VM，兩個系統完全獨立。FLatentActionManager 的壓力來源是 SpellRunner 實例數，實際並發量是個位數到幾十個，不是問題根源；**可控性才是選手動 Tick 的真正理由。**
+
+#### 坑三：TArray\<FBlockNode\> 遞迴樹的記憶體搬家
+
+`TArray<T>` 是連續值記憶體。`FBlockNode` 含子分支陣列，擴容時會整棵子樹 deep copy，且舊指標全部懸空。
+
+**錯誤做法**：
+```cpp
+TArray<FBlockNode> ThenBranch;  // ← 擴容時整棵子樹 deep copy
 ```
 
-**甇?Ⅱ??**嚗銝??甈邦嚗 `TUniquePtr`嚗?
+**正確做法**（單一擁有權樹，用 `TUniquePtr`）：
 ```cpp
 USTRUCT()
 struct FBlockNode {
     GENERATED_BODY()
     EBlockType Type;
-    // FName key嚗???FString嚗?FName ??int32 蝝Ｗ?嚗?頛?O(1)嚗??芸蝺刻陌??銝甈?    TMap<FName, FInstancedStruct> Params;
-    // 摮??臭???UPROPERTY嚗HT ?⊥?餈質馱 TUniquePtr嚗? BlockNode 銝?閬?BP 摨???
+    // FName key（不是 FString）：FName 是 int32 索引，比較 O(1)，且只在編譯期讀一次
+    TMap<FName, FInstancedStruct> Params;
+    // 子分支不加 UPROPERTY（UHT 無法追蹤 TUniquePtr，且 BlockNode 不需要 BP 序列化）
     TArray<TUniquePtr<FBlockNode>> ThenBranch;
     TArray<TUniquePtr<FBlockNode>> ElseBranch;
     TArray<TUniquePtr<FBlockNode>> LoopBody;
 };
-// 瘜冽?嚗Instruction嚗untime嚗?桐? FInstancedStruct Payload嚗???TMap嚗?//       FBlockNode嚗esign-time嚗 TMap<FName, ...>嚗pellCompiler 蝺刻陌??銝甈?```
+// 注意：FInstruction（runtime）用單一 FInstancedStruct Payload，不用 TMap；
+//       FBlockNode（design-time）用 TMap<FName, ...>，SpellCompiler 編譯時讀一次
+```
 
-`TUniquePtr` vs `TSharedPtr`嚗lockNode ?????臬?潛??嚗邦嚗?銝?閬??刻??詨??瑁?蝺?嚗 `TUniquePtr` 隤儔?渡移蝣箝verhead ?港???
-> BlockNode ?胯身閮???蝺刻陌銝甈～霈?瑁??? AST嚗?憿敶梢 spell 頛??嚗?敶梢瘥??瑁??靘踹?甇歹???M-1 ?挾撠望迤蝣箏恐???踹?銋?憭折?蝛??spell 頛??stall??
+`TUniquePtr` vs `TSharedPtr`：BlockNode 的擁有權是嚴格父→子（樹），不需要引用計數和執行緒鎖，用 `TUniquePtr` 語義更精確、overhead 更低。
+
+> BlockNode 是「設計完成後編譯一次、只讀執行」的 AST，這個問題只影響 spell 載入時期，不影響每幀執行。即便如此，在 M-1 階段就正確宣告，避免之後大量積木的 spell 載入期 stall。
+
 ---
 
-## 銝??獢頂蝯梢蝘餉?隡?
-> ??蝯?嚗?06 ??C# 瑼?17,529 銵?撘Ⅳ
+## 三、現有專案系統遷移評估
 
-| 蝟餌絞 | 銵 | Godot ?血? | ?瑞宏??漲 | UE5 撠? |
+> 掃描結果：106 個 C# 檔，17,529 行程式碼
+
+| 系統 | 行數 | Godot 耦合 | 遷移難度 | UE5 對應 |
 |------|------|-----------|---------|---------|
-| VM ?瑁?撅歹?ExecutionLoop / SpellCompiler嚗?| ~1,671 | 璆萎?嚗??GD.Print嚗?| **雿?* | 蝝?C++ struct/class嚗?仿?撖?|
-| ??質??惜嚗pellArray / BlockNode / Data嚗?| ~321 | ??| **雿?* | UE5 USTRUCT |
-| ??/Aura 蝟餌絞 | ~325 | ??| **雿?* | 蝝?C++ |
-| 敹怎/?遝蝟餌絞 | ~342 | ??| **雿?* | 蝝?C++ |
-| ?拙?/鋆?蝟餌絞 | ~302 | ??| **雿?* | 蝝?C++嚗??GAS ItemFragment |
-| ??賣?橘?SpellCaster / SpellRunner嚗?| ~1,650 | 璆萎? | **雿?* | 蝝?C++嚗pellRunner ?寧?? Tick 蝝臬??剁?閬?禮2-6 ??嚗?|
-| ?萎犖 AI嚗nemy / EnemyManager嚗?| ~1,000 | 雿?Vector3I ??FIntVector嚗?| **雿?銝?* | C++ ???嚗?????Behavior Tree |
-| 銝?璅⊥嚗ileWorld3D / Chunk3D嚗?| ~2,500 | 雿?Vector ?嚗?| **銝?* | C++ + GPU Compute嚗hase 3嚗?|
-| 摮?瑼?FlowSaveSystem嚗?| ~518 | 雿?user:// 頝臬?嚗?| **銝?* | UE FArchive + ?芾? JSON |
-| Main ?餈游? | ~2,969 | 擃?_Process / _Input嚗?| **銝?* | AGameMode + APlayerController |
-| 皜脫?嚗ileWorldRenderer3D嚗?| ~800 | 擃?ArrayMesh嚗?| **銝?擃?* | RealtimeMeshComponent |
-| UI嚗bilityEditorUI / ScriptCanvas嚗?| ~3,818 | **璆菟?**嚗??Control 蝭暺? | **擃?* | Slate SGraphEditor + UMG嚗??券?撖恬? |
+| VM 執行層（ExecutionLoop / SpellCompiler） | ~1,671 | 極低（只有 GD.Print） | **低** | 純 C++ struct/class，直接重寫 |
+| 技能資料層（SpellArray / BlockNode / Data） | ~321 | 無 | **低** | UE5 USTRUCT |
+| 元素/Aura 系統 | ~325 | 無 | **低** | 純 C++ |
+| 快照/回滾系統 | ~342 | 無 | **低** | 純 C++ |
+| 物品/裝備系統 | ~302 | 無 | **低** | 純 C++，可接 GAS ItemFragment |
+| 技能施放（SpellCaster / SpellRunner） | ~1,650 | 極低 | **低** | 純 C++，SpellRunner 改用手動 Tick 累加器（見 §2-6 坑二） |
+| 敵人 AI（Enemy / EnemyManager） | ~1,000 | 低（Vector3I → FIntVector） | **低-中** | C++ 狀態機，或升級為 Behavior Tree |
+| 世界模擬（TileWorld3D / Chunk3D） | ~2,500 | 低（Vector 型別） | **中** | C++ + GPU Compute（Phase 3） |
+| 存讀檔（FlowSaveSystem） | ~518 | 低（user:// 路徑） | **中** | UE FArchive + 自訂 JSON |
+| Main 遊戲迴圈 | ~2,969 | 高（_Process / _Input） | **中** | AGameMode + APlayerController |
+| 渲染（TileWorldRenderer3D） | ~800 | 高（ArrayMesh） | **中-高** | RealtimeMeshComponent |
+| UI（AbilityEditorUI / ScriptCanvas） | ~3,818 | **極高**（全是 Control 節點） | **高** | Slate SGraphEditor + UMG（完全重寫） |
 
-**?瑞宏瘥?嚗?*
-- ~60% 蝝?頛???撟曆??湔?神嚗?瘜?嚗身閮???
-- ~24% 瘛瑕? ???摩靽?嚗PI ?踵?
-- ~16% UI/皜脫? ??摰?閮剛?
+**遷移比例：**
+- ~60% 純邏輯 → 幾乎直接重寫（語法換，設計不換）
+- ~24% 混合 → 邏輯保留，API 替換
+- ~16% UI/渲染 → 完全重新設計
 
 ---
 
-## ?瑽??扯”
+## 四、架構對照表
 
 | Godot | UE5 C++ |
 |-------|---------|
@@ -159,37 +191,40 @@ struct FBlockNode {
 | `GD.Load<T>()` | `LoadObject<T>()` / `ConstructorHelpers::FObjectFinder` |
 | `ArrayMesh` | `URuntimeMeshComponent` / `UProceduralMeshComponent` |
 | `StandardMaterial3D` | `UMaterialInstanceDynamic` |
-| `async/await` | ?? Tick 蝝臬??剁?SpellRunner嚗? UE Coroutine嚗?.5+嚗???async嚗?|
-| `interface`嚗? C++ 蝟餌絞?? | **蝝??砍憿?* `class IFoo { virtual void Bar() = 0; }`嚗 UINTERFACE嚗?|
-| `interface`嚗?脩策 Blueprint / AActor嚗?| UE5 `UINTERFACE` + `IFoo`嚗???嚗?Cast\<IFoo\> ????|
+| `async/await` | 手動 Tick 累加器（SpellRunner）/ UE Coroutine（5.5+，複雜 async） |
+| `interface`（純 C++ 系統間） | **純虛擬基類** `class IFoo { virtual void Bar() = 0; }`（無 UINTERFACE） |
+| `interface`（暴露給 Blueprint / AActor） | UE5 `UINTERFACE` + `IFoo`（雙生宏），Cast\<IFoo\> 才有效 |
 
 ---
 
-## 鈭??挾撖虫?閮
+## 五、分階段實作計畫
 
-### M-0 ??皞???????
+### M-0 — 準備期（開始前）
 
-**??撌脣???2026-06-14嚗?**
-- [x] ??GitHub 撱箇???repo嚗ttps://github.com/tanyangbrocks/Skill-creator-UE5.git
-- [x] ?砍頝臬?嚗C:\Users\霅??許SkillCreatorUE5\`
-- [x] 銴ˊ????急?隞嗚??冗蝯?????鞈?
-- [x] 撱箇? `Source/SkillCreatorCore/`?Source/SkillCreatorRuntime/`?Source/SkillCreatorEditor/`
-- [x] 撱箇? `Plugins/AbilitySystem/`?Plugins/VoxelWorld/`?Plugins/SkillCreatorUI/`
-- [x] Godot `main` branch 撠?嚗eature/3d-cutover 撌脣?雿蛛?
-- [x] 摰? UE5.4+嚗脰?銝???摰?敺銵??寞郊撽?
+**✅ 已完成（2026-06-14）：**
+- [x] 在 GitHub 建立新 repo：https://github.com/tanyangbrocks/Skill-creator-UE5.git
+- [x] 本地路徑：`C:\Users\譚揚勳\SkillCreatorUE5\`
+- [x] 複製所有計畫文件、資料夾結構、世界觀資料
+- [x] 建立 `Source/SkillCreatorCore/`、`Source/SkillCreatorRuntime/`、`Source/SkillCreatorEditor/`
+- [x] 建立 `Plugins/AbilitySystem/`、`Plugins/VoxelWorld/`、`Plugins/SkillCreatorUI/`
+- [x] Godot `main` branch 封存（feature/3d-cutover 已合併）
+- [x] 安裝 UE5.4+（進行中 → 完成後執行下方步驟）
 
-**??UE5 鋆末敺??餃?嚗???嚗?**
+**⏳ UE5 裝好後立刻做（按順序）：**
 
-#### 甇仿? 1嚗遣蝡?UE5 C++ 蝛箏?獢??Ｙ? .uproject + Config/嚗?
-1. ?? UE5 Editor ??New Project ??Games ??Blank ??**C++**
-2. Location 閮剔 `C:\Users\霅??許`嚗roject Name 閮剔 `SkillCreatorUE5`
-3. Create Project ??蝑? VS 蝺刻陌
-4. 蝣箄??Ｙ?鈭?`SkillCreatorUE5.uproject`?Config/`?Source/SkillCreatorUE5/`
+#### 步驟 1：建立 UE5 C++ 空專案（產生 .uproject + Config/）
 
-> ?? UE5 ? Source/ 銝????撠?????閮?Module??銝嚗??Ｘ郊撽??渡???
-#### 甇仿? 2嚗遣蝡? Module ??Build.cs
+1. 開啟 UE5 Editor → New Project → Games → Blank → **C++**
+2. Location 設為 `C:\Users\譚揚勳\`，Project Name 設為 `SkillCreatorUE5`
+3. Create Project → 等待 VS 編譯
+4. 確認產生了 `SkillCreatorUE5.uproject`、`Config/`、`Source/SkillCreatorUE5/`
 
-瘥?Module ?閬???`.Build.cs`嚗E5 ??隤?璅∠?靘陷??
+> ⚠️ UE5 會在 Source/ 下產生一個與專案同名的預設 Module。先不刪，後面步驟再整理。
+
+#### 步驟 2：建立各 Module 的 Build.cs
+
+每個 Module 需要一個 `.Build.cs`，UE5 靠它認識模組依賴。
+
 **`Source/SkillCreatorCore/SkillCreatorCore.Build.cs`**
 ```csharp
 using UnrealBuildTool;
@@ -241,7 +276,7 @@ public class SkillCreatorEditor : ModuleRules
 }
 ```
 
-#### 甇仿? 3嚗遣蝡?Plugin ??.uplugin ?辣
+#### 步驟 3：建立 Plugin 的 .uplugin 文件
 
 **`Plugins/AbilitySystem/AbilitySystem.uplugin`**
 ```json
@@ -300,7 +335,7 @@ public class SkillCreatorEditor : ModuleRules
 }
 ```
 
-#### 甇仿? 4嚗? Plugin ??Build.cs
+#### 步驟 4：各 Plugin 的 Build.cs
 
 **`Plugins/AbilitySystem/Source/AbilitySystem/AbilitySystem.Build.cs`**
 ```csharp
@@ -331,7 +366,7 @@ public class VoxelWorld : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "RenderCore", "RHI",
             "SkillCreatorCore"
-            // RealtimeMeshComponent 敺??
+            // RealtimeMeshComponent 後面再加
         });
     }
 }
@@ -355,74 +390,98 @@ public class SkillCreatorUI : ModuleRules
 }
 ```
 
-#### 甇仿? 5嚗Ⅱ隤?Build
+#### 步驟 5：確認 Build
 
-?? UE5 Editor ???喲 `.uproject` ??Generate Visual Studio project files ??VS ?? ??Rebuild All
+關閉 UE5 Editor → 右鍵 `.uproject` → Generate Visual Studio project files → VS 開啟 → Rebuild All
 
-蝣箄? 0 ?航炊敺脣 **M-1**??
+確認 0 錯誤後進入 **M-1**。
+
 ---
 
-### M-1 ???詨?鞈?撅歹?雿◢?迎????嚗?
-> ?格?嚗遣蝡?C++ 鞈?蝯?嚗?敺?蝟餌絞???亙蝷?
-- [ ] `BlockNode.h/cpp`嚗?*runtime ?嚗STRUCT嚗UniquePtr 璅對?**嚗????`TArray<TUniquePtr<FBlockNode>>`嚗???UPROPERTY嚗? 禮2-6 ??嚗?  - ?? ??瑁????伐?**銝** M-9 Slate editor ?函?蝭暺???  - M-9 ??`UMyEdGraphNode : UEdGraphNode` ??editor 撠惇?嚗??交?敺?FBlockNode 頧??
-- [ ] `BlockType.h`嚗pCode enum ??UE5 UENUM
-- [ ] `SpellArray.h/cpp`嚗pellSlot?pellArray?ngraveData
-- [ ] `ManaType.h/cpp`嚗anaTypeRegistry嚗?8 蝔桀蝷?MP嚗?- [ ] `WorldScale.h`嚗虜?賂?Grain?layerW?layerH 蝑?
-- [ ] `GridPos.h`嚗IntVector wrapper嚗? Manhattan distance ?寞?嚗? **敹?鋆?`GetTypeHash` 隞乩噶雿?TMap key**嚗?  ```cpp
-  // FIntVector ?祈澈??UE5 撌脫? GetTypeHash嚗??芾? wrapper 敹?????  FORCEINLINE uint32 GetTypeHash(const FGridPos& Pos)
+### M-1 — 核心資料層（低風險，最先做）
+
+> 目標：建立 C++ 資料結構，讓後續系統有型別基礎
+
+- [x] `BlockNode.h/cpp`：**runtime 型別（USTRUCT，TUniquePtr 樹）**，子分支用 `TArray<TUniquePtr<FBlockNode>>`，不加 UPROPERTY（見 §2-6 坑三）
+  - ⚠️ 這是執行期型別，**不是** M-9 Slate editor 用的節點型別
+  - M-9 的 `UMyEdGraphNode : UEdGraphNode` 是 editor 專屬型別，載入時從 FBlockNode 轉換過去
+- [x] `BlockType.h`：OpCode enum → UE5 UENUM
+- [x] `SpellArray.h/cpp`：SpellSlot、SpellArray、EngraveData
+- [x] `ManaType.h/cpp`：ManaTypeRegistry（18 種基礎 MP）
+- [x] `WorldScale.h`：常數（Grain、PlayerW、PlayerH 等）
+- [x] `GridPos.h`：FIntVector wrapper（加 Manhattan distance 方法）+ **必須補 `GetTypeHash` 以便作 TMap key**：
+  ```cpp
+  // FIntVector 本身在 UE5 已有 GetTypeHash，但自訂 wrapper 必須手動加
+  FORCEINLINE uint32 GetTypeHash(const FGridPos& Pos)
   {
       uint32 Hash = GetTypeHash(Pos.X);
       Hash = HashCombine(Hash, GetTypeHash(Pos.Y));
       return HashCombine(Hash, GetTypeHash(Pos.Z));
   }
-  // 憒? ChunkMap ?湔??FIntVector 雿?key嚗?銝?閬??ａ挾嚗E5 撌脣撱綽?
+  // 如果 ChunkMap 直接用 FIntVector 作 key，則不需要上面這段（UE5 已內建）
   ```
-- [ ] `MaterialType.h`嚗ile ?釭 enum嚗?*??摰儔 gameplay ????**嚗?  ```cpp
+- [x] `MaterialType.h`：Tile 材質 enum，**同時定義 gameplay 分類旗標**：
+  ```cpp
   enum class ETileCategory : uint8 {
-      GameplayBlock,   // 撖血?蝣唳? tile嚗????/??質風?橘???CPU authoritative嚗? GPU
-      VisualCA,        // 蝝?閬?CA ?湔嚗???鋆ˇ瘞湔?嚗? GPU 璅⊥嚗sync readback ?迂 ?? 撟撱園
+      GameplayBlock,   // 實心碰撞 tile（石頭/城牆/技能護盾）→ CPU authoritative，即時推 GPU
+      VisualCA,        // 純視覺 CA 擴散（煙霧/裝飾水流）→ GPU 模擬，async readback 允許 ≤1 幀延遲
   };
   ```
-  ?? ??????M-10 ???嗥??箇?嚗 M-1 撠勗???蝢拇?璆?閬?禮2-6 M-10 鋆?隤芣?嚗?
-Build 蝣箄? 0 ?航炊嚗脣 M-2??
+  ⚠️ 這條分類是 M-10 雙軌制的基礎，在 M-1 就必須定義清楚（見 §2-6 M-10 補充說明）
+
+Build 確認 0 錯誤，進入 M-2。
+
 ---
 
-### M-2 ??VM ?瑁?撅?
-> ?格?嚗 UE5 C++ 鋆∟?韏瑟???VM嚗?靘陷隞颱?皜脫?
+### M-2 — VM 執行層
 
-- [ ] `Instruction.h/cpp`嚗?*?桐? Payload 閮剛?嚗???TMap嚗?*
+> 目標：在 UE5 C++ 裡跑起技能 VM，不依賴任何渲染
+
+- [x] `Instruction.h/cpp`：**單一 Payload 設計（不用 TMap）**
   ```cpp
   struct FInstruction {
       EOpCode OpCode;
-      FInstancedStruct Payload;  // ???OpCode ?勗?瘙箏?嚗??閬?key ?亥岷
+      FInstancedStruct Payload;  // 型別由 OpCode 隱式決定，不需要 key 查詢
   };
-  // ?瑁???Instr.Payload.Get<FDamageArgs>()
-  // 瘥車 OpCode 撠?銝?摰? Args struct嚗MoveArgs / FDamageArgs / FWaitArgs ?佗?
+  // 執行時：Instr.Payload.Get<FDamageArgs>()
+  // 每種 OpCode 對應一個固定的 Args struct（FMoveArgs / FDamageArgs / FWaitArgs …）
   ```
-  ?? 銝???`TMap<FString, FInstancedStruct>`嚗String key 瘥活?瑁??賢?摮葡??嚗?銝???`TMap<FName, FInstancedStruct>`嚗Name 瘥?FString 敹恬?雿???Map ?亥岷 overhead嚗?opcode ?祈澈撌脣??亙??伐??湔 Get\<T\>() ?舀??芾楝敺?- [ ] `ExecutionContext.h/cpp`嚗??elegate 瘜典嚗ntityQuery?aycastQuery嚗?- [ ] `ExecutionLoop.h/cpp`嚗pCode dispatch table嚗witch/case嚗????~50 ??opcode嚗?- [ ] `SpellCompiler.h/cpp`嚗lockNode AST ??Instruction list
-- [ ] `SpellRunner.h/cpp`嚗楊撟?瑁?摰孵嚗???Tick 蝝臬??剁?閬?禮2-6 ??嚗?- [ ] ?桀?皜祈岫嚗 UE5 Automation Test Framework 頝嗾???質??
+  ⚠️ 不要用 `TMap<FString, FInstancedStruct>`（FString key 每次執行都做字串雜湊）也不要用 `TMap<FName, FInstancedStruct>`（FName 比 FString 快，但仍有 Map 查詢 overhead）；opcode 本身已告知型別，直接 Get\<T\>() 是最優路徑
+- [x] `ExecutionContext.h/cpp`：狀態、delegate 注入（EntityQuery、RaycastQuery）
+- [x] `ExecutionLoop.h/cpp`：OpCode dispatch table（switch/case，對應現有 ~50 個 opcode）
+- [x] `SpellCompiler.h/cpp`：BlockNode AST → Instruction list
+- [x] `SpellRunner.h/cpp`：跨幀執行容器（手動 Tick 累加器，見 §2-6 坑二）
+- [x] 單元測試：用 UE5 Automation Test Framework 跑幾個技能腳本
+
 ---
 
-### M-3 ??銝?璅⊥嚗PU ??
+### M-3 — 世界模擬（CPU 版）
 
-> ?格?嚗ileWorld3D + CA ??C++ 鋆∟?嚗銝? GPU
+> 目標：TileWorld3D + CA 在 C++ 裡跑，暫不做 GPU
 
-- [ ] `TileCell.h`嚗?*蝝?POD 蝯?嚗?怠?砍???*
+- [x] `TileCell.h`：**純 POD 結構，只含基本型別**
   ```cpp
-  struct FTileCell {         // 蝯?蝜潭 UObject嚗???UObject ??
-      uint8  MaterialID;     // ?亥”??ID嚗?摮?璅?      uint8  CA_State;       // CA 璅⊥???      uint8  Category;       // ETileCategory嚗ameplayBlock / VisualCA嚗?      uint8  Flags;          // dirty / occupied ??  };
-  // ??? Thread FArchive ????摰嚗??湔嚗?閫貊１ GC / UObject 蝟餌絞嚗?  // ??蝳迫??UMaterialInterface*?String??隞颱? UObject 甈?
-  // Game Thread 頧?嚗 MaterialID ??MaterialRegistry嚗???UMaterialInstanceDynamic*
+  struct FTileCell {         // 絕不繼承 UObject，不含 UObject 指標
+      uint8  MaterialID;     // 查表用 ID，不存指標
+      uint8  CA_State;       // CA 模擬狀態
+      uint8  Category;       // ETileCategory（GameplayBlock / VisualCA）
+      uint8  Flags;          // dirty / occupied …
+  };
+  // ✅ 背景 Thread FArchive 反序列化安全（純整數，不觸碰 GC / UObject 系統）
+  // ❌ 禁止加 UMaterialInterface*、FString、或任何 UObject 欄位
+  // Game Thread 轉化：拿 MaterialID 查 MaterialRegistry，換成 UMaterialInstanceDynamic*
   ```
-- [ ] `Chunk3D.h/cpp`嚗?6糧 FTileCell ??? + dirty tracking
-- [x] `TileWorld3D.h/cpp`嚗hunk 摮嚗TMap<FIntVector, TUniquePtr<FChunk3D>>`嚗IntVector 撌脫? UE5 ?批遣 hash嚗etTile/SetTile?A ?湔餈游?
-- [ ] `WorldSaveData.h/cpp`嚗hunk 鈭脖?摨???`FArchive << uint8`嚗? POD嚗ackground thread 摰嚗?- [ ] `MapGenerator3D.h/cpp`嚗?摨敶Ｙ???Perlin noise ??tile嚗?- [ ] ?亙 UE5 Task Graph ???瑁?蝺?Chunk ?湔
+- [x] `Chunk3D.h/cpp`：16³ FTileCell 陣列 + dirty tracking
+- [x] `TileWorld3D.h/cpp`：Chunk 字典（`TMap<FIntVector, TUniquePtr<FChunk3D>>`，FIntVector 已有 UE5 內建 hash）、GetTile/SetTile、CA 更新迴圈
+- [x] `WorldSaveData.h/cpp`：Chunk 二進位序列化（`FArchive << uint8`，純 POD，background thread 安全）
+- [x] `MapGenerator3D.h/cpp`：程序地形生成（Perlin noise → tile）
+- [x] 接入 UE5 Task Graph 做多執行緒 Chunk 更新
 
 ---
 
-### M-4 核心實體 Gameplay 層（設計決策已定稿）
+### M-4 — 核心實體 Gameplay 層（設計決策已定稿）
 
-> 目標：玩家、敵人、戰鬥狀態的 C++ 骨架，純 code-only（不開 Editor）
+> 目標：玩家和敵人在世界裡能移動、互動
 
 #### 已確認決策（2026-06-14）
 
@@ -442,22 +501,22 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
 #### 待建立檔案清單
 
 **SkillCreatorCore（純 C++，無 gameplay 依賴）**
-- [ ] `Source/SkillCreatorCore/Public/CharacterStats.h` — USTRUCT(BlueprintType)，移植自 CharacterStats.cs 的 30+ float 欄位（MaxHpBase=100, MaxMpBase=100, MpRegenRate=8, CritRate=0.05, CritDmgMult=1.5, MoveSpeedMult=1.0 等）
-- [ ] `Source/SkillCreatorCore/Public/IElementalTarget.h` — 純虛擬 C++ interface（非 UINTERFACE）：`ApplyAura / RemoveAura`
-- [ ] `Source/SkillCreatorCore/Public/ICreature.h` — 純虛擬 C++ interface：`GetHp / GetMaxHp / IsAlive / GetTilePos`
+- [x] `Source/SkillCreatorCore/Public/CharacterStats.h` — USTRUCT(BlueprintType)，移植自 CharacterStats.cs 的 30+ float 欄位（MaxHpBase=100, MaxMpBase=100, MpRegenRate=8, CritRate=0.05, CritDmgMult=1.5, MoveSpeedMult=1.0 等）
+- [x] `Source/SkillCreatorCore/Public/IElementalTarget.h` — 純虛擬 C++ interface（非 UINTERFACE）：`ApplyAura / RemoveAura`
+- [x] `Source/SkillCreatorCore/Public/ICreature.h` — 純虛擬 C++ interface：`GetHp / GetMaxHp / IsAlive / GetTilePos`
 
 **SkillCreatorRuntime（Gameplay Module）**
-- [ ] `Source/SkillCreatorRuntime/Public/ASkillCreatorCharacter.h + cpp` — ACharacter 子類，持有 HP/MP、UCharacterStateComponent、UElementalAuraComponent，死亡/重生存根
-- [ ] `Source/SkillCreatorRuntime/Public/ASkillCreatorPlayerController.h + cpp` — APlayerController，EnhancedInput 存根，施法觸發存根（M-5 填實）
-- [ ] `Source/SkillCreatorRuntime/Public/UCharacterStateComponent.h + cpp` — UActorComponent：float Stamina=100, MentalEnergy=100, Mood=100；Tick 更新存根（M-7 填實）
-- [ ] `Source/SkillCreatorRuntime/Public/UElementalAuraComponent.h + cpp` — FAuraEntry{EElementType, float Remaining}；TArray<FAuraEntry> Auras；聚合輸出：SpeedPenalty, bIsImmobilized, DamageTakenBonus, DefensePenalty；Advance(DeltaTime)
-- [ ] `Source/SkillCreatorRuntime/Public/AEnemy.h + cpp` — APawn，EEnemyType(Melee/Ranged/Patrol/Heavy)，float MoveInterval=0.4f 計時器，離散 tile 移動，實作 ICreature + IElementalTarget
-- [ ] `Source/SkillCreatorRuntime/Public/AEnemyAIController.h + cpp` — AAIController；Possess() 時設定 Blackboard + 啟動 BT（BT asset 在 M-8 補）
-- [ ] `Source/SkillCreatorRuntime/Public/UBTTask_MoveOnGrid.h + cpp` — 向 Blackboard 取目標 tile，執行一步 tile A*（A* 完整實作 → M-5，M-4 先做 Manhattan 直線移動存根）
-- [ ] `Source/SkillCreatorRuntime/Public/UBTTask_AttackPlayer.h + cpp` — 攻擊判定存根（M-5 接 SpellCaster 後填實）
-- [ ] `Source/SkillCreatorRuntime/Public/UBTService_UpdateTarget.h + cpp` — 每幀更新 Blackboard 中的玩家位置 key
-- [ ] `Source/SkillCreatorRuntime/Public/AEnemyManager.h + cpp` — 敵人生成/管理 Actor
-- [ ] `Source/SkillCreatorRuntime/Public/UCombatStateSubsystem.h + cpp` — UGameInstanceSubsystem：bInCombat, BattleId(FGuid), CastCount/DamageDealt/KillCount, OutOfCombatTimeout=5.0f, EnterCombat/ExitCombat
+- [x] `Source/SkillCreatorRuntime/Public/ASkillCreatorCharacter.h + cpp` — ACharacter 子類，持有 HP/MP、UCharacterStateComponent、UElementalAuraComponent，死亡/重生存根
+- [x] `Source/SkillCreatorRuntime/Public/ASkillCreatorPlayerController.h + cpp` — APlayerController，EnhancedInput 存根，施法觸發存根（M-5 填實）
+- [x] `Source/SkillCreatorRuntime/Public/UCharacterStateComponent.h + cpp` — UActorComponent：float Stamina=100, MentalEnergy=100, Mood=100；Tick 更新存根（M-7 填實）
+- [x] `Source/SkillCreatorRuntime/Public/UElementalAuraComponent.h + cpp` — FAuraEntry{EElementType, float Remaining}；TArray<FAuraEntry> Auras；聚合輸出：SpeedPenalty, bIsImmobilized, DamageTakenBonus, DefensePenalty；Advance(DeltaTime)
+- [x] `Source/SkillCreatorRuntime/Public/AEnemy.h + cpp` — APawn，EEnemyType(Melee/Ranged/Patrol/Heavy)，float MoveInterval=0.4f 計時器，離散 tile 移動，實作 ICreature + IElementalTarget
+- [x] `Source/SkillCreatorRuntime/Public/AEnemyAIController.h + cpp` — AAIController；Possess() 時設定 Blackboard + 啟動 BT（BT asset 在 M-8 補）
+- [x] `Source/SkillCreatorRuntime/Public/UBTTask_MoveOnGrid.h + cpp` — 向 Blackboard 取目標 tile，執行一步 tile A*（A* 完整實作 → M-5，M-4 先做 Manhattan 直線移動存根）
+- [x] `Source/SkillCreatorRuntime/Public/UBTTask_AttackPlayer.h + cpp` — 攻擊判定存根（M-5 接 SpellCaster 後填實）
+- [x] `Source/SkillCreatorRuntime/Public/UBTService_UpdateTarget.h + cpp` — 每幀更新 Blackboard 中的玩家位置 key
+- [x] `Source/SkillCreatorRuntime/Public/AEnemyManager.h + cpp` — 敵人生成/管理 Actor
+- [x] `Source/SkillCreatorRuntime/Public/UCombatStateSubsystem.h + cpp` — UGameInstanceSubsystem：bInCombat, BattleId(FGuid), CastCount/DamageDealt/KillCount, OutOfCombatTimeout=5.0f, EnterCombat/ExitCombat
 
 #### Godot 對照原始碼
 
@@ -479,128 +538,190 @@ Build 蝣箄? 0 ?航炊嚗脣 M-2??
 - BT 路徑中的完整 tile A* 實作 → M-5
 
 ---
-### M-5 ????賣?暹??
-> ?格?嚗摰嗉?賣??踝?VM ?瑁?蝯?敶梢銝?
 
-- [ ] `SpellCaster.h/cpp`嚗ryCast????MP??曉??- [ ] `SpellProjectile.h/cpp`嚗?撠蝘餃??１?銝剖?隤?- [ ] ?仿?SpellRunner ??TileWorld3D嚗??賣??耨??tile???貊?嚗?- [ ] ?仿?SpellRunner ??EnemyManager嚗摰喋?嗆???
+### M-5 — 技能施放整合
+
+> 目標：玩家能施放技能，VM 執行結果影響世界
+
+**已完成（2026-06-16）：**
+- [x] `ESkillElementType`（ElementType.h）、`FElementalStatusEffect`（5 具體效果）、`FElementalReactionTable`（22 條靜態反應）
+- [x] `UElementalAuraComponent`：Apply/ApplyImmediate/ApplyFreeze/ApplySlow 完整實作（冷卻計時、Aura 消耗、效果 tick、RecalcAggregates）
+- [x] `MaterialRegistry`：`FMaterialData.NativeElement`（`ESkillElementType`）欄位，17 種材質映射
+- [x] `TileWorld3D`：`CheckElementalCaReactions`（Water→Sand 0.5%、Lava+Water→Stone+Steam 3%）+ `ApplyElementalImpact`（沸騰/流沙/燃燒）
+
+**待完成：**
+- [ ] `SpellCaster.h/cpp`：TryCast、消耗 MP、施放冷卻
+- [ ] `SpellProjectile.h/cpp`：投射物移動、碰撞、命中回調
+- [ ] `ExecuteContactHit()`：Contact 命中判定（3D 向前掃描 MeleeRange=3 格）+ `FActionBus`（DamageShield/DeathGuard 攔截管線，`FPlatformTime::Seconds()` 計時）
+- [ ] 接通 SpellRunner ↔ TileWorld3D（技能效果修改 tile、爆炸等）
+- [ ] 接通 SpellRunner ↔ EnemyManager（傷害、控制效果）
 
 ---
 
-### M-6 ??皜脫?嚗MC + ?箇?閬死嚗?
-> ?格?嚗??隞交迤蝣粹＊蝷綽??衣??????釭
+### M-6 — 渲染（RMC + 基礎視覺）
 
-> ?? **M-6 ?????捱摰?Mesh Section 蝎漲**嚗? 
-> ?? Chunk = 1 RMC Section? Grain 64+ 銝???舫? ~9,000 chunks ??9,000 Draw Calls ??Render Thread ???? 
-> **閫??嚗ega-Chunk嚗??4?4 = 64糧嚗??箔???Section ??鈭文雿?*嚗?> - 4?4?4 ??16糧 chunk ?梁銝??RMC Section嚗?? Section ?詨??啣嗾??> - ?嗡葉隞颱?撠?chunk dirty ????Task Graph 鋆⊿?蝞??64糧 ??? Greedy Mesh ??銝甈⊥??Section
-> - 甇文?瘜? Draw Call ?????詨?詨??????Grain 64+ 銝雁????> - M-6 ???臬? 1:1 撖虫?撽?甇?Ⅱ?改?**M-6 銝?????? Mega-Chunk 璅∪?**
+> 目標：世界可以正確顯示，瓦片有顏色/材質
 
-- [x] 撱箇? `VoxelWorldRenderer` Actor嚗???RealtimeMeshComponent嚗?- [x] 蝘餅? Greedy Meshing ?摩嚗# ??C++嚗?蝞?銝?嚗?- [x] **Mega-Chunk嚗?4糧嚗???RMC Section ?桐?**嚗???1:1 chunk ??section
-- [x] 撠?chunk dirty ????Task Graph 鋆⊿?蝞?撅?Mega-Chunk ??Greedy Mesh
-- [x] ?箇??釭嚗???vertex color ???tile 憿?
-- [ ] ?豢??批嚗?D 閬?嚗?曌?頧??脰憚蝮格嚗?
+> ⚠️ **M-6 開始前必須決定 Mesh Section 粒度**：  
+> 「1 Chunk = 1 RMC Section」在 Grain 64+ 下視野內可達 ~9,000 chunks → 9,000 Draw Calls → Render Thread 過載。  
+> **解法：Mega-Chunk（4×4×4 = 64³）作為一個 Section 的提交單位**：
+> - 4×4×4 個 16³ chunk 共用一個 RMC Section，視野內 Section 數壓到幾十個
+> - 其中任一小 chunk dirty → 在 Task Graph 裡重算整個 64³ 區域的 Greedy Mesh → 一次更新 Section
+> - 此做法讓 Draw Call 降回個位數到數十個，才能在 Grain 64+ 下維持幀率
+> - M-6 初版可先 1:1 實作驗證正確性；**M-6 上線前必須切換到 Mega-Chunk 模式**
+
+- [x] 建立 `VoxelWorldRenderer` Actor（持有 RealtimeMeshComponent）
+- [x] 移植 Greedy Meshing 邏輯（C# → C++，演算法不變）
+- [x] **Mega-Chunk（64³）作為 RMC Section 單位**，不是 1:1 chunk → section
+- [x] 小 chunk dirty 時，在 Task Graph 裡重算所屬 Mega-Chunk 的 Greedy Mesh
+- [x] 基礎材質：先用 vertex color 區分 tile 類型
+- [ ] 相機控制（3D 視角，滑鼠旋轉，捲輪縮放）
+
 ---
 
-### M-7 ??摮?瑼?
-> ?格?嚗??脰???+ 銝???隞交?銋?
+### M-7 — 存讀檔
 
-> **瘛瑕??澆?瘙箇?嚗??券?? JSON嚗?*嚗?> - **Chunk 鞈?** ??蝝??脖? FArchive嚗???憭扼??嚗inary 敹?嚗?> - **??賜? / 閫鋆?** ??JSON嚗???撠?頛銝甈∴???瑞宏摰寞?嚗?> - ?券?嫣??脖?撠?spell 鞈??舫?摨血極蝔?~2,000 ??FBlockNode ??JSON 閫?? ??20ms嚗??脣???銝甈∴?摰銝?園
+> 目標：角色資料 + 世界狀態可以持久化
+
+> **混合格式決策（不全面拋棄 JSON）**：
+> - **Chunk 資料** → 純二進位 FArchive（資料量大、頻率高，binary 必要）
+> - **技能組 / 角色裝備** → JSON（資料量小，載入一次，版本遷移容易）
+> - 全面改二進位對 spell 資料是過度工程：~2,000 個 FBlockNode 的 JSON 解析 ≤ 20ms，遊戲啟動跑一次，完全不是瓶頸
 >
-> ?? **Grain 64+ ??撖衣?豢 Chunk 銝脫?嚗???JSON**嚗?> - ?拙振蝘餃???脣閬???chunk 敹???background thread ???? + 撱?Greedy Mesh
-> - 銝?其蜓?瑁?蝺? ??撱箇? `ChunkStreamingManager`嚗E5 `AsyncTask` 蝞∠?鞎痊 chunk 頛
+> ⚠️ **Grain 64+ 的真實瓶頸是 Chunk 串流，不是 JSON**：
+> - 玩家移動時新進入視野的 chunk 必須在 background thread 反序列化 + 建 Greedy Mesh
+> - 不能在主執行緒做 → 建立 `ChunkStreamingManager`，UE5 `AsyncTask` 管線負責 chunk 載入
 
-- [x] `FlowSaveSystem.h/cpp`嚗Archive 鈭脖?嚗hunk嚗? JSON嚗haracter/spell嚗毽??- [x] `CharacterSaveData.h/cpp`嚗pellGroup?anaSlots?????JSON 摨???
-- [x] `ChunkStreamingManager.h/cpp`嚗摰嗥宏?? async ???? chunk嚗UE::Tasks::Launch` ??`AsyncTask`嚗?- [x] Chunk 鈭脖?摮?嚗FArchive <<` ??摮??? TileCell ???嚗?- [x] ?????摮?嚗???Godot ?撽?鞈?甇?Ⅱ??
----
-
-### M-8 ???箇? HUD嚗MG嚗?
-> ?格?嚗? HUD ?臭誑?嚗??賜楊頛臬??蝪∠?
-
-- [x] HP / MP 璇?1?? 璇???賜????Ｙ?嚗?- [x] ??賜?菜?嚗?0 ?潘?
-- [x] ??賢?銵剁??舫????踝?
-- [x] 蝪⊥?蝛蝺刻摩?剁??怎 ListView ?嚗??喳??賢?蝥?嚗?
----
-
-### M-9 ??蝛蝺刻摩??UI嚗late嚗?
-> ?格?嚗???ScriptCanvas ?嚗?璅??Godot ?
-
-> **runtime / editor ??**嚗-1 ??`FBlockNode`嚗STRUCT + TUniquePtr 璅對??臬銵??嚗??湔?冽 Slate?-9 ??`UMyEdGraphNode : UEdGraphNode`嚗Object嚗C 蝞∠?嚗 editor 撠惇????交??賣???甈∟???`FBlockNode` ??`UMyEdGraphNode`嚗摮???頧??見 Slate ?臭誑??UObject ??DetailsView ?芸??? UPROPERTY ??UI ?批???銵?摰銝? GC 敶梢??
-- [x] ?芾? `UMyEdGraphNode : UEdGraphNode`嚗???FBlockNode嚗???EBlockType ??UPROPERTY Params嚗?- [x] ?芾? `SGraphPanel`嚗??函撣?????詻??嚗?- [x] 隤輯?歹?蝛摨怠甈?????憿?
-- [x] 蝛?∠?嚗＊蝷粹??憛???SpinBox / OptionButton嚗?- [x] ?脣?撽??摩嚗? M-1 鞈?撅斗窒?剁?
-- [x] ??賜???嚗 ?蛛?5 蝯?
+- [x] `FlowSaveSystem.h/cpp`：FArchive 二進位（chunk）+ JSON（character/spell）混合
+- [x] `CharacterSaveData.h/cpp`：SpellGroup、ManaSlots、裝備、物品（JSON 序列化）
+- [x] `ChunkStreamingManager.h/cpp`：玩家移動時 async 預載附近 chunk（`UE::Tasks::Launch` 或 `AsyncTask`）
+- [x] Chunk 二進位存讀（`FArchive <<` 運算子序列化 TileCell 陣列）
+- [x] 遊戲啟動時讀存檔，對照 Godot 版本驗證資料正確性
 
 ---
 
-### M-10 ??GPU CA嚗ompute Shader嚗?璅?
+### M-8 — 基礎 HUD（UMG）
 
-> ?格?嚗rain 64+ 銝? CA 璅⊥??舀????
-#### ?? ???塚?Hybrid嚗瑽?CPU authoritative + GPU simulation
+> 目標：有 HUD 可以遊玩，技能編輯器先用最簡版
 
-**?詨?蝝?**嚗pellRunner VM?鈭?AI 撠楝?RaycastQuery`嚗??寞?瘝? tile???券??CPU ?瑁?嚗-2/M-4嚗???閬??胯?摮?隞暻?tile???單?蝑???
-憒? GPU CA ?誨 CPU tile ???嚗PU 瘥活?亥岷?賡?閬?GPU Readback嚗? GPU fence嚗? pipeline stall ???菜?????賢?Ｕ?
-**閫??嚗??胯PU ?誨 CPU????PU ??CPU??*嚗?
-| 鞈? | 雿蔭 | 隤芣? |
+- [x] HP / MP 條（1–3 條依技能組動態產生）
+- [x] 技能熱鍵欄（10 格）
+- [x] 技能列表（可點擊選技能）
+- [x] 簡易積木編輯器（暫用 ListView 呈現，拖曳功能後續補）
+
+---
+
+### M-9 — 積木編輯器 UI（Slate）
+
+> 目標：完整 ScriptCanvas 功能，對標現有 Godot 版本
+
+> **runtime / editor 型別分離**：M-1 的 `FBlockNode`（USTRUCT + TUniquePtr 樹）是執行期型別，不直接用於 Slate。M-9 的 `UMyEdGraphNode : UEdGraphNode`（UObject，GC 管理）是 editor 專屬型別。載入技能時做一次轉換：`FBlockNode` → `UMyEdGraphNode`；儲存時反向轉換。這樣 Slate 可以用 UObject 的 DetailsView 自動生成 UPROPERTY 的 UI 控制項，而執行期完全不受 GC 影響。
+
+- [x] 自訂 `UMyEdGraphNode : UEdGraphNode`（對應 FBlockNode，持有 EBlockType 和 UPROPERTY Params）
+- [x] 自訂 `SGraphPanel`（積木畫布，拖曳、磁吸、連結）
+- [x] 調色盤（積木庫側欄，搜尋、分類）
+- [x] 積木卡片（顯示類型色塊、參數 SpinBox / OptionButton）
+- [x] 儲存驗證邏輯（從 M-1 資料層沿用）
+- [x] 技能組切換（V 鍵，5 組）
+
+---
+
+### M-10 — GPU CA（Compute Shader，長期目標）
+
+> 目標：Grain 64+ 世界 CA 模擬達到可接受幀率
+
+#### ⚠️ 雙軌制（Hybrid）架構：CPU authoritative + GPU simulation
+
+**核心約束**：SpellRunner VM、敵人 AI 尋路、`RaycastQuery`（「前方有沒有 tile」）全部在 CPU 執行（M-2/M-4）。它們需要的是「哪個格子有什麼 tile」的即時答案。
+
+如果 GPU CA 取代 CPU tile 陣列，CPU 每次查詢都需要 GPU Readback（等 GPU fence）→ pipeline stall → 抵消所有效能優勢。
+
+**解法：不是「GPU 取代 CPU」，而是「GPU 加速 CPU」**：
+
+| 資料 | 位置 | 說明 |
 |------|------|------|
-| `Chunk3D` tile ??? | **CPU**嚗偶???? | AI / SpellRunner / Raycast ??authoritative source |
-| GPU Tile Buffer | **GPU VRAM** | Compute Shader 璅⊥?函??∪?嚗?撟敺?CPU sync |
-| Simulation 蝯? | GPU ??CPU嚗?*async嚗??郊**嚗?| CA 璅⊥摰?撌桃?潘?dirty set嚗甇亙神??CPU tile ??? |
+| `Chunk3D` tile 陣列 | **CPU**（永遠保留） | AI / SpellRunner / Raycast 的 authoritative source |
+| GPU Tile Buffer | **GPU VRAM** | Compute Shader 模擬用的鏡像，每幀從 CPU sync |
+| Simulation 結果 | GPU → CPU（**async，非同步**） | CA 模擬完的差異格（dirty set）異步寫回 CPU tile 陣列 |
 
-**雿???嚗hase B嚗rain 32~64嚗?*嚗?- GPU ?芣芋?祉?閬死? gameplay 蝣唳???摮?CA嚗??扼?擃????恬?
-- ?瑟? gameplay 蝣唳??′?豢憛?瘜亙???准???靘??CPU `Chunk3D`
-- GPU simulation ???撖怠???閬箏惜 mesh 鞈???銝神??tile ???
+**低階做法（Phase B，Grain 32~64）**：
+- GPU 只模擬純視覺、無 gameplay 碰撞的粒子 CA（煙霧、流體擴散動畫）
+- 具有 gameplay 碰撞的硬核方塊（泥土、石頭、城牆）依然在 CPU `Chunk3D`
+- GPU simulation 的結果只寫回「視覺層 mesh 資料」，不寫回 tile 陣列
 
-**擃???嚗hase C嚗???**嚗?- ???CA 璅⊥蝘餃 GPU嚗??冽? chunk update ?望??恬??芣? dirty tile ?榆?圈??甇?readback ??CPU嚗??舀??buffer嚗?- SpellRunner VM?I 蝑?CPU 蝟餌絞霈?啁??胯?憭?1 撟?? tile ???acceptable latency嚗?- ?芯???AI ?陛?桃?撖阡??菜葫銋宏??Compute Shader嚗??賢祕?曄?甇???? GPU Gameplay 餈游???
-**M-10 撖虫???**嚗?- [ ] 瘙箏? Phase B 蝑嚗?閬?CA ? or Hybrid readback嚗?????CPU tile ???
-- [ ] 閮剛? GPU Tile Buffer ?澆?嚗? tile 2-4 byte ???嚗??CA 閬死撅?tile
-- [ ] 撖虫?璉?潘?checkerboard嚗ompute Shader嚗圾瘙箔蒂銵神?亦奎?哨?
-- [ ] RDG `FRDGBuilder` ?游?嚗?撟 dispatch嚗eadback ??dirty set嚗sync ?神
-- [ ] Chunk ??鈭斗??摩嚗PU ??CPU ?郊嚗sync ping-pong buffer嚗?- [ ] ?皜祈岫嚗rain 64 ? 8 chunk radius 蝬剜? 60fps嚗PU AI/Raycast 撱園 ??1 frame
+**高階做法（Phase C，遠期）**：
+- 所有 CA 模擬移到 GPU，但在每 chunk update 週期末，只把 dirty tile 的差異集合異步 readback 到 CPU（不是整個 buffer）
+- SpellRunner VM、AI 等 CPU 系統讀到的是「最多 1 幀舊」的 tile 狀態（acceptable latency）
+- 未來若 AI 和簡單的實體偵測也移到 Compute Shader，才能實現真正的「純 GPU Gameplay 迴圈」
+
+**M-10 實作順序**：
+- [ ] 決定 Phase B 策略（視覺 CA 分離 or Hybrid readback），先不動 CPU tile 陣列
+- [ ] 設計 GPU Tile Buffer 格式（每 tile 2-4 byte 狀態），只含 CA 視覺層 tile
+- [ ] 實作棋盤格（checkerboard）Compute Shader（解決並行寫入競爭）
+- [ ] RDG `FRDGBuilder` 整合，每幀 dispatch；readback 限 dirty set，async 回寫
+- [ ] Chunk 邊界交換邏輯（GPU ↔ CPU 同步，async ping-pong buffer）
+- [ ] 效能測試：Grain 64 × 8 chunk radius 維持 60fps，CPU AI/Raycast 延遲 ≤ 1 frame
 
 ---
 
-## ?准odot ???UE5 ?銝西?蝑
+## 六、Godot 版本與 UE5 版本並行策略
 
 ```
 GitHub
-??? main                    ??蝛拙????桀? Godot嚗???? feature/3d-cutover      ??Godot ??圈??潛?嚗?摮?雿?頛臬??改?
-??? feature/ue5-migration   ??UE5 ?瑞宏嚗閮嚗?```
-
-- Godot ?靽?嚗遙雿???賢?皛?- ?瑞宏??憒??啁??摩閮剛?嚗???Godot ?Ⅱ隤??宏璊 UE5
-- M-1 ??M-5 摰?敺??脰?擐活?撠皜祈岫嚗??賣?曄????湛?
-
----
-
-## 銝甈⊥蝺?
-| ? | 隤芣? |
-|------|------|
-| ??蝟餌絞 | 靘陷 runtime skeletal mesh 霈耦嚗-6 銋?閰摯 |
-| ??渡? | Chaos Physics ?游?嚗-5 銋?閮剛? |
-| 閫? | ?憭撉券盲璅∪?嚗R 閮嚗???嚗????亙 |
-| ?舀?/Replication | ?桀??⊥迨閮嚗E5 Replication Graph ?嗆?撌脤???|
-| GPU CA | M-10嚗?閬?M-1~M-6 ?券蝛拙?敺???|
-| 銴? MP 擃頂嚗-13嚗?| 鞈?撅方身閮?湔蝘餅?嚗祕雿?璈? W-6 ?詨? |
-
----
-
-## ?怒??萄???皞?
-| 鞈? | ?券?|
-|------|------|
-| [RealtimeMeshComponent](https://github.com/TriAxis-Games/RealtimeMeshComponent) | Tile 銝??? Mesh |
-| [GPU Falling Sand嚗eatbatgames嚗(https://meatbatgames.com/blog/falling-sand-gpu/) | CA GPU ????|
-| [UE5NiagaraComputeShaderIntegration](https://github.com/Shadertech/UE5NiagaraComputeShaderIntegration) | Compute Shader ?嗆???|
-| [UMG-Slate Compendium](https://github.com/YawLighthouse/UMG-Slate-Compendium) | Slate UI 摰?? |
-| [Lyra Starter Game](https://dev.epicgames.com/documentation/en-us/unreal-engine/lyra-sample-game-in-unreal-engine) | C++ Module 蝯??雿喟???|
-| [Tom Looman UE5 C++ Guide](https://tomlooman.com/unreal-engine-cpp-guide/) | C++ ?仿??圈脤? |
-| [Epic C++ Coding Standard](https://dev.epicgames.com/documentation/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine) | ?賢?閬? |
-| [UE5 Procedural Voxel Mesh ?飛](https://dev.epicgames.com/community/learning/tutorials/k8am/unreal-engine-procedural-voxel-mesh-generation) | Voxel Mesh 韏琿? |
-
----
-
-## 銋祕雿?摨蜇閬?
-```
-M-0嚗憓???
-  ??M-1嚗??惜嚗? M-2嚗M嚗? M-3嚗??芋??CPU嚗?                              ??                          M-4嚗????萎犖嚗? M-5嚗??賣?橘?
-                                               ??                                           M-6嚗葡????M-7嚗?霈瑼???M-8嚗蝷?HUD嚗?                                                                            ??                                                                        M-9嚗??函楊頛臬 Slate嚗?                                                                            ??                                                                        M-10嚗PU CA嚗??
+├── main                    ← 穩定版（目前 Godot）
+├── feature/3d-cutover      ← Godot 最新開發版（封存，作邏輯對照）
+└── feature/ue5-migration   ← UE5 遷移（本計畫）
 ```
 
-M-1 ??M-5 ?臭誑?冽???UE5 Editor 憿舐內??瘜?頝?葫閰佗?
-M-6 銋???閬?????UE5 Editor ??葫閰艾?
+- Godot 版本保留，任何時候都能回滾
+- 遷移期間如有新的邏輯設計，先在 Godot 版確認，再移植到 UE5
+- M-1 到 M-5 完成後，進行首次功能對照測試（技能施放結果一致）
+
+---
+
+## 七、本次暫緩
+
+| 項目 | 說明 |
+|------|------|
+| 捏臉系統 | 依賴 runtime skeletal mesh 變形，M-6 之後評估 |
+| 城堡破碎 | Chaos Physics 整合，M-5 之後設計 |
+| 角色動畫 | 需外部骨骼模型，AR 計畫（素材包）完成後接入 |
+| 聯機/Replication | 目前無此計畫，UE5 Replication Graph 架構已預留 |
+| GPU CA | M-10，需要 M-1~M-6 全部穩定後才做 |
+| 複合 MP 體系（W-13） | 資料層設計可直接移植，實作時機與 W-6 相同 |
+
+---
+
+## 八、關鍵參考資源
+
+| 資源 | 用途 |
+|------|------|
+| [RealtimeMeshComponent](https://github.com/TriAxis-Games/RealtimeMeshComponent) | Tile 世界動態 Mesh |
+| [GPU Falling Sand（meatbatgames）](https://meatbatgames.com/blog/falling-sand-gpu/) | CA GPU 化原理 |
+| [UE5NiagaraComputeShaderIntegration](https://github.com/Shadertech/UE5NiagaraComputeShaderIntegration) | Compute Shader 架構參考 |
+| [UMG-Slate Compendium](https://github.com/YawLighthouse/UMG-Slate-Compendium) | Slate UI 完整指南 |
+| [Lyra Starter Game](https://dev.epicgames.com/documentation/en-us/unreal-engine/lyra-sample-game-in-unreal-engine) | C++ Module 結構最佳範本 |
+| [Tom Looman UE5 C++ Guide](https://tomlooman.com/unreal-engine-cpp-guide/) | C++ 入門到進階 |
+| [Epic C++ Coding Standard](https://dev.epicgames.com/documentation/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine) | 命名規範 |
+| [UE5 Procedural Voxel Mesh 教學](https://dev.epicgames.com/community/learning/tutorials/k8am/unreal-engine-procedural-voxel-mesh-generation) | Voxel Mesh 起點 |
+
+---
+
+## 九、實作順序總覽
+
+```
+M-0（環境準備）
+  ↓
+M-1（資料層）→ M-2（VM）→ M-3（世界模擬 CPU）
+                              ↓
+                          M-4（角色/敵人）→ M-5（技能施放）
+                                               ↓
+                                           M-6（渲染）→ M-7（存讀檔）→ M-8（基礎 HUD）
+                                                                            ↓
+                                                                        M-9（積木編輯器 Slate）
+                                                                            ↓
+                                                                        M-10（GPU CA，長期）
+```
+
+M-1 到 M-5 可以在沒有 UE5 Editor 顯示的情況下跑單元測試，
+M-6 之後才需要啟動完整 UE5 Editor 做整合測試。
