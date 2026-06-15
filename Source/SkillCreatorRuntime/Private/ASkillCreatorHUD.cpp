@@ -4,8 +4,14 @@
 #include "UCharacterStateComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
+#include "UObject/ConstructorHelpers.h"
 
-ASkillCreatorHUD::ASkillCreatorHUD() {}
+ASkillCreatorHUD::ASkillCreatorHUD()
+{
+    static ConstructorHelpers::FClassFinder<UPlayerHUDWidget> WidgetFinder(TEXT("/Game/WBP_PlayerHUD"));
+    if (WidgetFinder.Succeeded())
+        HUDWidgetClass = WidgetFinder.Class;
+}
 
 void ASkillCreatorHUD::BeginPlay()
 {
