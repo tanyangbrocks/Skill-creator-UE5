@@ -48,6 +48,10 @@
 		{
 			"Name": "SkillCreatorUI",
 			"Enabled": true
+		},
+		{
+			"Name": "RealtimeMeshComponent",
+			"Enabled": true
 		}
 	]
 }

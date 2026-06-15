@@ -43,3 +43,6 @@ desktop.ini
 # Content/       ← 資源（視專案大小決定是否 Git LFS）
 # Config/        ← 專案設定
 # docs/          ← 計畫文件
+
+# Third-party binary plugins (too large for git; download separately)
+Plugins/RealtimeMeshComponent-master/

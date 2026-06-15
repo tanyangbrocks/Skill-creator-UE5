@@ -5,6 +5,12 @@
     "FriendlyName": "VoxelWorld",
     "Description": "CA Tile World, Chunk3D, RMC Renderer",
     "Category": "SkillCreator",
+    "Plugins": [
+        {
+            "Name": "RealtimeMeshComponent",
+            "Enabled": true
+        }
+    ],
     "Modules": [
         {
             "Name": "VoxelWorld",

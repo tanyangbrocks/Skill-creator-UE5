@@ -28,8 +28,14 @@ enum class EMaterialType : uint8
     Lava     = 6,
     Wood     = 7,
     Leaves   = 8,
-    Ore_Iron = 9,
-    Ore_Gold = 10,
+    Ore_Iron        =  9,
+    Ore_Gold        = 10,
+    Fire            = 11,  // Gas（CA 模擬）；CA_State = 倒計時 30-90 frames
+    Steam           = 12,  // Gas（CA 模擬）；CA_State = 倒計時 60-120 frames
+    Ash             = 13,  // Static（燃燒殘留）
+    Ore_Coal        = 14,  // Static + Flammable（可燃礦石）
+    Ore_Copper      = 15,  // Static
+    Ore_MagicCrystal= 16,  // Static
     // 繼續追加，不要重編已有 ID
     Count    UMETA(Hidden)
 };
