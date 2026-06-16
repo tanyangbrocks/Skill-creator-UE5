@@ -33,11 +33,11 @@ int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
     N.SetSeed(WorldSeed);
     N.SetFrequency(0.005f);
     N.SetFractalType(FastNoiseLite::FractalType::FBm);
-    N.SetFractalOctaves(7);
+    N.SetFractalOctaves(4);      // 4 octaves: 最高頻率 0.04 → 週期 25 格，無微凸起
     N.SetFractalLacunarity(2.f);
     N.SetFractalGain(0.5f);
     float v = N.GetNoise((float)WorldX, (float)WorldZ);
-    return FMath::Clamp((int32)(WorldH * 0.4f + v * WorldH * 0.15f), 2, WorldH - 4);
+    return FMath::Clamp((int32)(WorldH * 0.4f + v * WorldH * 0.30f), 4, WorldH - 8);
 }
 
 // ============================================================
@@ -54,12 +54,12 @@ int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
 void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
                                         TArray<FTileCell>& OutCells)
 {
-    // 高度圖 noise（FBm 7 octave）
+    // 高度圖 noise（FBm 4 octave：平滑大地形，減少微凸起避免格狀感）
     FastNoiseLite HN;
     HN.SetSeed(Seed);
     HN.SetFrequency(0.005f);
     HN.SetFractalType(FastNoiseLite::FractalType::FBm);
-    HN.SetFractalOctaves(7);
+    HN.SetFractalOctaves(4);
     HN.SetFractalLacunarity(2.f);
     HN.SetFractalGain(0.5f);
 
@@ -96,7 +96,7 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
 
         float Hv = HN.GetNoise((float)wx, (float)wz);  // -1..1
         int32 SurfaceY = FMath::Clamp(
-            (int32)(Height * 0.4f + Hv * Height * 0.15f), 2, Height - 4);
+            (int32)(Height * 0.4f + Hv * Height * 0.30f), 4, Height - 8);
 
         uint8 MatID = 0;  // Air
         if (wy == SurfaceY)

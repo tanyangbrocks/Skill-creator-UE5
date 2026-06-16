@@ -26,7 +26,7 @@ public:
     int32 WorldWidth  = 0;   // 0 = infinite lazy chunks
 
     UPROPERTY(EditAnywhere, Category="VoxelWorld")
-    int32 WorldHeight = 64;
+    int32 WorldHeight = 256;
 
     UPROPERTY(EditAnywhere, Category="VoxelWorld")
     int32 WorldDepth  = 0;
