@@ -10,6 +10,8 @@
 #include "TileWorld3D.h"
 #include "AEnemyManager.h"
 #include "ExecutionContext.h"
+#include "USnapshotManager.h"
+#include "AEnemy.h"
 #include "GridPos.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
@@ -223,6 +225,15 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)
     Input->BindAction("SpellI", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
     Input->BindAction("SpellO", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
     Input->BindAction("SpellP", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+
+    // Camera, panels, debug
+    Input->BindAction("ToggleCameraMode",   IE_Pressed, this, &ASkillCreatorCharacter::OnToggleCameraMode);
+    Input->BindAction("OpenInventory",      IE_Pressed, this, &ASkillCreatorCharacter::OnOpenInventory);
+    Input->BindAction("OpenEquipment",      IE_Pressed, this, &ASkillCreatorCharacter::OnOpenEquipment);
+    Input->BindAction("OpenCharacterPanel", IE_Pressed, this, &ASkillCreatorCharacter::OnOpenCharacterPanel);
+    Input->BindAction("DebugTrace",         IE_Pressed, this, &ASkillCreatorCharacter::OnDebugTrace);
+    Input->BindAction("DebugSnapshotTake",  IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
+    Input->BindAction("DebugSnapshotApply", IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
 }
 
 void ASkillCreatorCharacter::MoveForward(float Value)
@@ -299,6 +310,101 @@ void ASkillCreatorCharacter::CycleCameraMode()
     const ECameraMode Next = static_cast<ECameraMode>(
         (static_cast<uint8>(CameraMode) + 1) % 4);
     SetCameraMode(Next);
+}
+
+// ── Panel / Debug Key Handlers ──────────────────────────────────────────
+
+void ASkillCreatorCharacter::OnToggleCameraMode()
+{
+    CycleCameraMode();
+}
+
+void ASkillCreatorCharacter::OnOpenInventory()
+{
+    if (!InventoryComp || !GEngine) return;
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 物品欄 [Z] ==="));
+    bool bAny = false;
+    for (int32 i = 0; i < InventoryComp->Slots.Num(); ++i)
+    {
+        const FItemStack& S = InventoryComp->Slots[i];
+        if (S.IsEmpty()) continue;
+        UEnum* E = StaticEnum<EItemId>();
+        FString Name = E ? E->GetNameStringByValue((int64)S.ItemId) : FString::FromInt((int32)S.ItemId);
+        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+            FString::Printf(TEXT("  [%d] %s x%d"), i, *Name, S.Count));
+        bAny = true;
+    }
+    if (!bAny)
+        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White, TEXT("  （空）"));
+}
+
+void ASkillCreatorCharacter::OnOpenEquipment()
+{
+    if (!EquipmentComp || !GEngine) return;
+    UEnum* E = StaticEnum<EItemId>();
+    auto Name = [&](EItemId Id) -> FString {
+        return E ? E->GetNameStringByValue((int64)Id) : FString::FromInt((int32)Id);
+    };
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 裝備欄 [X] ==="));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  武器:  %s  ATK×%.2f"), *Name(EquipmentComp->WeaponId),   EquipmentComp->GetTotalAtkMult()));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  防具:  %s  DEF+%.0f"), *Name(EquipmentComp->ArmorId),    EquipmentComp->GetTotalDefFlat()));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  飾品:  %s  MP+%.0f"), *Name(EquipmentComp->AccessoryId), EquipmentComp->GetTotalMpBonus()));
+}
+
+void ASkillCreatorCharacter::OnOpenCharacterPanel()
+{
+    if (!GEngine) return;
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 角色狀態 [C] ==="));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  等級: %d  境界: %s"), Level, *GetTierName(Level)));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  XP: %.0f / %d"), Xp, XpRequired(Level)));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  HP: %.0f / %.0f"), CurrentHp, Stats.MaxHpBase));
+    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+        FString::Printf(TEXT("  MP: %.0f / %.0f"), CurrentMp, Stats.MaxMpBase));
+    if (StateComp)
+        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
+            FString::Printf(TEXT("  體力: %.0f  心情: %.0f"),
+                StateComp->Stamina, StateComp->Mood));
+}
+
+void ASkillCreatorCharacter::OnDebugTrace()
+{
+    FExecutionContext::bTraceMode = !FExecutionContext::bTraceMode;
+    if (GEngine)
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow,
+            FString::Printf(TEXT("[F3] TraceMode: %s"),
+                FExecutionContext::bTraceMode ? TEXT("ON") : TEXT("OFF")));
+}
+
+void ASkillCreatorCharacter::OnDebugSnapshotTake()
+{
+    auto* GI   = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    auto* Snap = GI ? GI->GetSubsystem<USnapshotManager>() : nullptr;
+    if (!Snap) return;
+
+    TArray<AEnemy*> NoEnemies;
+    Snap->TakeSnapshot(this, NoEnemies, CachedVoxelWorld);
+    if (GEngine)
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green,
+            FString::Printf(TEXT("[F5] 快照已儲存（堆疊深度 %d）"), Snap->StackDepth()));
+}
+
+void ASkillCreatorCharacter::OnDebugSnapshotApply()
+{
+    auto* GI   = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    auto* Snap = GI ? GI->GetSubsystem<USnapshotManager>() : nullptr;
+    if (!Snap) return;
+
+    TArray<AEnemy*> NoEnemies;
+    bool bOk = Snap->ApplyLatest(this, NoEnemies, CachedVoxelWorld);
+    if (GEngine)
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, bOk ? FColor::Green : FColor::Red,
+            bOk ? TEXT("[F6] 快照已還原") : TEXT("[F6] 無快照可還原"));
 }
 
 // ── Spell Input ─────────────────────────────────────────────────────────

@@ -24,4 +24,10 @@ protected:
 private:
     void OnScrollUp();
     void OnScrollDown();
+    void OnOpenEditor();
+    void OnHotbar1();
+    void OnHotbar2();
+    void OnHotbar3();
+    void OnHotbar4();
+    void OnHotbar5();
 };

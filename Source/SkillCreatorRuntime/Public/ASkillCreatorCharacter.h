@@ -147,5 +147,14 @@ private:
     // 環境傷害：站在 Fire/Lava tile 時每幀扣血
     void ApplyEnvironmentalDamage(float DeltaTime);
 
+    // ── 面板 / 偵錯按鍵處理 ──────────────────────────────────────
+    void OnToggleCameraMode();
+    void OnOpenInventory();
+    void OnOpenEquipment();
+    void OnOpenCharacterPanel();
+    void OnDebugTrace();
+    void OnDebugSnapshotTake();
+    void OnDebugSnapshotApply();
+
     UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
 };
