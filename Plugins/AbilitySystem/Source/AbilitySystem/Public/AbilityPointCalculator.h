@@ -77,11 +77,21 @@ struct FAbilityPointCalculator
         return 1500;
     }
 
-    // ── 計算技能整構能力點總消耗（W-6 刻印成本系統建立後補全）──────
-    // Stub：FSpellSlot::AbilityPointCost 尚未從 FTotemData 填入（W-6 延遲）
-    static int32 CalculateTotalCost(const FSpellArray& /*Spell*/)
+    // ── 計算技能整構能力點總消耗（W-6）────────────────────────────
+    // = Σ(slot.AbilityPointCost + Σslot.LocalEngravings[i].Points) + Σ GlobalEngravings[i].Points
+    static int32 CalculateTotalCost(const FSpellArray& Spell)
     {
-        return 0; // W-6：接 FSpellSlot.AbilityPointCost + FEngraveData.TotalAbilityPointCost
+        int32 Total = 0;
+        for (const FSpellSlot& Slot : Spell.Slots)
+        {
+            if (Slot.IsEmpty()) continue;
+            Total += Slot.AbilityPointCost;
+            for (const FEngraveData& E : Slot.LocalEngravings)
+                Total += E.Points;
+        }
+        for (const FEngraveData& E : Spell.GlobalEngravings)
+            Total += E.Points;
+        return Total;
     }
 
     static bool ExceedsLevelCap(const FSpellArray& Spell, int32 PlayerLevel)

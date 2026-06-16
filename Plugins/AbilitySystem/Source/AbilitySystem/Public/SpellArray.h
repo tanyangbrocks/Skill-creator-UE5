@@ -117,6 +117,8 @@ struct FSpellSlot
     UPROPERTY(EditAnywhere) FName          TotemId;         // 技能因子 ID（空 = 插槽為空）
     UPROPERTY(EditAnywhere) ETotemType     TotemType   = ETotemType::Custom; // 因子類型（編輯器填入）
     UPROPERTY(EditAnywhere) FName          ManaTypeKey;     // MP 類型 key（None = 未指定）
+    // W-6 AbilityPointCost：放入技能因子時從 FTotemData.BaseAbilityPointCost 複製
+    UPROPERTY(EditAnywhere) int32          AbilityPointCost = 0;
     UPROPERTY(EditAnywhere) TArray<FEngraveData> LocalEngravings;
 
     bool IsEmpty() const { return TotemId.IsNone(); }
