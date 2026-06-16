@@ -15,14 +15,15 @@ void ASkillCreatorPlayerController::BeginPlay()
 void ASkillCreatorPlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
+    // 滑鼠滾輪與功能鍵用 BindKey（直接按鍵，不走 ActionMappings 查表）
     InputComponent->BindKey(EKeys::MouseScrollUp,   IE_Pressed, this, &ASkillCreatorPlayerController::OnScrollUp);
     InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ASkillCreatorPlayerController::OnScrollDown);
-    InputComponent->BindAction("OpenEditor", IE_Pressed, this, &ASkillCreatorPlayerController::OnOpenEditor);
-    InputComponent->BindAction("Hotbar1",    IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar1);
-    InputComponent->BindAction("Hotbar2",    IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar2);
-    InputComponent->BindAction("Hotbar3",    IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar3);
-    InputComponent->BindAction("Hotbar4",    IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar4);
-    InputComponent->BindAction("Hotbar5",    IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar5);
+    InputComponent->BindKey(EKeys::E,               IE_Pressed, this, &ASkillCreatorPlayerController::OnOpenEditor);
+    InputComponent->BindKey(EKeys::One,             IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar1);
+    InputComponent->BindKey(EKeys::Two,             IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar2);
+    InputComponent->BindKey(EKeys::Three,           IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar3);
+    InputComponent->BindKey(EKeys::Four,            IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar4);
+    InputComponent->BindKey(EKeys::Five,            IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar5);
 }
 
 void ASkillCreatorPlayerController::SetActiveSpellSlot(int32 Idx)

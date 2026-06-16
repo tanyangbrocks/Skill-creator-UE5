@@ -84,10 +84,12 @@ void AVoxelWorldActor::Tick(float DeltaTime)
             Loc = P->GetActorLocation();
 
     // Actor location is in cm; one tile = TileSizeCm cm; one chunk = ChunkSize tiles.
+    // UE5→voxel: X→X, Y→Z(depth), Z→-Y+WorldH(vertical inverted)
     const float ChunkSizeCm = WorldScale::TileSizeCm * static_cast<float>(WorldScale::ChunkSize);
     const int32 PCX = FMath::FloorToInt(Loc.X / ChunkSizeCm);
-    const int32 PCY = FMath::FloorToInt(Loc.Y / ChunkSizeCm);
-    const int32 PCZ = FMath::FloorToInt(Loc.Z / ChunkSizeCm);
+    const int32 PCZ = FMath::FloorToInt(Loc.Y / ChunkSizeCm);
+    const float VoxelY = static_cast<float>(TileWorld.Height) - Loc.Z / WorldScale::TileSizeCm;
+    const int32 PCY = FMath::FloorToInt(VoxelY / static_cast<float>(WorldScale::ChunkSize));
 
     // ── M-7: stream (disk-load or generate) + CA sim ──────────
     Streaming.Tick(TileWorld, PCX, PCY, PCZ, /*StreamRadius=*/2, /*CARadius=*/2);

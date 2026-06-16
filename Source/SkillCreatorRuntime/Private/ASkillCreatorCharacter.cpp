@@ -24,6 +24,12 @@
 #include "Math/RotationMatrix.h"
 #include "InputCoreTypes.h"
 #include "EngineUtils.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "InputActionValue.h"
+#include "InputModifiers.h"
 
 ASkillCreatorCharacter::ASkillCreatorCharacter()
 {
@@ -195,7 +201,15 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 FGridPos ASkillCreatorCharacter::GetPosition() const
 {
     FVector Loc = GetActorLocation();
-    return FGridPos(FMath::RoundToInt(Loc.X), FMath::RoundToInt(Loc.Y), FMath::RoundToInt(Loc.Z));
+    // UE5→voxel: X→X, Y→Z(depth), Z→WorldH-Y(vertical inverted)
+    const float InvS = 1.f / WorldScale::TileSizeCm;
+    const int32 VoxX = FMath::RoundToInt(Loc.X * InvS);
+    const int32 VoxZ = FMath::RoundToInt(Loc.Y * InvS);
+    int32 VoxY = 128; // 若 VoxelWorld 不可用則用近似中心高度
+    if (CachedVoxelWorld)
+        if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+            VoxY = FMath::RoundToInt(static_cast<float>(TW->Height) - Loc.Z * InvS);
+    return FGridPos(VoxX, VoxY, VoxZ);
 }
 
 void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
@@ -204,8 +218,13 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
     if (!TW) return;
 
-    FGridPos Pos = GetPosition();
-    EMaterialType Tile = TW->GetTile(Pos.X, Pos.Y, Pos.Z);
+    // 直接在此做 UE5→voxel 轉換，不依賴 GetPosition() 的近似值
+    const FVector Loc = GetActorLocation();
+    const float InvS = 1.f / WorldScale::TileSizeCm;
+    const int32 VoxX = FMath::RoundToInt(Loc.X * InvS);
+    const int32 VoxY = FMath::RoundToInt(static_cast<float>(TW->Height) - Loc.Z * InvS);
+    const int32 VoxZ = FMath::RoundToInt(Loc.Y * InvS);
+    EMaterialType Tile = TW->GetTile(VoxX, VoxY, VoxZ);
 
     float Dps = 0.f;
     if (Tile == EMaterialType::Fire)
@@ -246,37 +265,130 @@ FString ASkillCreatorCharacter::GetTierName(int32 InLevel)
     return TEXT("真仙");
 }
 
-void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)
+void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC)
 {
-    Super::SetupPlayerInputComponent(Input);
+    Super::SetupPlayerInputComponent(PlayerIC);
+    UEnhancedInputComponent* EIC = CastChecked<UEnhancedInputComponent>(PlayerIC);
 
-    // WASD movement (camera-relative)
-    Input->BindAxis("MoveForward", this, &ASkillCreatorCharacter::MoveForward);
-    Input->BindAxis("MoveRight",   this, &ASkillCreatorCharacter::MoveRight);
+    // ── 建立 InputActions（純 C++，不需要 .uasset）────────────────────────
+    auto MakeBool = [this](FName Name) -> UInputAction*
+    {
+        UInputAction* IA = NewObject<UInputAction>(this, Name);
+        IA->ValueType = EInputActionValueType::Boolean;
+        return IA;
+    };
 
-    // Mouse look
-    Input->BindAxis("TurnRate",   this, &APawn::AddControllerYawInput);
-    Input->BindAxis("LookUpRate", this, &APawn::AddControllerPitchInput);
+    UInputAction* IA_Jump      = MakeBool(TEXT("Jump"));
+    UInputAction* IA_Mine      = MakeBool(TEXT("Mine"));
+    UInputAction* IA_SpellU    = MakeBool(TEXT("SpellU"));
+    UInputAction* IA_SpellI    = MakeBool(TEXT("SpellI"));
+    UInputAction* IA_SpellO    = MakeBool(TEXT("SpellO"));
+    UInputAction* IA_SpellP    = MakeBool(TEXT("SpellP"));
+    UInputAction* IA_Camera    = MakeBool(TEXT("ToggleCamera"));
+    UInputAction* IA_Inv       = MakeBool(TEXT("OpenInventory"));
+    UInputAction* IA_Equip     = MakeBool(TEXT("OpenEquipment"));
+    UInputAction* IA_CharPanel = MakeBool(TEXT("OpenCharPanel"));
+    UInputAction* IA_DbgTrace  = MakeBool(TEXT("DebugTrace"));
+    UInputAction* IA_SnapTake  = MakeBool(TEXT("SnapshotTake"));
+    UInputAction* IA_SnapApply = MakeBool(TEXT("SnapshotApply"));
 
-    // Jump
-    Input->BindAction("Jump", IE_Pressed,  this, &ACharacter::Jump);
-    Input->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
+    UInputAction* IA_Move = NewObject<UInputAction>(this, TEXT("IA_Move"));
+    IA_Move->ValueType = EInputActionValueType::Axis2D;
 
-    // Spell keys U/I/O/P — all fire HandleSpellInput which reads combination
-    Input->BindAction("SpellU", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
-    Input->BindAction("SpellI", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
-    Input->BindAction("SpellO", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
-    Input->BindAction("SpellP", IE_Pressed, this, &ASkillCreatorCharacter::HandleSpellInput);
+    UInputAction* IA_Look = NewObject<UInputAction>(this, TEXT("IA_Look"));
+    IA_Look->ValueType = EInputActionValueType::Axis2D;
 
-    // Camera, panels, debug
-    Input->BindAction("ToggleCameraMode",   IE_Pressed, this, &ASkillCreatorCharacter::OnToggleCameraMode);
-    Input->BindAction("OpenInventory",      IE_Pressed, this, &ASkillCreatorCharacter::OnOpenInventory);
-    Input->BindAction("OpenEquipment",      IE_Pressed, this, &ASkillCreatorCharacter::OnOpenEquipment);
-    Input->BindAction("OpenCharacterPanel", IE_Pressed, this, &ASkillCreatorCharacter::OnOpenCharacterPanel);
-    Input->BindAction("DebugTrace",         IE_Pressed, this, &ASkillCreatorCharacter::OnDebugTrace);
-    Input->BindAction("DebugSnapshotTake",  IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
-    Input->BindAction("DebugSnapshotApply", IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
-    Input->BindAction("Mine",               IE_Pressed, this, &ASkillCreatorCharacter::OnMine);
+    // ── 建立 InputMappingContext ──────────────────────────────────────────
+    UInputMappingContext* IMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Default"));
+
+    // WASD：W=+Y(前), S=-Y(後), D=+X(右), A=-X(左)
+    {   // W → FVector2D(0,+1)
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Move, EKeys::W);
+        UInputModifierSwizzleAxis* Sw = NewObject<UInputModifierSwizzleAxis>(IMC);
+        Sw->Order = EInputAxisSwizzle::YXZ;
+        M.Modifiers.Add(Sw);
+    }
+    {   // S → FVector2D(0,-1)
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Move, EKeys::S);
+        UInputModifierSwizzleAxis* Sw = NewObject<UInputModifierSwizzleAxis>(IMC);
+        Sw->Order = EInputAxisSwizzle::YXZ;
+        M.Modifiers.Add(Sw);
+        UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(IMC);
+        M.Modifiers.Add(Neg);
+    }
+    IMC->MapKey(IA_Move, EKeys::D);  // D → FVector2D(+1,0)
+    {   // A → FVector2D(-1,0)
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Move, EKeys::A);
+        UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(IMC);
+        M.Modifiers.Add(Neg);
+    }
+
+    // 滑鼠視角：MouseX→X, MouseY→Y
+    IMC->MapKey(IA_Look, EKeys::MouseX);
+    {
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Look, EKeys::MouseY);
+        UInputModifierSwizzleAxis* Sw = NewObject<UInputModifierSwizzleAxis>(IMC);
+        Sw->Order = EInputAxisSwizzle::YXZ;
+        M.Modifiers.Add(Sw);
+    }
+
+    // 其他按鍵
+    IMC->MapKey(IA_Jump,      EKeys::SpaceBar);
+    IMC->MapKey(IA_Mine,      EKeys::LeftMouseButton);
+    IMC->MapKey(IA_SpellU,    EKeys::U);
+    IMC->MapKey(IA_SpellI,    EKeys::I);
+    IMC->MapKey(IA_SpellO,    EKeys::O);
+    IMC->MapKey(IA_SpellP,    EKeys::P);
+    IMC->MapKey(IA_Camera,    EKeys::Tab);
+    IMC->MapKey(IA_Inv,       EKeys::Z);
+    IMC->MapKey(IA_Equip,     EKeys::X);
+    IMC->MapKey(IA_CharPanel, EKeys::C);
+    IMC->MapKey(IA_DbgTrace,  EKeys::F3);
+    IMC->MapKey(IA_SnapTake,  EKeys::F5);
+    IMC->MapKey(IA_SnapApply, EKeys::F6);
+
+    // ── 注冊 MappingContext ───────────────────────────────────────────────
+    if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        if (auto* Sub = PC->GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+            Sub->AddMappingContext(IMC, 0);
+
+    // ── 綁定 Actions ─────────────────────────────────────────────────────
+    EIC->BindAction(IA_Move, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Move);
+    EIC->BindAction(IA_Look, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Look);
+    EIC->BindAction(IA_Jump, ETriggerEvent::Started,    this, &ACharacter::Jump);
+    EIC->BindAction(IA_Jump, ETriggerEvent::Completed,  this, &ACharacter::StopJumping);
+    EIC->BindAction(IA_Mine, ETriggerEvent::Started,    this, &ASkillCreatorCharacter::OnMine);
+
+    EIC->BindAction(IA_SpellU, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
+    EIC->BindAction(IA_SpellI, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
+    EIC->BindAction(IA_SpellO, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
+    EIC->BindAction(IA_SpellP, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
+
+    EIC->BindAction(IA_Camera,    ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnToggleCameraMode);
+    EIC->BindAction(IA_Inv,       ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenInventory);
+    EIC->BindAction(IA_Equip,     ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenEquipment);
+    EIC->BindAction(IA_CharPanel, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenCharacterPanel);
+    EIC->BindAction(IA_DbgTrace,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugTrace);
+    EIC->BindAction(IA_SnapTake,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
+    EIC->BindAction(IA_SnapApply, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
+}
+
+void ASkillCreatorCharacter::Move(const FInputActionValue& Value)
+{
+    if (!Controller) return;
+    const FVector2D Axis = Value.Get<FVector2D>();
+    const FRotator YawOnly(0.f, GetControlRotation().Yaw, 0.f);
+    if (Axis.Y != 0.f)
+        AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X), Axis.Y);
+    if (Axis.X != 0.f)
+        AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Axis.X);
+}
+
+void ASkillCreatorCharacter::Look(const FInputActionValue& Value)
+{
+    const FVector2D Axis = Value.Get<FVector2D>();
+    AddControllerYawInput(Axis.X);
+    AddControllerPitchInput(Axis.Y);
 }
 
 void ASkillCreatorCharacter::MoveForward(float Value)
@@ -495,11 +607,22 @@ void ASkillCreatorCharacter::OnMine()
     FVector CamLoc;
     FRotator CamRot;
     PC->GetPlayerViewPoint(CamLoc, CamRot);
-    FVector CamDir = CamRot.Vector();
+    const FVector CamDir = CamRot.Vector();
 
-    // 攝影機位置 → tile 索引（cm / TileSizeCm）
-    FVector TileStart = CamLoc / WorldScale::TileSizeCm;
-    FRaycastResult3D Hit = TW->Raycast(TileStart, CamDir, 10.f);
+    // UE5→voxel 座標轉換：X→X, Y→Z(depth), Z→WorldH-Y(vertical inverted)
+    const float InvS = 1.f / WorldScale::TileSizeCm;
+    FVector TileStart;
+    TileStart.X = CamLoc.X * InvS;
+    TileStart.Y = static_cast<float>(TW->Height) - CamLoc.Z * InvS; // UE5 Z → voxel Y
+    TileStart.Z = CamLoc.Y * InvS;                                    // UE5 Y → voxel Z
+
+    // 方向向量同樣需要轉換
+    FVector VoxDir;
+    VoxDir.X = CamDir.X;
+    VoxDir.Y = -CamDir.Z; // UE5 +Z(上) = voxel -Y(天頂方向)
+    VoxDir.Z = CamDir.Y;  // UE5 +Y(右) = voxel +Z(深度)
+
+    FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
     if (!Hit.bHit) return;
 
     EMaterialType OldMat = TW->GetTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);

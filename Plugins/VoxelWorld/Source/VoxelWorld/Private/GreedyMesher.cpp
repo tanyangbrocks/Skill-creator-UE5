@@ -21,7 +21,14 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
     constexpr int32 MegaSize = WorldScale::MegaChunkMult * WorldScale::ChunkSize; // 64
     const float     S        = WorldScale::TileSizeCm;                             // cm per tile
     const FIntVector MinTile  = MegaChunkCoord * MegaSize;
-    const FVector3f  Origin(MinTile.X * S, MinTile.Y * S, MinTile.Z * S);
+
+    // voxel(X,Y,Z) → UE5(X,Z,-Y)
+    // voxel Y=0 是天頂（向下增大），UE5 Z 向上，需反向並加 WorldHeight 偏移
+    auto VoxToUE5Local = [](FVector3f V) -> FVector3f {
+        return FVector3f(V.X, V.Z, -V.Y);
+    };
+    const float WorldHcm = static_cast<float>(World.Height) * S;
+    const FVector3f Origin(MinTile.X * S, MinTile.Z * S, WorldHcm - MinTile.Y * S);
 
     // ── Stream setup ─────────────────────────────────────────────────────────
     FRealtimeMeshStreamSet StreamSet;
@@ -129,8 +136,10 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                         // Face plane position along d (in cm from mega-chunk origin)
                         const float face_d = static_cast<float>(facing == 1 ? s + 1 : s) * S;
 
-                        FVector3f Normal(0.f, 0.f, 0.f); Normal[d] = static_cast<float>(facing);
-                        FVector3f Tangent(0.f, 0.f, 0.f); Tangent[u] = 1.f;
+                        FVector3f NormalVox(0.f, 0.f, 0.f); NormalVox[d] = static_cast<float>(facing);
+                        FVector3f TangentVox(0.f, 0.f, 0.f); TangentVox[u] = 1.f;
+                        const FVector3f Normal  = VoxToUE5Local(NormalVox);
+                        const FVector3f Tangent = VoxToUE5Local(TangentVox);
                         const FRealtimeMeshTangentsHighPrecision Tang(Normal, Tangent);
                         const FColor Col(Mat, 0, 0, 255); // R = MaterialID
 
@@ -141,7 +150,7 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                             P[d] = face_d;
                             P[u] = uc * S;
                             P[v] = vc * S;
-                            return Origin + P;
+                            return Origin + VoxToUE5Local(P);
                         };
 
                         const int32 V0 = PosBuilder.Add(MakePos(    i,     j)); TangentBuilder.Add(Tang); UVBuilder.Add(FVector2f(       0.f,        0.f)); ColorBuilder.Add(Col);

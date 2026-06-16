@@ -1,6 +1,8 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+
+struct FInputActionValue;
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "CharacterStats.h"
@@ -141,6 +143,8 @@ protected:
     virtual void SetupPlayerInputComponent(UInputComponent* Input) override;
 
 private:
+    void Move(const FInputActionValue& Value);
+    void Look(const FInputActionValue& Value);
     void MoveForward(float Value);
     void MoveRight(float Value);
     void HandleSpellInput();
