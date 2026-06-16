@@ -26,6 +26,9 @@ public:
     // ── 清除所有執行中的技能整構
     void PruneAll();
 
+    // ── 清除已執行超過 MaxAgeSeconds 的技能整構（對應 Godot SpellRunner.PruneAfter）
+    void PruneAfter(float MaxAgeSeconds);
+
     int32 GetActiveCount() const { return ActiveContexts.Num(); }
 
     // ── 遊戲層 callback（SpellRunner 在每次 InvokeTotem 等之後呼叫）──
@@ -39,7 +42,8 @@ private:
     struct FActiveEntry
     {
         TUniquePtr<FExecutionContext> Ctx;
-        int32                        ComboDepth = 0;
+        int32                        ComboDepth  = 0;
+        float                        ElapsedTime = 0.f;
     };
 
     TArray<FActiveEntry>       ActiveContexts;

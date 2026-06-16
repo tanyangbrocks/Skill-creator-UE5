@@ -179,6 +179,21 @@ struct FSpellArray
         return (int32)GetUsedManaTypes().Num() <= Limit;
     }
 
+    // 是否有任何非空非被動插槽尚未綁定 MP 類型（對應 Godot SpellArray.HasUnboundMpBlocks）
+    bool HasUnboundMpBlocks() const
+    {
+        for (const FSpellSlot& S : Slots)
+        {
+            if (S.IsEmpty()) continue;
+            if (S.TotemType == ETotemType::Passive) continue;
+            if (S.ManaTypeKey.IsNone()) return true;
+        }
+        return false;
+    }
+
+    // 主要元素（SpellElement 即為主要元素；M-5+ 刻印元素系統完善後可從 GlobalEngravings 覆蓋）
+    ESkillElementType PrimaryElement() const { return SpellElement; }
+
     // 積木 AST 根節點（SpellCompiler 編譯後填入，載入時從 JSON 反序列化）
     // 不能 UPROPERTY — TUniquePtr<FBlockNode> 不支援 UHT 反射
     // Blocks 欄位在執行期由 SpellCompiler 結果覆蓋

@@ -2,6 +2,8 @@
 #include "CoreMinimal.h"
 #include "MaterialType.h"
 #include "ElementType.h"
+#include "ItemId.h"
+#include "ItemDrop.h"
 
 // CA 物理分類（決定每 tick 的更新行為）
 enum class EPhysicsCategory : uint8
@@ -35,6 +37,11 @@ struct FMaterialData
 class VOXELWORLD_API FMaterialRegistry
 {
 public:
-    static const FMaterialData& Get(EMaterialType Mat);
-    static EPhysicsCategory     GetPhysics(uint8 MaterialID);
+    static const FMaterialData&   Get(EMaterialType Mat);
+    static EPhysicsCategory       GetPhysics(uint8 MaterialID);
+
+    // ── 顯示用輔助（對應 Godot MaterialData 顯示欄位）────────────────
+    static FLinearColor           GetColor(EMaterialType Mat);
+    static FText                  GetDisplayName(EMaterialType Mat);
+    static TArray<FItemDrop>      GetDefaultDrops(EMaterialType Mat);
 };

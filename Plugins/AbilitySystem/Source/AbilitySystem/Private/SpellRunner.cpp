@@ -19,6 +19,15 @@ void FSpellRunner::PruneAll()
     ActiveContexts.Empty();
 }
 
+void FSpellRunner::PruneAfter(float MaxAgeSeconds)
+{
+    for (int32 i = ActiveContexts.Num() - 1; i >= 0; --i)
+    {
+        if (ActiveContexts[i].ElapsedTime >= MaxAgeSeconds)
+            ActiveContexts.RemoveAt(i);
+    }
+}
+
 void FSpellRunner::Tick(float DeltaTime)
 {
     if (ActiveContexts.Num() == 0) return;
@@ -26,6 +35,7 @@ void FSpellRunner::Tick(float DeltaTime)
 
     for (int32 i = ActiveContexts.Num() - 1; i >= 0; --i)
     {
+        ActiveContexts[i].ElapsedTime += DeltaTime;
         Advance(ActiveContexts[i], DeltaTime);
         if (ActiveContexts[i].Ctx->IsFinished())
             ActiveContexts.RemoveAt(i);

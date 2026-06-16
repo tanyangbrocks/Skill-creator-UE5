@@ -12,7 +12,8 @@ public class VoxelWorld : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "RenderCore", "RHI",
-            "SkillCreatorCore", "RealtimeMeshComponent"
+            "SkillCreatorCore", "RealtimeMeshComponent",
+            "Json", "JsonUtilities"
         });
     }
 }

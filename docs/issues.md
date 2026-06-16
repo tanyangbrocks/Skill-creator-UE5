@@ -1,50 +1,88 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
-**產生日期**：2026-06-16  
+**產生日期**：2026-06-16（初版）  
+**最後更新**：2026-06-16（本 session 實作後全面覆核）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
 ---
 
-## 統計摘要
+## 統計摘要（2026-06-16 更新後）
 
-| # | 子系統 | Godot 行數 | 已實作 | stub | 完全缺失 | 總項目 | 完成率 |
-|---|--------|-----------|--------|------|--------|--------|--------|
-| 1 | VM Core | 1,979 | 258 | 2 | 1 | 261 | 98.9% |
-| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | 26 | 42 | 88 | 156 | 16.7% |
-| 3 | AbilitySystem 資料型別 | 843 | 31 | 8 | 125 | 164 | 18.9% |
-| 4 | Elemental System | 439 | 10 | 2 | 71 | 83 | 12.0% |
-| 5 | Character / Combat / Interfaces | 738 | 95 | 14 | 109 | 218 | 43.6% |
-| 6 | Voxel World Core | 2,967 | 158 | 37 | 56 | 251 | 62.9% |
-| 7 | Rendering / Materials / Sky | 2,112 | 42 | 11 | 223 | 276 | 15.2% |
-| 8 | Enemy AI | 971 | 39 | 9 | 63 | 111 | 35.1% |
-| 9 | Items / Equipment / Inventory | 444 | 0 | 0 | 109 | 109 | 0% |
-| 10 | GameFlow / Snapshot / Save | 1,030 | 11 | 5 | 184 | 200 | 5.5% |
-| 11 | UI / Main / Input | 7,053 | 19 | 46 | 53 | 118 | 16.1% |
-| — | **合計** | **20,188** | **689** | **176** | **1,082** | **1,947** | **35.4%** |
+| # | 子系統 | Godot 行數 | 完成率（估算） | 主要剩餘缺口 |
+|---|--------|-----------|--------------|------------|
+| 1 | VM Core | 1,979 | **~100%** | FormatTraceParams（低優先 debug 輸出） |
+| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | **~75%** | act_* stubs（fan/around/distant/beam/projectile/morph）、SafetyGuard proc mask、SpellRunner.PruneAfter |
+| 3 | AbilitySystem 資料型別 | 843 | **~95%** | HasUnboundMpBlocks / PrimaryElement、AbilityPointCalculator 擴充方法 |
+| 4 | Elemental System | 439 | **100%** | — |
+| 5 | Character / Combat / Interfaces | 738 | **~90%** | CharacterStats 元素親和力 TMap |
+| 6 | Voxel World Core | 2,967 | **~90%** | GPU CA（M-10，長期） |
+| 7 | Rendering / Materials / Sky | 2,112 | **~45%** | PlacedObjectRegistry / PlacedUnit / PlacementShape / PlacementValidator、SurfaceWaterPool / TerrainFeature、MaterialData 擴充欄位 |
+| 8 | Enemy AI | 971 | **~88%** | CameraController 四視角（需設計決策） |
+| 9 | Items / Equipment / Inventory | 444 | **~85%** | DroppedItem / DroppedItemManager |
+| 10 | GameFlow / Snapshot / Save | 1,030 | **~88%** | GameFlowUI 完整角色/世界選擇介面 |
+| 11 | UI / Main / Input | 7,053 | **~80%** | 運行時鍵位重綁、自由畫布完整拖拉互動 |
+| — | **合計（估算）** | **20,188** | **~84%** | 主要剩餘：§7 放置系統 + act_* stubs + DroppedItem |
 
 ---
 
-## 缺失優先級速查
+## 已完成清單（本 session 前後確認）
 
-| 優先 | 子系統 | 關鍵缺失 | 目標里程碑 |
-|------|--------|--------|-----------|
-| P0 | ActionBus | 行動攔截匯流排（DamageShield / DeathGuard 積木依賴）| M-5 |
-| P0 | SpellCaster | Contact 容器、ExecuteArea / ExecuteTechnique 等技能因子分派 | M-5/M-9 |
-| ✅ | ElementalStatusEffect | 抽象基底類別 + RustEffect / GrowthSlowEffect 等 5 個具體效果 | M-5 |
-| ✅ | ElementalReactionTable | 22 條反應定義 + Lookup | M-5 |
-| P0 | CA 元素反應 | TileWorld3D::CheckElementalCaReactions / ApplyElementalImpact | M-5 |
-| P1 | MobSpawnController | 動態生成、despawn、MobTable | M-5 |
-| P1 | Items 系統 | ItemId / ItemData / Inventory / PlayerEquipment（整體 0%）| M-5/M-6 |
-| P1 | CharacterState 生存 | 體溫 / 口渴 / 飢餓 / 氧氣 | M-7 |
-| P1 | 地圖生成補全 | FloodFill3D、PlaceOreVeins、AddDecor | M-5 |
-| P2 | Snapshot 系統 | ISnapshottable / SnapshotManager / EntitySnapshot | M-9 |
-| P2 | GameFlow UI | 角色/世界選擇介面（整體 0%）| M-8 |
-| P2 | SpellGroup / SpellLoadout | 技能組管理 | W-6 |
-| P2 | GPU CA 模擬 | CaGpuSimulator（InitGpu / InGpuZone / SetCellFromGpu）| M-10 |
-| P3 | Sky System | SkyConfig / SkyController | M-7+ |
-| P3 | Camera System | CameraController 四視角 | M-7+ |
-| P3 | FormatTraceParams | VM Debug 追蹤輸出（唯一 VM 核心缺失）| 低優先 |
+以下項目在初版報告標記為「完全缺失」，現已實作：
+
+| 項目 | 對應 Godot 檔案 | 完成時間 |
+|------|--------------|---------|
+| FManaSlot USTRUCT + ActiveManaSlots | ManaSlot.cs | 本 session |
+| SpellGroup / SpellLoadout 完整實作 | SpellGroup.cs / SpellLoadout.cs | 前 session |
+| EEngraveColor / EScalingType / EEngraveCategory / EEngraveTrigger | EngraveColor.cs | 前 session |
+| FEngraveData 完整欄位（Color/Category/Trigger/Scaling/Effect） | EngraveData.cs | 前 session |
+| ETotemType（9 類型） | TotemType.cs | 前 session |
+| FTotemData（TotemId/DisplayName/Type/BaseAbilityPointCost/RequiredPlayerLevel） | TotemData.cs | 前 session |
+| SpellArray.IsPassive / GetUsedManaTypes / IsValidManaTypeCount | SpellArray.cs | 前 session |
+| FSpellSaveSystem（SaveGroupToString / LoadGroupFromString） | SaveSystem.cs | 本 session |
+| FSpellSlot.AbilityPointCost + FAbilityPointCalculator.CalculateTotalCost | SpellArray.cs / AbilityPointCalculator.cs | 本 session |
+| TierApCap 8 段正式數值 | AbilityPointCalculator.cs | 本 session |
+| Level / Xp / GainXp / GetTierName（8 境界） | PlayerController.cs | 本 session |
+| CharacterState：BodyTemperature / Thirst / Hunger / Oxygen 完整系統 | CharacterState.cs | 前 session |
+| CharacterState：SetStamina / SetMentalEnergy / SetMood / SetHealthStatus | CharacterState.cs | 前 session |
+| CharacterState：AddSocialFlag / RemoveSocialFlag / HasSocialFlag | CharacterState.cs | 前 session |
+| IWorldInterface 完整介面 | IWorldInterface.cs | 前 session |
+| EDestroyReason（Mining/ShapeMining/Explosion/Slash/Crush） | DestroyReason.cs | 前 session |
+| ESpawnCategory + FMobTableEntry | SpawnCategory.cs | 前 session |
+| UGameClockSubsystem（TotalTicks/DayCount/GetDayFraction/Advance/Reset） | GameClock.cs | 前 session |
+| MapGenerator3D：PostProcessRegion / FloodFill3D / PlaceOreVeinsInChunk / EnsureWalkableCavesInChunk / AddDecorInChunk | MapGenerator3D.cs | 前 session |
+| ASkyController + FSkyConfig | SkyController.cs / SkyConfig.cs | 前 session |
+| AMobSpawnController 完整實作（動態生成/despawn/MobTable） | MobSpawnController.cs | 前 session |
+| §9 Items 全部（EItemId/FItemData/FItemStack/FItemDrop/UItemRegistry/UInventoryComponent/UEquipmentComponent） | Items/*.cs | 前 session |
+| FFlowSaveSystem：ListAllWorlds / CreateNewWorld / DeleteWorld | FlowSaveSystem.cs | 前 session |
+| Snapshot 系統：ISnapshottable / USnapshotManager / FEntitySnapshot / FAuraSnapshot / FCharStateSnapshot | Snapshot/*.cs | 前 session |
+| FTileWorldSnapshot（球形 tile 快照） | TileWorldSnapshot.cs | 本 session |
+| ActionBus（DamageShield/DeathGuard，DeltaTime 計時） | ActionBus.cs | 前 session M-5 |
+| ExecuteContactHit（3D 前向掃描 + ApplyImmediate） | SpellCaster.cs | 前 session M-5 |
+| CA 元素反應（CheckElementalCaReactions / ApplyElementalImpact） | TileWorld3D.cs | 前 session M-5 |
+| SpellProjectile 浮點方向正規化 | SpellProjectile.cs | 前 session |
+| AEnemyManager 環境傷害 / FireDps / LavaDps / BoltDamage | EnemyManager.cs | 前 session |
+
+---
+
+## 剩餘完全缺失項目（優先級）
+
+| 優先 | 子系統 | 關鍵缺失 | 說明 |
+|------|--------|--------|------|
+| P1 | §7 放置系統（R-6） | PlacedObjectRegistry + PlacedUnit + PlacementShape + PlacementValidator | Godot R-6a~d 已完成，UE5 完全未移植 |
+| P1 | §7 地形特徵 | SurfaceWaterPool + TerrainFeature | 地表水池 + 地形裝飾特徵（MapGenerator3D 後處理） |
+| P1 | §9 掉落物 | DroppedItem + DroppedItemManager（含自動拾取） | 物品掉落/重力/自動拾取邏輯 |
+| P2 | §7 MaterialData | DisplayName / BaseColor / IsMineable / Hardness / RequiredToolTier 等 11 個欄位 | 採礦 / 掉落 / 視覺化所需材質資料 |
+| P2 | §5 元素親和力 | CharacterStats._elemAffinity / _elemOutputMult / _elemResistance（TMap） | W-3 元素系統擴充欄位 |
+| P2 | §3 SpellArray | HasUnboundMpBlocks / PrimaryElement | 法術 MP 分析輔助方法 |
+| P2 | §2 AbilityPointCalculator | CalculateSlotCostByType / HyperbolicEffect / LinearEffect / ExceedsLevelCap / MpMultiplier 字典 | W-6C/D 進階費用計算 |
+| P2 | §2 SafetyGuard | HasMp / TryProc / ResetProcMask / TryUseSpell / ResetSceneCounts（proc mask 機制） | 施法安全防護進階機制 |
+| P2 | §2 SpellRunner | PruneAfter()（時間戳快照還原） | Rollback 精確剪枝 |
+| P3 | §2 SpellCaster | act_area_fan / act_area_around / act_area_distant / act_area_beam（真實形狀） | 需設計決策（3D 形狀語意） |
+| P3 | §2 SpellCaster | act_fire_projectile（圖騰層投射物）、act_morph_apply（真實 buff） | 需設計決策 |
+| P3 | §8 CameraController | 四視角切換（ThirdPerson / FirstPerson / Isometric / SideScroll2D） | 需設計決策（UE5 SpringArm/Camera 架構） |
+| P4 | §1 VM | FormatTraceParams | Debug 追蹤輸出格式化（低優先） |
+| ⏳ | §6/§7 GPU CA | CaGpuSimulator 完整實作 | M-10 長期目標，暫緩 |
 
 ---
 
