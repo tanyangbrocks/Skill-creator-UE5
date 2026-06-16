@@ -3,8 +3,12 @@
 #include "AEnemy.h"
 #include "UElementalAuraComponent.h"
 #include "UCharacterStateComponent.h"
+#include "AVoxelWorldActor.h"
+#include "TileWorld3D.h"
+#include "MaterialType.h"
 
-void USnapshotManager::TakeSnapshot(ASkillCreatorCharacter* Player, const TArray<AEnemy*>& Enemies)
+void USnapshotManager::TakeSnapshot(ASkillCreatorCharacter* Player, const TArray<AEnemy*>& Enemies,
+                                     AVoxelWorldActor* VoxelWorld, int32 TileRadius)
 {
     FWorldSnapshot Snap;
 
@@ -50,10 +54,31 @@ void USnapshotManager::TakeSnapshot(ASkillCreatorCharacter* Player, const TArray
         Snap.Entities.Add(MoveTemp(E));
     }
 
+    // ── S-13：球形 tile 快照 ────────────────────────────────────────────────
+    if (VoxelWorld && TileRadius > 0 && Player)
+    {
+        FTileWorld3D* TW = VoxelWorld->GetTileWorld();
+        if (TW)
+        {
+            const FGridPos Center = Player->GetPosition();
+            const int32 R = TileRadius;
+            const int32 R2 = R * R;
+            for (int32 dx = -R; dx <= R; dx++)
+            for (int32 dy = -R; dy <= R; dy++)
+            for (int32 dz = -R; dz <= R; dz++)
+            {
+                if (dx*dx + dy*dy + dz*dz > R2) continue;
+                FGridPos P(Center.X+dx, Center.Y+dy, Center.Z+dz);
+                Snap.TileSnap.Tiles.Add(P, (uint8)TW->GetTile(P.X, P.Y, P.Z));
+            }
+        }
+    }
+
     SnapshotStack.Add(MoveTemp(Snap));
 }
 
-bool USnapshotManager::ApplyLatest(ASkillCreatorCharacter* Player, const TArray<AEnemy*>& Enemies)
+bool USnapshotManager::ApplyLatest(ASkillCreatorCharacter* Player, const TArray<AEnemy*>& Enemies,
+                                    AVoxelWorldActor* VoxelWorld)
 {
     if (SnapshotStack.IsEmpty()) return false;
 
@@ -100,6 +125,17 @@ bool USnapshotManager::ApplyLatest(ASkillCreatorCharacter* Player, const TArray<
             Enemy->GridPosition = E->Position;
             if (Enemy->AuraComp)
                 Enemy->AuraComp->RestoreAuraSnapshot(E->Aura);
+        }
+    }
+
+    // ── S-13：還原 tile 世界 ────────────────────────────────────────────────
+    if (VoxelWorld && !Snap.TileSnap.Tiles.IsEmpty())
+    {
+        FTileWorld3D* TW = VoxelWorld->GetTileWorld();
+        if (TW)
+        {
+            for (const auto& Pair : Snap.TileSnap.Tiles)
+                TW->SetTile(Pair.Key.X, Pair.Key.Y, Pair.Key.Z, (EMaterialType)Pair.Value);
         }
     }
 

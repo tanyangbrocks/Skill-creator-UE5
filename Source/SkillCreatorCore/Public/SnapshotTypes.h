@@ -59,9 +59,17 @@ struct FEntitySnapshot
     FCharacterStats CharStats;
 };
 
+// ── Tile 世界快照（對應 Godot S-13 TileWorldSnapshot）───────────────────────
+// 儲存玩家周圍球形範圍內的 tile 材質（uint8 = EMaterialType，避免引入 VoxelWorld 依賴）
+struct FTileWorldSnapshot
+{
+    TMap<FGridPos, uint8> Tiles; // GridPos → EMaterialType as uint8
+};
+
 // ── 世界快照（對應 Godot WorldSnapshot.cs）────────────────────────────────
 
 struct FWorldSnapshot
 {
     TArray<FEntitySnapshot> Entities;
+    FTileWorldSnapshot      TileSnap; // S-13：玩家周圍球形 tile 快照（radius 由施法者指定）
 };
