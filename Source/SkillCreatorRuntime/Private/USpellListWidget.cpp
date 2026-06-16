@@ -6,6 +6,14 @@
 #include "SpellDescriptionGenerator.h"
 #include "ElementType.h"
 #include "GameFramework/PlayerController.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/TextBlock.h"
+
+static constexpr int32 MaxSlots  = 10;
+static constexpr int32 MaxGroups =  5;
 
 // ─── 私有工具 ────────────────────────────────────────────────────────────────
 
@@ -15,12 +23,114 @@ ASkillCreatorCharacter* USpellListWidget::GetOwnerCharacter() const
     return PC ? Cast<ASkillCreatorCharacter>(PC->GetPawn()) : nullptr;
 }
 
+// ─── Widget 樹建構 ────────────────────────────────────────────────────────────
+
+void USpellListWidget::BuildLayout()
+{
+    UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
+    WidgetTree->RootWidget = Root;
+
+    UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>();
+    Title->SetText(FText::FromString(TEXT("─── 技能欄 ───")));
+    Root->AddChildToVerticalBox(Title);
+
+    // 10 格技能插槽（橫排）
+    SlotContainer = WidgetTree->ConstructWidget<UHorizontalBox>();
+    Root->AddChildToVerticalBox(SlotContainer);
+    SlotTexts.SetNum(MaxSlots);
+    for (int32 i = 0; i < MaxSlots; ++i)
+    {
+        UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>();
+        T->SetText(FText::FromString(TEXT("[空]")));
+        if (UHorizontalBoxSlot* S = SlotContainer->AddChildToHorizontalBox(T))
+            S->SetPadding(FMargin(4.f, 0.f));
+        SlotTexts[i] = T;
+    }
+
+    // 5 個組別圓點（橫排）
+    UTextBlock* GroupLabel = WidgetTree->ConstructWidget<UTextBlock>();
+    GroupLabel->SetText(FText::FromString(TEXT("組別：")));
+    Root->AddChildToVerticalBox(GroupLabel);
+
+    GroupDotContainer = WidgetTree->ConstructWidget<UHorizontalBox>();
+    Root->AddChildToVerticalBox(GroupDotContainer);
+    GroupDotTexts.SetNum(MaxGroups);
+    for (int32 g = 0; g < MaxGroups; ++g)
+    {
+        UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>();
+        T->SetText(FText::FromString(TEXT("○")));
+        if (UHorizontalBoxSlot* S = GroupDotContainer->AddChildToHorizontalBox(T))
+            S->SetPadding(FMargin(4.f, 0.f));
+        GroupDotTexts[g] = T;
+    }
+
+    // Tooltip 文字
+    SlotTooltipText = WidgetTree->ConstructWidget<UTextBlock>();
+    SlotTooltipText->SetText(FText::GetEmpty());
+    SlotTooltipText->SetAutoWrapText(true);
+    Root->AddChildToVerticalBox(SlotTooltipText);
+}
+
 // ─── 初始化 ──────────────────────────────────────────────────────────────────
 
 void USpellListWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    BuildLayout();
     RefreshSpellList();
+}
+
+// ─── BlueprintNativeEvent 預設實作 ───────────────────────────────────────────
+
+void USpellListWidget::OnSpellListRefreshed_Implementation(
+    const TArray<FSpellSlotDisplayInfo>& Slots, int32 ActiveGroup)
+{
+    // 更新插槽文字
+    for (int32 i = 0; i < MaxSlots; ++i)
+    {
+        if (!SlotTexts.IsValidIndex(i) || !SlotTexts[i]) continue;
+
+        if (Slots.IsValidIndex(i) && !Slots[i].bIsEmpty)
+        {
+            const FSpellSlotDisplayInfo& S = Slots[i];
+            const FString Marker = S.bIsActiveSlot ? TEXT("▶") : TEXT("·");
+            SlotTexts[i]->SetText(FText::FromString(
+                FString::Printf(TEXT("%s%s"), *Marker, *S.SpellName)));
+        }
+        else
+        {
+            SlotTexts[i]->SetText(FText::FromString(TEXT("[空]")));
+        }
+    }
+
+    // 更新組別圓點（作用中 = ●，其餘 = ○）
+    for (int32 g = 0; g < MaxGroups; ++g)
+    {
+        if (!GroupDotTexts.IsValidIndex(g) || !GroupDotTexts[g]) continue;
+        GroupDotTexts[g]->SetText(FText::FromString(g == ActiveGroup ? TEXT("●") : TEXT("○")));
+    }
+
+    // 清空 Tooltip
+    if (SlotTooltipText) SlotTooltipText->SetText(FText::GetEmpty());
+}
+
+void USpellListWidget::OnSlotHovered_Implementation(const FSpellSlotDisplayInfo& HoveredSlot)
+{
+    if (!SlotTooltipText) return;
+    if (HoveredSlot.bIsEmpty)
+    {
+        SlotTooltipText->SetText(FText::FromString(TEXT("（空格）")));
+        return;
+    }
+
+    const FString Desc = FString::Printf(
+        TEXT("%s  [%s]  MP: %.0f%s\n%s"),
+        *HoveredSlot.SpellName,
+        *HoveredSlot.ElementName,
+        HoveredSlot.BaseMpCost,
+        HoveredSlot.bIsPassive ? TEXT(" 被動") : TEXT(""),
+        *HoveredSlot.StructuredDesc);
+    SlotTooltipText->SetText(FText::FromString(Desc));
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -54,7 +164,6 @@ void USpellListWidget::RefreshSpellList()
                 Info.bIsPassive     = Spell.IsPassive();
                 Info.StructuredDesc = FSpellDescriptionGenerator::GenerateStructured(Spell);
 
-                // 主要元素
                 switch (Spell.SpellElement)
                 {
                 case ESkillElementType::None:    Info.ElementName = TEXT("");    break;
@@ -95,7 +204,6 @@ void USpellListWidget::SetActiveGroup(int32 GroupIndex)
 {
     ASkillCreatorCharacter* Char = GetOwnerCharacter();
     if (!Char || !Char->SpellCasterComp) return;
-
     Char->SpellCasterComp->SpellGroups.SetActiveGroup(GroupIndex);
     RefreshSpellList();
 }

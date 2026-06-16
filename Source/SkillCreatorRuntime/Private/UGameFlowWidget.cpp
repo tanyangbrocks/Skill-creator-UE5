@@ -3,6 +3,14 @@
 #include "WorldSaveData.h"
 #include "UGameSessionSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/TextBlock.h"
+#include "Components/Button.h"
+#include "Components/EditableText.h"
+#include "Components/ScrollBox.h"
 
 // ── 內部轉換 ──────────────────────────────────────────────────────────────
 
@@ -16,12 +24,174 @@ static FWorldSaveInfo ToInfo(const FWorldSaveData& D)
     return I;
 }
 
+// ── Widget 樹建構 ─────────────────────────────────────────────────────────
+
+void UGameFlowWidget::BuildLayout()
+{
+    UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
+    WidgetTree->RootWidget = Root;
+
+    // 標題
+    UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>();
+    Title->SetText(FText::FromString(TEXT("─── 世界選擇 ───")));
+    Root->AddChildToVerticalBox(Title);
+
+    // 世界清單（可捲動）
+    UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>();
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(Scroll))
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
+    WorldListContainer = WidgetTree->ConstructWidget<UVerticalBox>();
+    Scroll->AddChild(WorldListContainer);
+
+    // 建立世界列
+    UHorizontalBox* CreateRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+    Root->AddChildToVerticalBox(CreateRow);
+
+    UTextBlock* NameLabel = WidgetTree->ConstructWidget<UTextBlock>();
+    NameLabel->SetText(FText::FromString(TEXT("名稱：")));
+    CreateRow->AddChildToHorizontalBox(NameLabel);
+
+    NameInput = WidgetTree->ConstructWidget<UEditableText>();
+    NameInput->SetHintText(FText::FromString(TEXT("輸入世界名稱")));
+    CreateRow->AddChildToHorizontalBox(NameInput);
+
+    UButton* CreateBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* CreateTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    CreateTxt->SetText(FText::FromString(TEXT("建立")));
+    CreateBtn->AddChild(CreateTxt);
+    CreateBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnCreateClicked);
+    CreateRow->AddChildToHorizontalBox(CreateBtn);
+
+    // 進入 / 刪除列（使用 World ID）
+    UHorizontalBox* ActionRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+    Root->AddChildToVerticalBox(ActionRow);
+
+    UTextBlock* IdLabel = WidgetTree->ConstructWidget<UTextBlock>();
+    IdLabel->SetText(FText::FromString(TEXT("World ID：")));
+    ActionRow->AddChildToHorizontalBox(IdLabel);
+
+    WorldIdInput = WidgetTree->ConstructWidget<UEditableText>();
+    WorldIdInput->SetHintText(FText::FromString(TEXT("從清單複製 ID")));
+    ActionRow->AddChildToHorizontalBox(WorldIdInput);
+
+    UButton* EnterBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* EnterTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    EnterTxt->SetText(FText::FromString(TEXT("進入")));
+    EnterBtn->AddChild(EnterTxt);
+    EnterBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnEnterClicked);
+    ActionRow->AddChildToHorizontalBox(EnterBtn);
+
+    UButton* DeleteBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* DeleteTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    DeleteTxt->SetText(FText::FromString(TEXT("刪除")));
+    DeleteBtn->AddChild(DeleteTxt);
+    DeleteBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnDeleteClicked);
+    ActionRow->AddChildToHorizontalBox(DeleteBtn);
+
+    // 重新整理按鈕
+    UButton* RefreshBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* RefreshTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    RefreshTxt->SetText(FText::FromString(TEXT("重新整理")));
+    RefreshBtn->AddChild(RefreshTxt);
+    RefreshBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnRefreshClicked);
+    Root->AddChildToVerticalBox(RefreshBtn);
+
+    // 狀態文字
+    StatusText = WidgetTree->ConstructWidget<UTextBlock>();
+    StatusText->SetText(FText::GetEmpty());
+    Root->AddChildToVerticalBox(StatusText);
+}
+
 // ── UUserWidget overrides ─────────────────────────────────────────────────
 
 void UGameFlowWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    BuildLayout();
     RefreshWorldList();
+}
+
+// ── BlueprintNativeEvent 預設實作 ─────────────────────────────────────────
+
+void UGameFlowWidget::OnWorldListRefreshed_Implementation(const TArray<FWorldSaveInfo>& Worlds)
+{
+    if (!WorldListContainer) return;
+    WorldListContainer->ClearChildren();
+
+    if (Worlds.IsEmpty())
+    {
+        UTextBlock* Empty = WidgetTree->ConstructWidget<UTextBlock>();
+        Empty->SetText(FText::FromString(TEXT("（尚無世界，請建立）")));
+        WorldListContainer->AddChildToVerticalBox(Empty);
+        return;
+    }
+
+    for (const FWorldSaveInfo& W : Worlds)
+    {
+        UTextBlock* Row = WidgetTree->ConstructWidget<UTextBlock>();
+        Row->SetText(FText::FromString(
+            FString::Printf(TEXT("● %s   (ID: %s)"), *W.Name, *W.Id)));
+        WorldListContainer->AddChildToVerticalBox(Row);
+    }
+}
+
+void UGameFlowWidget::OnEnterGame_Implementation(const FWorldSaveInfo& SelectedWorld)
+{
+    // 預設：更新狀態文字。Blueprint 子類可 override 以執行 OpenLevel。
+    if (StatusText)
+        StatusText->SetText(FText::FromString(
+            FString::Printf(TEXT("進入世界：%s ..."), *SelectedWorld.Name)));
+}
+
+// ── 按鈕回呼 ─────────────────────────────────────────────────────────────
+
+void UGameFlowWidget::OnCreateClicked()
+{
+    if (!NameInput) return;
+    const FString Name = NameInput->GetText().ToString().TrimStartAndEnd();
+    if (Name.IsEmpty())
+    {
+        if (StatusText) StatusText->SetText(FText::FromString(TEXT("錯誤：請輸入世界名稱")));
+        return;
+    }
+    const bool bOk = CreateWorld(Name, FMath::RandRange(1000, 99999));
+    if (StatusText)
+        StatusText->SetText(FText::FromString(
+            bOk ? FString::Printf(TEXT("已建立：%s"), *Name) : TEXT("建立失敗")));
+}
+
+void UGameFlowWidget::OnEnterClicked()
+{
+    if (!WorldIdInput) return;
+    const FString Id = WorldIdInput->GetText().ToString().TrimStartAndEnd();
+    if (Id.IsEmpty())
+    {
+        if (StatusText) StatusText->SetText(FText::FromString(TEXT("錯誤：請輸入 World ID")));
+        return;
+    }
+    EnterWorld(Id);
+}
+
+void UGameFlowWidget::OnDeleteClicked()
+{
+    if (!WorldIdInput) return;
+    const FString Id = WorldIdInput->GetText().ToString().TrimStartAndEnd();
+    if (Id.IsEmpty())
+    {
+        if (StatusText) StatusText->SetText(FText::FromString(TEXT("錯誤：請輸入 World ID")));
+        return;
+    }
+    const bool bOk = RemoveWorld(Id);
+    if (StatusText)
+        StatusText->SetText(FText::FromString(
+            bOk ? FString::Printf(TEXT("已刪除 ID: %s"), *Id) : TEXT("刪除失敗（ID 不存在？）")));
+}
+
+void UGameFlowWidget::OnRefreshClicked()
+{
+    RefreshWorldList();
+    if (StatusText) StatusText->SetText(FText::FromString(TEXT("清單已更新")));
 }
 
 // ── BlueprintCallable ─────────────────────────────────────────────────────
@@ -55,22 +225,17 @@ bool UGameFlowWidget::RemoveWorld(const FString& WorldId)
 
 void UGameFlowWidget::EnterWorld(const FString& WorldId)
 {
-    // 找到目標世界
     const FWorldSaveInfo* Found = CachedWorlds.FindByPredicate(
         [&WorldId](const FWorldSaveInfo& I){ return I.Id == WorldId; });
     if (!Found) return;
 
-    // 載入完整 meta（含 PlayerSpawn 等欄位）
     FWorldSaveData Meta;
     if (!FFlowSaveSystem::LoadWorldMeta(Found->WorldDir, Meta)) return;
     Meta.WorldDir = Found->WorldDir;
 
-    // 存入跨關卡持久子系統
     if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
-    {
         if (UGameSessionSubsystem* Sub = GI->GetSubsystem<UGameSessionSubsystem>())
             Sub->SetPendingWorld(Meta);
-    }
 
     OnEnterGame(*Found);
 }

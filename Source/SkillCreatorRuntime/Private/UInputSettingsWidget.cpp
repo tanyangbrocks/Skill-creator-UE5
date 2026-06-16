@@ -7,6 +7,13 @@
 #include "Misc/Paths.h"
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/FileManager.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/TextBlock.h"
+#include "Components/Button.h"
+#include "Components/ScrollBox.h"
 
 const TCHAR* UInputSettingsWidget::ConfigSection = TEXT("PlayerInputBindings");
 
@@ -54,11 +61,60 @@ void UInputSettingsWidget::RefreshSubsystem() const
     Sub->AddMappingContext(IMC, 0);
 }
 
+// ─── Widget 樹建構 ────────────────────────────────────────────────────────────
+
+void UInputSettingsWidget::BuildLayout()
+{
+    UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
+    WidgetTree->RootWidget = Root;
+
+    UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>();
+    Title->SetText(FText::FromString(TEXT("─── 按鍵設定 ───")));
+    Root->AddChildToVerticalBox(Title);
+
+    // 鍵位清單（可捲動）
+    UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>();
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(Scroll))
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
+    BindingListContainer = WidgetTree->ConstructWidget<UVerticalBox>();
+    Scroll->AddChild(BindingListContainer);
+
+    // 提示文字
+    UTextBlock* Hint = WidgetTree->ConstructWidget<UTextBlock>();
+    Hint->SetText(FText::FromString(TEXT("（鍵位重綁請呼叫 RemapAction(ActionName, NewKey)）")));
+    Root->AddChildToVerticalBox(Hint);
+
+    // 操作按鈕列
+    UHorizontalBox* BtnRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+    Root->AddChildToVerticalBox(BtnRow);
+
+    UButton* SaveBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* SaveTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    SaveTxt->SetText(FText::FromString(TEXT("儲存")));
+    SaveBtn->AddChild(SaveTxt);
+    SaveBtn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnSaveClicked);
+    BtnRow->AddChildToHorizontalBox(SaveBtn);
+
+    UButton* ResetBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* ResetTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    ResetTxt->SetText(FText::FromString(TEXT("恢復預設")));
+    ResetBtn->AddChild(ResetTxt);
+    ResetBtn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnResetClicked);
+    BtnRow->AddChildToHorizontalBox(ResetBtn);
+
+    // 狀態文字
+    StatusText = WidgetTree->ConstructWidget<UTextBlock>();
+    StatusText->SetText(FText::GetEmpty());
+    Root->AddChildToVerticalBox(StatusText);
+}
+
 // ─── 初始化 ──────────────────────────────────────────────────────────────────
 
 void UInputSettingsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    BuildLayout();
 
     // 拍攝原始鍵位快照（每個動作取第一個 mapping 的 key）
     OriginalKeys.Empty();
@@ -68,6 +124,39 @@ void UInputSettingsWidget::NativeConstruct()
                 OriginalKeys.Add(FName(*M.Action->GetName()), M.Key);
 
     LoadAndApplyBindings();
+}
+
+// ─── BlueprintNativeEvent 預設實作 ───────────────────────────────────────────
+
+void UInputSettingsWidget::OnBindingsChanged_Implementation(const TArray<FKeyBindingEntry>& UpdatedBindings)
+{
+    if (!BindingListContainer) return;
+    BindingListContainer->ClearChildren();
+
+    for (const FKeyBindingEntry& E : UpdatedBindings)
+    {
+        const FString Marker  = E.bIsCustomized ? TEXT("*") : TEXT(" ");
+        const FString RowText = FString::Printf(
+            TEXT("%s  %-30s  →  %s"), *Marker, *E.ActionName, *E.BoundKey.ToString());
+
+        UTextBlock* Row = WidgetTree->ConstructWidget<UTextBlock>();
+        Row->SetText(FText::FromString(RowText));
+        BindingListContainer->AddChildToVerticalBox(Row);
+    }
+}
+
+// ─── 按鈕回呼 ────────────────────────────────────────────────────────────────
+
+void UInputSettingsWidget::OnSaveClicked()
+{
+    SaveBindings();
+    if (StatusText) StatusText->SetText(FText::FromString(TEXT("已儲存鍵位設定")));
+}
+
+void UInputSettingsWidget::OnResetClicked()
+{
+    ResetToDefaults();
+    if (StatusText) StatusText->SetText(FText::FromString(TEXT("已恢復預設鍵位")));
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -84,11 +173,8 @@ TArray<FKeyBindingEntry> UInputSettingsWidget::GetCurrentBindings() const
         FKeyBindingEntry Entry;
         Entry.ActionName = M.Action->GetName();
         Entry.BoundKey   = M.Key;
-
-        // 若目前鍵與快照中的原始鍵不同，標記為已自訂
         if (const FKey* Orig = OriginalKeys.Find(FName(*Entry.ActionName)))
             Entry.bIsCustomized = (M.Key != *Orig);
-
         Result.Add(Entry);
     }
     return Result;
@@ -102,14 +188,10 @@ bool UInputSettingsWidget::RemapAction(const FString& ActionName, const FKey& Ne
     UInputAction* Action = FindActionByName(ActionName);
     if (!Action) return false;
 
-    // 找到目前此動作的舊鍵（取第一個 mapping）
     FKey OldKey;
     for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
-    {
         if (M.Action.Get() == Action) { OldKey = M.Key; break; }
-    }
 
-    // UE5.7 clean API：先移除舊鍵，再加上新鍵
     IMC->UnmapKey(Action, OldKey);
     IMC->MapKey(Action, NewKey);
 
@@ -177,7 +259,6 @@ void UInputSettingsWidget::ResetToDefaults()
         UInputAction* Action = FindActionByName(Pair.Key.ToString());
         if (!Action) continue;
 
-        // 找目前 key
         FKey CurKey;
         for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
             if (M.Action.Get() == Action) { CurKey = M.Key; break; }
