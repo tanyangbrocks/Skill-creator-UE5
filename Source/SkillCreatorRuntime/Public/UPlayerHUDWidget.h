@@ -19,7 +19,7 @@
 //
 // Data is pushed from ASkillCreatorHUD::DrawHUD() each frame via the
 // Update* methods — no polling needed in Blueprint.
-UCLASS(Abstract, BlueprintType, Blueprintable)
+UCLASS(BlueprintType, Blueprintable)
 class SKILLCREATORRUNTIME_API UPlayerHUDWidget : public UUserWidget
 {
     GENERATED_BODY()
