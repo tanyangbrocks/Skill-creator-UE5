@@ -116,6 +116,10 @@ public:
     FActionBus ActionBus;
 
     // ── 戰鬥 API ──────────────────────────────────────────────────
+    // UI-2: 讓 InputSettingsWidget 取得 IMC 進行鍵位重綁
+    UFUNCTION(BlueprintPure, Category="Input")
+    class UInputMappingContext* GetDefaultMappingContext() const { return DefaultIMC; }
+
     UFUNCTION(BlueprintCallable, Category="Combat")
     void GainXp(float Amount);
 
@@ -162,6 +166,9 @@ private:
     void OnDebugSnapshotApply();
     void OnMine();
 
-    UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
-    UPROPERTY() TObjectPtr<AEnemyManager>    CachedEnemyMgr;
+    UPROPERTY() TObjectPtr<AVoxelWorldActor>    CachedVoxelWorld;
+    UPROPERTY() TObjectPtr<AEnemyManager>       CachedEnemyMgr;
+
+    // UI-2: 供 UInputSettingsWidget 讀取以實現鍵位重綁
+    UPROPERTY() TObjectPtr<class UInputMappingContext> DefaultIMC;
 };

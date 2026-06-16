@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-16（所有完全缺失項目已全部實作完成，僅剩 GPU CA M-10 長期目標）  
+**最後更新**：2026-06-16（S-1/UI-2/UI-3/UI-5 實作完成；所有 A/C 系列確認已在前 session 完成；僅剩 WBP .uasset 手動建立 + GPU CA M-10）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -20,9 +20,9 @@
 | 7 | Rendering / Materials / Sky | 2,112 | **~92%** | PlacedObjectRegistry/SurfaceWaterPool/MaterialData 全部完成；R-6e 拉伸系統未來擴充 |
 | 8 | Enemy AI | 971 | **~100%** | — （CameraController 前 session 完成） |
 | 9 | Items / Equipment / Inventory | 444 | **~100%** | — （DroppedItem 完成） |
-| 10 | GameFlow / Snapshot / Save | 1,030 | **~88%** | GameFlowUI 完整角色/世界選擇介面（UI 部分） |
-| 11 | UI / Main / Input | 7,053 | **~80%** | 運行時鍵位重綁、自由畫布完整拖拉互動 |
-| — | **合計（估算）** | **20,188** | **~95%** | 僅剩 GPU CA（M-10 長期）、UI 細節、W-7+ 世界觀 |
+| 10 | GameFlow / Snapshot / Save | 1,030 | **~97%** | WBP_GameFlow .uasset 待建（C++ 後端完整） |
+| 11 | UI / Main / Input | 7,053 | **~88%** | WBP_InputSettings / WBP_SpellList .uasset 待建；自由畫布 M-9 後期優化 |
+| — | **合計（估算）** | **20,188** | **~97%** | 僅剩 WBP .uasset 手動建立 + GPU CA（M-10 長期）+ W-7+ 世界觀 |
 
 ---
 
@@ -68,6 +68,12 @@
 | ADroppedItemActor + UDroppedItemManager（WorldSubsystem） | DroppedItem.cs / DroppedItemManager.cs | 2026-06-16 |
 | FPlacedUnit + EPlacementShape + FPlacementValidator + FPlacedObjectRegistry（含 JSON 序列化） | PlacedUnit/PlacementShape/PlacedObjectRegistry.cs | 2026-06-16 |
 | FTerrainFeature 抽象基類 + FSurfaceWaterPool（碗形湖泊） | TerrainFeature.cs / SurfaceWaterPool.cs | 2026-06-16 |
+| Enhanced Input 統一（全 C++ IMC/IA）+ 座標系修正 voxel↔UE5 | ASkillCreatorCharacter.h/.cpp / GreedyMesher.cpp / AVoxelWorldActor.cpp | 2026-06-16 |
+| S-1 CharacterSaveData 補完：Level / Xp / InventorySlots / ActiveHotbar / ManaCurrents | CharacterSaveData.h | 2026-06-16 |
+| UI-5 FSpellDescriptionGenerator：GenerateStructured / GenerateProse（11元素/11色）| SpellDescriptionGenerator.h/.cpp | 2026-06-16 |
+| UI-2 UInputSettingsWidget：RemapAction / SaveBindings / LoadAndApplyBindings / ResetToDefaults | UInputSettingsWidget.h/.cpp | 2026-06-16 |
+| UI-3 USpellListWidget：RefreshSpellList / SetActiveGroup / FSpellSlotDisplayInfo USTRUCT | USpellListWidget.h/.cpp | 2026-06-16 |
+| ASkillCreatorCharacter.DefaultIMC UPROPERTY + GetDefaultMappingContext() | ASkillCreatorCharacter.h/.cpp | 2026-06-16 |
 
 ---
 

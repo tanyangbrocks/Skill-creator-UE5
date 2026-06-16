@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "SpellArray.h"
+#include "ItemStack.h"
 #include "CharacterSaveData.generated.h"
 
 // JSON save data for the player character.
@@ -19,6 +20,13 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     UPROPERTY() float      Stamina       = 100.f;
     UPROPERTY() float      MentalEnergy  = 100.f;
     UPROPERTY() float      Mood          = 70.f;
+
+    // S-1: 補完欄位
+    UPROPERTY() int32               Level         = 1;
+    UPROPERTY() float               Xp            = 0.f;
+    UPROPERTY() TArray<FItemStack>  InventorySlots;   // 30 格背包（對應 UInventoryComponent.Slots）
+    UPROPERTY() int32               ActiveHotbar  = 0; // 目前選中熱鍵欄格
+    UPROPERTY() TMap<FName, float>  ManaCurrents;      // ManaTypeKey → 目前法力值
 
     // W-6: FSpellGroup 全組序列化 JSON（ActiveGroupIndex + 5 組 × 10 槽 + 被動）
     // 由 FSpellSaveSystem::SaveGroupToString 產生，LoadGroupFromString 還原

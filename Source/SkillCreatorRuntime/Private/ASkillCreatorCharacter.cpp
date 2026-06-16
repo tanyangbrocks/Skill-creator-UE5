@@ -299,7 +299,8 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     IA_Look->ValueType = EInputActionValueType::Axis2D;
 
     // ── 建立 InputMappingContext ──────────────────────────────────────────
-    UInputMappingContext* IMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Default"));
+    DefaultIMC = NewObject<UInputMappingContext>(this, TEXT("IMC_Default"));
+    UInputMappingContext* IMC = DefaultIMC;
 
     // WASD：W=+Y(前), S=-Y(後), D=+X(右), A=-X(左)
     {   // W → FVector2D(0,+1)
