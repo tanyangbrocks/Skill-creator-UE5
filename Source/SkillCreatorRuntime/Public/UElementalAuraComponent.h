@@ -3,6 +3,7 @@
 #include "Components/ActorComponent.h"
 #include "ElementType.h"
 #include "ElementalStatusEffect.h"
+#include "SnapshotTypes.h"
 #include "UElementalAuraComponent.generated.h"
 
 // 生物身上的單一元素 Aura 條目（原始元素，非反應效果）
@@ -54,6 +55,11 @@ public:
     void Process(float DeltaTime);
     // 清除所有 Aura 與效果（死亡 / 復活用）
     void Reset();
+
+    // ── 快照 API（對應 Godot AuraSnapshot.cs）─────────────────────────────
+    FAuraSnapshot TakeAuraSnapshot() const;
+    void          RestoreAuraSnapshot(const FAuraSnapshot& Snap);
+    static TUniquePtr<FElementalStatusEffect> CreateEffect(const FAuraEffectData& Data);
 
 private:
     UPROPERTY() TArray<FAuraEntry> Auras;

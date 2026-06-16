@@ -117,6 +117,58 @@ void UElementalAuraComponent::AddEffect(TUniquePtr<FElementalStatusEffect> Fx, I
     RecalcAggregates();
 }
 
+// ── 快照 API ──────────────────────────────────────────────────────────────
+
+FAuraSnapshot UElementalAuraComponent::TakeAuraSnapshot() const
+{
+    FAuraSnapshot Snap;
+    for (const FAuraEntry& A : Auras)
+    {
+        FAuraEntryData D;
+        D.Element  = A.Element;
+        D.Duration = A.Duration;
+        Snap.Entries.Add(D);
+    }
+    for (const TUniquePtr<FElementalStatusEffect>& Fx : ActiveEffects)
+    {
+        FAuraEffectData D;
+        D.EffectType        = Fx->GetEffectType();
+        D.RemainingDuration = Fx->RemainingDuration;
+        D.AccumulatedState  = Fx->GetAccumulatedState();
+        Snap.Effects.Add(D);
+    }
+    return Snap;
+}
+
+void UElementalAuraComponent::RestoreAuraSnapshot(const FAuraSnapshot& Snap)
+{
+    Reset();
+    for (const FAuraEntryData& D : Snap.Entries)
+        Auras.Add({ D.Element, D.Duration });
+    for (const FAuraEffectData& D : Snap.Effects)
+    {
+        if (TUniquePtr<FElementalStatusEffect> Fx = CreateEffect(D))
+            ActiveEffects.Add(MoveTemp(Fx));
+    }
+    RecalcAggregates();
+}
+
+TUniquePtr<FElementalStatusEffect> UElementalAuraComponent::CreateEffect(const FAuraEffectData& Data)
+{
+    TUniquePtr<FElementalStatusEffect> Fx;
+    if      (Data.EffectType == "Rust")          Fx = MakeUnique<FRustEffect>();
+    else if (Data.EffectType == "GrowthSlow")    Fx = MakeUnique<FGrowthSlowEffect>();
+    else if (Data.EffectType == "Quicksand")     Fx = MakeUnique<FQuicksandSlowEffect>();
+    else if (Data.EffectType == "Electrocution") Fx = MakeUnique<FElectrocutionEffect>();
+    else if (Data.EffectType == "Frozen")        Fx = MakeUnique<FFrozenEffect>();
+    if (Fx)
+    {
+        Fx->RemainingDuration = Data.RemainingDuration;
+        Fx->RestoreAccumulatedState(Data.AccumulatedState);
+    }
+    return Fx;
+}
+
 void UElementalAuraComponent::RecalcAggregates()
 {
     float Spd = 0.f, DmgBonus = 0.f, DefPen = 0.f, TempShift = 0.f;
