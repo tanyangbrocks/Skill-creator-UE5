@@ -26,4 +26,14 @@ public:
 
     // Meta file path: {WorldDir}/world.meta
     static FString MetaPath(const FString& WorldDir);
+
+    // ── 世界清單操作（對應 Godot FlowSaveSystem.Load / Delete）────────────
+    // 掃描 ProjectSaved/Worlds/ 下所有子目錄，回傳有效 world.meta 的記錄
+    static void ListAllWorlds(TArray<FWorldSaveData>& Out);
+
+    // 建立新世界目錄 + 寫入 world.meta；Id 自動生成（GUID）
+    static bool CreateNewWorld(const FString& Name, int32 Seed, FWorldSaveData& OutData);
+
+    // 刪除整個世界目錄（不可逆）
+    static bool DeleteWorld(const FString& WorldId);
 };
