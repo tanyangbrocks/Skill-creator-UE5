@@ -15,6 +15,46 @@ enum class EContainerType : uint8
     Area         UMETA(DisplayName="區域"),
 };
 
+// 刻印顏色分類（對應 Godot EngraveColor.cs）
+UENUM(BlueprintType)
+enum class EEngraveColor : uint8
+{
+    Action    UMETA(DisplayName="行動（自動插入）"),  // 行動刻印，技能因子基礎效果自動插入
+    Black     UMETA(DisplayName="黑（邏輯）"),        // 邏輯積木刻印
+    White     UMETA(DisplayName="白（傷害）"),        // 傷害型
+    Orange    UMETA(DisplayName="橙（控制）"),        // 控制型（擊退/減速/凍結/牽引）
+    Blue      UMETA(DisplayName="藍（改造）"),        // 技能因子改造（多段/被動/不可打斷/軌跡）
+    Red       UMETA(DisplayName="紅（侵略）"),        // 侵略效果（暈眩/瞬殺/斷招）
+    Green     UMETA(DisplayName="綠（輔助）"),        // 輔助效果（護盾/治療/替代效果）
+    Purple    UMETA(DisplayName="紫（額外操作）"),    // 額外操作（選擇型/節奏輸入）
+    Yellow    UMETA(DisplayName="黃（能力限制）"),    // 能力限制
+    Elemental UMETA(DisplayName="元素"),              // 屬性刻印（11 元素）
+    Law       UMETA(DisplayName="法則"),              // 法則刻印（時間/空間/造化等）
+};
+
+// 刻印縮放曲線類型（對應 Godot ScalingType.cs）
+UENUM(BlueprintType)
+enum class EScalingType : uint8
+{
+    Hyperbolic UMETA(DisplayName="雙曲線（1 - 1/(1+ax)）"),  // 傷害/概率類
+    Linear     UMETA(DisplayName="線性（base + x*k）"),      // 輔助類
+};
+
+// 技能因子類型（對應 Godot TotemType.cs）
+UENUM(BlueprintType)
+enum class ETotemType : uint8
+{
+    Area         UMETA(DisplayName="範圍"),       // 施放形狀（扇形/周身/遠距圓形/射線）
+    Technique    UMETA(DisplayName="武技"),       // 近戰招式（劍技/拳擊/盾防）
+    Projectile   UMETA(DisplayName="投射物"),     // 發射投射物
+    Passive      UMETA(DisplayName="被動"),       // 持續執行
+    Morph        UMETA(DisplayName="變幻"),       // 角色狀態改變
+    Displacement UMETA(DisplayName="位移"),       // 衝刺/瞬移/閃避
+    Summon       UMETA(DisplayName="召喚"),       // 召喚實體
+    Domain       UMETA(DisplayName="領域"),       // 改變環境/地形/天候
+    Custom       UMETA(DisplayName="自定義"),     // 語意由刻印決定
+};
+
 // 刻印分類（對應 Godot EngraveCategory.cs）
 UENUM(BlueprintType)
 enum class EEngraveCategory : uint8
@@ -41,13 +81,30 @@ struct FEngraveData
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere) FName            EngraveId;
-    UPROPERTY(EditAnywhere) int32            Points   = 0;
-    UPROPERTY(EditAnywhere) EEngraveCategory Category = EEngraveCategory::Other;
-    UPROPERTY(EditAnywhere) EEngraveTrigger  Trigger  = EEngraveTrigger::None;
+    UPROPERTY(EditAnywhere) int32            Points      = 0;
+    UPROPERTY(EditAnywhere) EEngraveColor    Color       = EEngraveColor::White;
+    UPROPERTY(EditAnywhere) EEngraveCategory Category    = EEngraveCategory::Other;
+    UPROPERTY(EditAnywhere) EEngraveTrigger  Trigger     = EEngraveTrigger::None;
+    UPROPERTY(EditAnywhere) EScalingType     Scaling     = EScalingType::Hyperbolic;
     // 效果基礎值；CalculateEffect() 按 Points 縮放：Effect * (1 + Points * 0.1)
-    UPROPERTY(EditAnywhere) float            Effect   = 0.f;
+    UPROPERTY(EditAnywhere) float            Effect      = 0.f;
 
     float CalculateEffect() const { return Effect * (1.f + (float)Points * 0.1f); }
+};
+
+// 技能因子資料（對應 Godot TotemData.cs）
+USTRUCT(BlueprintType)
+struct FTotemData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere) FName       TotemId;                               // 唯一識別 ID
+    UPROPERTY(EditAnywhere) FText       DisplayName;                           // 顯示名稱
+    UPROPERTY(EditAnywhere) ETotemType  Type    = ETotemType::Custom;          // 因子類型
+    UPROPERTY(EditAnywhere) int32       BaseAbilityPointCost = 10;             // 基礎能力點消耗
+    UPROPERTY(EditAnywhere) int32       RequiredPlayerLevel  = 1;              // 解鎖所需玩家等級
+
+    bool IsValid() const { return !TotemId.IsNone(); }
 };
 
 // 技能因子插槽（對應 Godot SpellSlot.cs）
