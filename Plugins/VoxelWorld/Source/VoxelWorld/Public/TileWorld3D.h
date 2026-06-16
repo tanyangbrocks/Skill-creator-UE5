@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Chunk3D.h"
 #include "MaterialRegistry.h"
+#include "CaGpuSimulator.h"
 
 struct FRaycastResult3D
 {
@@ -41,6 +42,16 @@ public:
     // SimRadius=-1 → 模擬全部 dirty chunk
     void Tick(int32 ActiveCX = 0, int32 ActiveCY = 0, int32 ActiveCZ = 0, int32 SimRadius = -1);
 
+    // --- GPU CA（M-10）---
+    // 初始化 GPU 模擬器；在世界建立後呼叫一次
+    void InitGpu();
+    // 移動 GPU 模擬區中心到玩家所在格（每幀或玩家跨 chunk 時呼叫）
+    void UpdateGpuOrigin(int32 wx, int32 wy, int32 wz);
+    // 是否在目前 GPU 模擬區範圍內
+    bool InGpuZone(int32 x, int32 y, int32 z) const;
+    // 將 GPU readback 的一格寫入世界（由 FCaGpuSimulator::Download 回呼）
+    void SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte);
+
     // --- Gameplay ---
     void             Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Chance = 1.f);
     FRaycastResult3D Raycast(FVector Start, FVector Dir, float MaxDist) const;
@@ -61,6 +72,8 @@ public:
     const TMap<FIntVector, FChunk3D*>& GetActiveChunks() const { return Chunks; }
 
 private:
+    FCaGpuSimulator             GpuSim;
+
     TMap<FIntVector, FChunk3D*> Chunks;
     TSet<FIntVector>                        DirtyChunks;
     TSet<FIntVector>                        PendingNeighborDirty;

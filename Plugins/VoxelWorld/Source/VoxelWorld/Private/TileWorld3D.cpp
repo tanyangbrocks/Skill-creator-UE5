@@ -15,6 +15,34 @@ FTileWorld3D::~FTileWorld3D()
 {
     for (auto& Pair : Chunks)
         delete Pair.Value;
+    GpuSim.Release();
+}
+
+// ============================================================
+// GPU CA（M-10 stub）
+// ============================================================
+
+void FTileWorld3D::InitGpu()
+{
+    GpuSim.Initialize();   // stub returns false; no-op until M-10
+}
+
+void FTileWorld3D::UpdateGpuOrigin(int32 wx, int32 wy, int32 wz)
+{
+    GpuSim.SetOrigin(wx, wy, wz);
+}
+
+bool FTileWorld3D::InGpuZone(int32 x, int32 y, int32 z) const
+{
+    if (!GpuSim.IsAvailable()) return false;
+    return FMath::Abs(x - GpuSim.GetOriginX()) <= FCaGpuSimulator::ZoneW / 2 &&
+           FMath::Abs(y - GpuSim.GetOriginY()) <= FCaGpuSimulator::ZoneH / 2 &&
+           FMath::Abs(z - GpuSim.GetOriginZ()) <= FCaGpuSimulator::ZoneD / 2;
+}
+
+void FTileWorld3D::SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte)
+{
+    SetTile(x, y, z, static_cast<EMaterialType>(MaterialByte));
 }
 
 // ============================================================
