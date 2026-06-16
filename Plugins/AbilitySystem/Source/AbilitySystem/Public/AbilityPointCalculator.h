@@ -64,11 +64,17 @@ struct FAbilityPointCalculator
         return Result;
     }
 
-    // ── 是否超過等級對應的能力點上限（W-10 等級系統建立後補全）──
-    // TierApCap：等級 → 能力點上限（暫定線性公式，W-10 確認後調整）
+    // ── 等級 → 能力點上限（W-10，對應 Godot PlayerController.TierApCap）──
     static int32 TierApCap(int32 PlayerLevel)
     {
-        return 50 + PlayerLevel * 10; // stub：W-10 確認後調整
+        if (PlayerLevel < 10)  return 50;
+        if (PlayerLevel < 20)  return 120;
+        if (PlayerLevel < 35)  return 200;
+        if (PlayerLevel < 50)  return 350;
+        if (PlayerLevel < 65)  return 500;
+        if (PlayerLevel < 80)  return 700;
+        if (PlayerLevel < 100) return 900;
+        return 1500;
     }
 
     // ── 計算技能整構能力點總消耗（W-6 刻印成本系統建立後補全）──────

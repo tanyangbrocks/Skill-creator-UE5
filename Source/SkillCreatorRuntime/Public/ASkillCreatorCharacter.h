@@ -44,6 +44,19 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats")
     float CurrentMp = 100.f;
 
+    // W-10: 等級系統
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Level")
+    int32 Level = 1;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Level")
+    float Xp = 0.f;
+
+    // 升級所需 XP（等級 × 100，對應 Godot XpRequired）
+    static int32 XpRequired(int32 InLevel) { return InLevel * 100; }
+
+    // 當前境界名稱（對應 Godot GetTierName）
+    static FString GetTierName(int32 InLevel);
+
     // W-6: 多重法力插槽；slot[0]（"gui_dao"）與 CurrentMp 保持同步（向後相容）
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats")
     TArray<FManaSlot> ActiveManaSlots;

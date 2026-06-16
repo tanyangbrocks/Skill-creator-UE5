@@ -182,7 +182,24 @@ FManaSlot* ASkillCreatorCharacter::GetManaSlot(FName Key)
 
 void ASkillCreatorCharacter::GainXp(float Amount)
 {
-    // W-10 等級系統建立後填入
+    Xp += Amount;
+    while (Xp >= (float)XpRequired(Level))
+    {
+        Xp -= (float)XpRequired(Level);
+        ++Level;
+    }
+}
+
+FString ASkillCreatorCharacter::GetTierName(int32 InLevel)
+{
+    if (InLevel < 10)  return TEXT("煉氣");
+    if (InLevel < 20)  return TEXT("築基");
+    if (InLevel < 35)  return TEXT("化形");
+    if (InLevel < 50)  return TEXT("金丹");
+    if (InLevel < 65)  return TEXT("元嬰");
+    if (InLevel < 80)  return TEXT("出竅");
+    if (InLevel < 100) return TEXT("散仙");
+    return TEXT("真仙");
 }
 
 void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)
