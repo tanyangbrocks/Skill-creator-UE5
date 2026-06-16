@@ -3,45 +3,48 @@
 using E = ESkillElementType;
 using P = EPhysicsCategory;
 
+using I = EItemId;
+
 // 材質資料表（與 EMaterialType 一一對應，依 ID 順序）
 // 欄位順序：Physics, Density, bFlammable, BurnMin, BurnMax, NativeElement,
-//           bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity
+//           bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity,
+//           FragmentItem
 static const FMaterialData GMatData[] =
 {
     // ID  0 — Air
-    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  0   },
+    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  0,   I::None           },
     // ID  1 — Stone
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::FragmentStone  },
     // ID  2 — Dirt
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt   },
     // ID  3 — Grass
-    { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt   },
     // ID  4 — Sand
-    { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255 },
+    { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255, I::FragmentSand   },
     // ID  5 — Water
-    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 200 },
+    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 200, I::None           },
     // ID  6 — Lava
-    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 220 },
+    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 220, I::None           },
     // ID  7 — Wood
-    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,1, 0.5f, 0.f,  255 },
+    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,1, 0.5f, 0.f,  255, I::FragmentWood   },
     // ID  8 — Leaves
-    { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180 },
+    { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180, I::FragmentWood   },
     // ID  9 — Ore_Iron
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw     },
     // ID 10 — Ore_Gold
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::None           },
     // ID 11 — Fire
-    { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 150 },
+    { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 150, I::None           },
     // ID 12 — Steam
-    { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  100 },
+    { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  100, I::None           },
     // ID 13 — Ash
-    { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255 },
+    { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh    },
     // ID 14 — Ore_Coal
-    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  3.f, 1, 2.f,  0.5f, 255 },
+    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::OreCoal        },
     // ID 15 — Ore_Copper
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255 },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255, I::OreCopperRaw   },
     // ID 16 — Ore_MagicCrystal
-    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,3, 2.f,  3.f,  210 },
+    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,3, 2.f,  3.f,  210, I::OreMagicCrystal},
 };
 
 static constexpr uint8 GMatDataCount = (uint8)(sizeof(GMatData) / sizeof(GMatData[0]));
@@ -106,6 +109,13 @@ FText FMaterialRegistry::GetDisplayName(EMaterialType Mat)
     uint8 ID = (uint8)Mat;
     if (ID >= GMatDataCount) return FText::GetEmpty();
     return FText::FromString(GMatNames[ID]);
+}
+
+EItemId FMaterialRegistry::GetFragmentItem(EMaterialType Mat)
+{
+    uint8 ID = (uint8)Mat;
+    if (ID >= GMatDataCount) return EItemId::None;
+    return GMatData[ID].FragmentItem;
 }
 
 // ── 預設掉落查找（對應 Godot MaterialData.DefaultDrops）─────────────────

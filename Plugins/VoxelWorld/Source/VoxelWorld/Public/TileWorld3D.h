@@ -66,6 +66,15 @@ public:
     // 法術命中後元素 CA 效果：沸騰→Steam / 流沙→Sand / 燃燒→IgniteMaterial（M-5）
     void              ApplyElementalImpact(int32 x, int32 y, int32 z, ESkillElementType ImpactElement);
 
+    // --- 高度估算（從 y=0 往下找第一個非 Air 格的 Y 值；若全為 Air 返回 Height-1）---
+    int32 HeightEstimator(int32 x, int32 z) const;
+
+    // --- CA 鄰居骯髒標記（公開版：由世界座標換算 chunk 後呼叫 MarkNeighborsDirty）---
+    void MarkNeighborsCaDirty(int32 x, int32 y, int32 z);
+
+    // 將 PendingNeighborDirty 批次沖洗至 DirtyChunks（Tick 末尾自動呼叫，外部亦可手動呼叫）
+    void FlushNeighborDirty();
+
     // --- Chunk 管理 ---
     FChunk3D*  GetOrCreateChunk(FIntVector ChunkCoord);
     FChunk3D*  GetChunkAt(FIntVector ChunkCoord) const;

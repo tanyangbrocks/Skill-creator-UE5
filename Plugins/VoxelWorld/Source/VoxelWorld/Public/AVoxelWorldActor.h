@@ -1,10 +1,12 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Components/StaticMeshComponent.h"
 #include "TileWorld3D.h"
 #include "ChunkStreamingManager.h"
 #include "RealtimeMeshComponent.h"
 #include "RealtimeMeshSimple.h"
+#include "GridPos.h"
 #include "AVoxelWorldActor.generated.h"
 
 // UE Actor wrapper for FTileWorld3D + RMC rendering.
@@ -48,6 +50,11 @@ public:
 
     static AVoxelWorldActor* FindInWorld(UWorld* World);
 
+    // ── 採掘高亮 ──────────────────────────────────────────────────
+    // 在 tile 格心顯示半透明線框立方體；不傳座標則隱藏
+    void ShowHighlight(FGridPos TilePos);
+    void HideHighlight();
+
     // ── AActor ────────────────────────────────────────────────────
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
@@ -55,6 +62,8 @@ public:
 private:
     FTileWorld3D           TileWorld;
     FChunkStreamingManager Streaming;
+
+    UPROPERTY() TObjectPtr<UStaticMeshComponent> HighlightMesh;
 
     TObjectPtr<URealtimeMeshSimple> RMCMesh;
     TSet<FIntVector> CreatedMegaChunks;

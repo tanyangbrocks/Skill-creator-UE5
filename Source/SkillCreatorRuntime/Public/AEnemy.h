@@ -3,10 +3,13 @@
 #include "GameFramework/Pawn.h"
 #include "ICreature.h"
 #include "IElementalTarget.h"
+#include "ISnapshottable.h"
 #include "GridPos.h"
+#include "SnapshotTypes.h"
 #include "AEnemy.generated.h"
 
 class UElementalAuraComponent;
+class AVoxelWorldActor;
 
 UENUM(BlueprintType)
 enum class EEnemyType : uint8
@@ -43,6 +46,7 @@ class SKILLCREATORRUNTIME_API AEnemy
     : public APawn
     , public ICreature
     , public IElementalTarget
+    , public ISnapshottable
 {
     GENERATED_BODY()
 public:
@@ -71,9 +75,23 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Enemy")
     EEnemyState AIState = EEnemyState::Idle;
 
+    // 遠程敵人使用的魔杖槽數
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Enemy")
+    uint8 WandsToFire = 1;
+
+    // 面向方向（tile 空間；各軸 -1/0/+1）
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Enemy")
+    int32 FacingX = 1;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Enemy")
+    int32 FacingZ = 0;
+
     // ── 組件 ──────────────────────────────────────────────────────
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UElementalAuraComponent> AuraComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
 
     // ── 戰鬥參數（依 Type 決定）──────────────────────────────────
     float GetBaseMoveInterval() const;
@@ -88,6 +106,14 @@ public:
     void TakeDamageAmount(float Amount);
     void ForceDespawn() { Hp = 0.f; }
     void Respawn();
+    void StartRespawn(float DelaySeconds = 5.f);
+    void TickRespawn(float /*DeltaTime*/) {}  // 保留 API；計時器由 FTimerHandle 驅動
+    void ForceRevive();
+    void ApplyGravity();
+
+    // ── ISnapshottable ────────────────────────────────────────────
+    virtual FEntitySnapshot TakeSnapshot()                              const override;
+    virtual void            RestoreFromSnapshot(const FEntitySnapshot&)       override;
 
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return UniqueId; }
@@ -104,6 +130,8 @@ protected:
     virtual void BeginPlay() override;
 
 private:
-    int32 UniqueId = 0;
-    static int32 NextId;
+    int32         UniqueId        = 0;
+    static int32  NextId;
+    bool          bPendingRespawn = false;
+    FTimerHandle  RespawnTimerHandle;
 };

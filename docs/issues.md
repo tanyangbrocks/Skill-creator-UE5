@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-16（S-1/UI-2/UI-3/UI-5 實作完成；所有 A/C 系列確認已在前 session 完成；僅剩 WBP .uasset 手動建立 + GPU CA M-10）  
+**最後更新**：2026-06-17（Batch 2 大規模補完：FCharStatsSnapshot / LastPlayed / FragmentItem / SplitAt+AppendBlocks / AEnemy 全補 / AEnemyManager EnemyProjectiles+SetSpawner / ASpellProjectile.IsAlive / TileWorld3D.HeightEstimator+MarkNeighborsCaDirty+FlushNeighborDirty / AVoxelWorldActor.ShowHighlight+HideHighlight / SBlockEditorWidget.OnChanged+SwitchEditorGroup / UFloatingDamageWidget + AFloatingDamageActor）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -174,38 +174,38 @@
 | SpellCaster.cs | SpellCastResult（Ok / Projectile / Failed）| **stub** | `USpellCaster.cpp` L82-114 | 簡化為 bool TryCast() |
 | SpellCaster.cs | TryCast() 主方法（冷卻 / MP 扣除 / OnSpellCast）| 已實作 | `USpellCaster.cpp` L66-238 | 完整對應 |
 | SpellCaster.cs | TryCast 投射物容器分支 | 已實作 | `USpellCaster.cpp` L82-114 | ASpellProjectile Spawn + OnHitEnemy 回調 |
-| SpellCaster.cs | TryCast 投射物方向計算 | **stub** | `USpellCaster.cpp` L87-92 | 僅支援軸向 FIntVector，無浮點正規化 |
-| SpellCaster.cs | TryCast Contact 容器分支 | **完全缺失** | — | UE5 無 Contact 容器 |
+| SpellCaster.cs | TryCast 投射物方向計算 | **已實作** | `USpellCaster.cpp` L87-92 | 浮點正規化（前 session）|
+| SpellCaster.cs | TryCast Contact 容器分支 | **已實作** | `USpellCaster.cpp` | ExecuteContactHit() 3D 前向掃描（M-5）|
 | SpellCaster.cs | TryCast SummonContainer / ExecuteSummonContainer | **stub** | — | 佔位方法，無召喚物邏輯 |
 | SpellCaster.cs | TryCast DirectCast 分支 | 已實作 | `USpellCaster.cpp` L117-237 | 提交 ExecutionContext 到 Runner |
-| SpellCaster.cs | ExecuteContactHit() | **完全缺失** | — | 無 Contact 容器實作 |
-| SpellCaster.cs | ExecuteEffects() | **完全缺失** | — | 改為 ExecutionLoop::Step() 驅動 |
+| SpellCaster.cs | ExecuteContactHit() | **已實作** | `USpellCaster.cpp` | 3D 前向掃描 MeleeRange=3 + ActionBus（M-5）|
+| SpellCaster.cs | ExecuteEffects() | **架構替換** | — | UE5 改為 ExecutionLoop::Step() 狀態機驅動，無直接對應 |
 | SpellCaster.cs | ApplyGlobalEngravings()（含 green_death_replace / green_invincible）| **完全缺失** | — | M-9 待實作 |
 | SpellCaster.cs | ConsumeEntityMove() / ConsumeEntityDamage() | 已實作 | `USpellCaster.cpp` L26-55；`FSpellRunner.cpp` L78-93 | 完整對應 |
 | SpellCaster.cs | QueryEnemies() | 已實作 | `USpellCaster.cpp` L135-149 | EntityQuery lambda |
-| SpellCaster.cs | BuildSlotLookup() / ResolveTotem() / ExecuteSlot() / DispatchAction() | **完全缺失** | — | 改為 instruction 陣列 + state machine |
-| SpellCaster.cs | DispatchAction 所有 act_* 分支（act_area_fan/around/distant/beam / act_technique_* / act_morph / act_dash / act_domain / act_passive_tick）| **完全缺失** | — | M-9 待完成 |
-| SpellCaster.cs | ExecuteArea / ExecuteTechnique / ExecuteMorph / ExecuteDisplacement / ExecuteSummon / ExecuteDomain | **完全缺失** | — | M-9 待完成 |
+| SpellCaster.cs | BuildSlotLookup() / ResolveTotem() / ExecuteSlot() / DispatchAction() | **已實作** | `USpellCaster.h` L84,86 | ResolveTotem + DispatchAction 已實作；BuildSlotLookup 改為 instruction 陣列架構 |
+| SpellCaster.cs | DispatchAction 所有 act_* 分支（act_area_fan/around/distant/beam / act_technique_* / act_morph / act_dash / act_domain / act_passive_tick）| **stub** | `USpellCaster.cpp` | 入口點存在；act_area_fan/beam/morph 以 Explode 佔位，真實形狀 stub |
+| SpellCaster.cs | ExecuteArea / ExecuteTechnique / ExecuteMorph / ExecuteDisplacement / ExecuteSummon / ExecuteDomain | **stub** | `USpellCaster.cpp` | 佔位實作（多數以 Explode 替代），真實效果 stub |
 | SpellCaster.cs | ApplyElement() | **完全缺失** | — | 元素效果在 SpellProjectile 中簡單實作 (L75-77) |
 | SpellCaster.cs | ApplyModsToNearbyEnemies() / ReadMods() / Mods 結構 | **完全缺失** | — | 改為 ExecutionLoop 內部解析 payload |
 | SpellRunner.cs | 核心架構（Submit / Tick / Advance / ActiveCount / GetActiveCount()）| 已實作 | `FSpellRunner` (.h & .cpp) | 完整對應 |
 | SpellRunner.cs | Advance 等待狀態檢查（6 種）| 已實作 | `FSpellRunner.cpp` L46-51 | 完整對應 |
 | SpellRunner.cs | Advance PendingEntityDamage / PendingEntityMove | 已實作 | `FSpellRunner.cpp` L78-93 | 完整對應 |
-| SpellRunner.cs | PruneAfter() | **完全缺失** | — | 改為 PruneAll()，無時間戳快照回復 |
+| SpellRunner.cs | PruneAfter() | **已實作** | `FSpellRunner.h/.cpp` | PruneAfter(MaxAgeSeconds) + ElapsedTime 追蹤（2026-06-16）|
 | SpellRunner.cs | Submit 參數完整性 / comboDepth | **stub** | `FActiveEntry::ComboDepth` | MaxComboDepth 8 vs Godot 5 |
 | SpellRunner.cs | TriggerCombo() | **stub** | `FSpellRunner.cpp` L64 | 無智慧查找，由遊戲層建立 Context |
 | SpellRunner.cs | Advance PendingInvokeTotem / PendingInvokeSpell | **stub** | `FSpellRunner.cpp` L53-76 | 簡化 callback，無 ResolveTotem 邏輯 |
 | SpellProjectile.cs | Position / IsAlive / MoveInterval / MaxRange / MoveTimer / TilesTravelled | 已實作 | `ASpellProjectile.h` L30-44 | 完整對應（MaxRange 20 vs Godot 55；MoveInterval 0.08 vs 0.06）|
 | SpellProjectile.cs | Init() / Tick() / AdvanceOneTile() / FindEnemyAt() | 已實作 | `ASpellProjectile.cpp` L12-86 | 完整對應 |
-| SpellProjectile.cs | 方向向量正規化 | **stub** | `ASpellProjectile.h` L42 | FIntVector，無浮點正規化 |
+| SpellProjectile.cs | 方向向量正規化 | **已實作** | `ASpellProjectile.h` | 浮點正規化（前 session）|
 | SpellProjectile.cs | HitAt Runner 提交 / ExecuteEffects 同步分支 | **完全缺失** | — | 改為 OnHitEnemy callback |
 | GameAction.cs | GameAction 抽象型別 / EntityDamageAction / PlayerDamageAction / PlayerDeathAction | **完全缺失** | — | 改為 PendingEntityDamageId + Amount |
-| ActionBus.cs | ActionBus（Register / UnregisterByTag / ClearAll / Dispatch / Count）| **完全缺失** | — | 預留在 RegisterFilterFn stub；M-9 待完成 |
+| ActionBus.cs | ActionBus（Register / UnregisterByTag / ClearAll / Dispatch / Count）| **已實作** | `ActionBus.h` | RegisterFilter / DispatchPlayerDamage / DispatchPlayerDeath；API 不同但功能完整（M-5）|
 | EventBus.cs | Broadcast() / HasSignal() / ClearFrame() / ClearAll() | **stub** | `USpellCaster.cpp` L187-188 | lambda 預留但未真正實作 |
-| SafetyGuard.cs | MaxExecutionsPerTick / MaxWhileIterations / MaxEntityCount / MaxContainerDepth | **完全缺失** | — | UE5 只有 MaxStepsPerCast |
-| SafetyGuard.cs | MaxComboDepth | **stub** | `FSpellRunner.cpp` L64 | 硬編碼 8 vs Godot 5 |
-| SafetyGuard.cs | HasMp() / TryProc() / ResetProcMask() / TryUseSpell() / ResetSceneCounts() | **完全缺失** | — | proc mask 機制 M-9 待實作 |
-| AbilityPointCalculator.cs | CalculateTotalCost / CalculateMpCost / HyperbolicEffect / LinearEffect / ExceedsLevelCap / CalculateSlotCostByType / MpMultiplier 字典 | **完全缺失** | — | M-9 待實作 |
+| SafetyGuard.cs | MaxExecutionsPerTick / MaxWhileIterations / MaxEntityCount / MaxContainerDepth | **已實作** | `SafetyGuard.h` L11-16 | 完整對應（前 session）|
+| SafetyGuard.cs | MaxComboDepth | **已實作** | `SafetyGuard.h` L13 | constexpr MaxComboDepth=5 |
+| SafetyGuard.cs | HasMp() / TryProc() / ResetProcMask() / TryUseSpell() / ResetSceneCounts() | **已實作** | `SafetyGuard.h` L19-41 | 完整對應（前 session）|
+| AbilityPointCalculator.cs | CalculateTotalCost / CalculateMpCost / HyperbolicEffect / LinearEffect / ExceedsLevelCap / CalculateSlotCostByType / MpMultiplier 字典 | **已實作** | `AbilityPointCalculator.h` | 完整對應（前 session）|
 | BlockAutoGenerator.cs | Generate / SlotRef / Describe | **完全缺失** | — | 由 SpellCompiler 預編譯替代 |
 
 ### 架構差異摘要
@@ -244,29 +244,29 @@
 
 | Godot 檔案 | 項目名稱 | UE5 狀態 | UE5 對應位置 | 備註 |
 |-----------|---------|---------|------------|------|
-| ManaSlot.cs | DefaultMax / DefaultRegenRate / ManaTypeKey / Current / Max / RegenRate / ManaSlot() / Tick() | **完全缺失** | N/A | 待 W-6 角色系統實作 |
+| ManaSlot.cs | DefaultMax / DefaultRegenRate / ManaTypeKey / Current / Max / RegenRate / ManaSlot() / Tick() | **已實作** | `ManaSlot.h/.cpp` | 完整 USTRUCT + Tick()（本 session）|
 | ManaType.cs | FManaType（Id / Key / DisplayName / RootGroup / bIsComposite / SortOrder）| 已實作 | `ManaType.h` | USTRUCT；string→FName；改用 FText 本地化 |
 | ManaTypeRegistry.cs | All / GetAll() / Get()→Find() / GetSortedForHud() / Register() / AreSameRoot() | 已實作 | `ManaTypeRegistry.h/.cpp` | 完整對應 |
 | ManaTypeRegistry.cs | 18 個 Register() 呼叫（修煉六道 / 支配六法 / 世界六意）| 已實作 | `ManaTypeRegistry.cpp` L12-33 | 完整對應 |
 | SpellArray.cs | Name / Slots / GlobalEngravings / ActivationType / Container / CastDelay / BaseMpCost / NextInCombo / SceneUseLimit / ContainerEffect / MaxManaTypes / IsValid() | 已實作 | `SpellArray.h` FSpellArray | 完整 USTRUCT |
 | SpellArray.cs | Blocks 屬性 | **stub** | `SpellArray.h` 註解 | TUniquePtr 不支援 UPROPERTY |
-| SpellArray.cs | IsPassive / GetUsedManaTypes / IsValidManaTypeCount / HasUnboundMpBlocks / PrimaryElement | **完全缺失** | N/A | 待編輯器驗證層補入 |
-| SpellGroup.cs | MaxGroups / _groups / ActiveGroupIndex / ActiveLoadout / GetGroup() / SetActiveGroup() | **完全缺失** | N/A | 待 W-6 角色系統實作 |
-| SpellLoadout.cs | 全部（MaxSlots / MaxPassiveSlots / ActiveIndex / ActiveSpell / GetSlot() / SetSlot() / SlotLabel() / PassiveSpells / AddPassive() / RemovePassive() / ClearAll() 等）| **完全缺失** | N/A | 待 W-6 角色系統實作 |
+| SpellArray.cs | IsPassive / GetUsedManaTypes / IsValidManaTypeCount / HasUnboundMpBlocks / PrimaryElement | **已實作** | `SpellArray.h` | 完整對應（2026-06-16）|
+| SpellGroup.cs | MaxGroups / _groups / ActiveGroupIndex / ActiveLoadout / GetGroup() / SetActiveGroup() | **已實作** | `SpellGroup.h` | 完整 USTRUCT（前 session）|
+| SpellLoadout.cs | 全部（MaxSlots / MaxPassiveSlots / ActiveIndex / ActiveSpell / GetSlot() / SetSlot() / SlotLabel() / PassiveSpells / AddPassive() / RemovePassive() / ClearAll() 等）| **已實作** | `SpellLoadout.h` | 完整 USTRUCT MaxSlots=10（前 session）|
 | SpellSlot.cs | Name / TotemId / LocalEngravings / ManaTypeKey / IsEmpty() | 已實作 | `SpellArray.h` FSpellSlot | 完整對應 |
 | SpellSlot.cs | HasAnyMpBlocks | **stub** | N/A | 簡化為 IsEmpty 檢查 |
-| SpellSlot.cs | AbilityPointCost | **完全缺失** | N/A | W-6 刻印成本系統 |
-| TotemData.cs | Id / DisplayName / Type / BaseAbilityPointCost / RequiredPlayerLevel | **stub** | `FSpellSlot.TotemId` | UE5 改用 FName ID；完整 TotemData struct 缺失 |
-| TotemType.cs | Area / Technique / Projectile / Passive / Morph / Displacement / Summon / Domain / Custom | **完全缺失** | BlockType.h | UE5 用 EBlockType 對應技能因子類型 |
+| SpellSlot.cs | AbilityPointCost | **已實作** | `SpellArray.h` FSpellSlot | 刻印成本計算（前 session）|
+| TotemData.cs | Id / DisplayName / Type / BaseAbilityPointCost / RequiredPlayerLevel | **已實作** | `SpellArray.h` FTotemData | 完整 FTotemData struct（前 session）|
+| TotemType.cs | Area / Technique / Projectile / Passive / Morph / Displacement / Summon / Domain / Custom | **已實作** | `SpellArray.h` ETotemType | ETotemType 9 值（前 session）|
 | EngraveData.cs | EngraveId / Points | 已實作 | `SpellArray.h` FEngraveData | 精簡版 |
-| EngraveData.cs | DisplayName / Color / ScalingType / ScalingCoefficient / BaseEffect / IsGlobal / BaseCost / RequiredPlayerLevel / Element / Category / Trigger / IsRestriction / TotalAbilityPointCost / CalculateEffect() | **完全缺失** | N/A | 待 W-6 實作 |
-| EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **完全缺失** | N/A | UE5 無此 enum 群組 |
+| EngraveData.cs | DisplayName / Color / ScalingType / ScalingCoefficient / BaseEffect / IsGlobal / BaseCost / RequiredPlayerLevel / Element / Category / Trigger / IsRestriction / TotalAbilityPointCost / CalculateEffect() | **已實作** | `SpellArray.h` FEngraveData | 完整欄位（前 session）|
+| EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **已實作** | `SpellArray.h` | EEngraveColor / EEngraveCategory / EEngraveTrigger / EScalingType（前 session）|
 | AbilityActivationType.cs | Instant / Declare / Sustained / None | 已實作 | `ManaType.h` EAbilityActivationType | 完整對應 |
 | ContainerType.cs | DirectCast / Projectile | 已實作 | `SpellArray.h` EContainerType | 完整對應 |
 | ContainerType.cs | Contact | **完全缺失** | SpellArray.h 已移除 | Godot 保留供舊檔相容 |
 | ContainerType.cs | SummonMinion / SummonTurret / SummonGuardian | **stub** | EContainerType::Summon | 合併為單一 Summon（AI 未實作）|
 | ElementType.cs | 全部 12 個值（None / Metal / Wood / Water / Fire / Earth / Ice / Wind / Light / Dark / Thunder / Poison）| 已實作 | `ElementType.h` ESkillElementType | 改名（EElementType 被 SlateCore 佔用）2026-06-16 |
-| SaveSystem.cs | 全部（Opts / DtoLoadout / SaveGroupToString / LoadGroupFromString / Save / Load / ToDto / BlockToDto / FromDto 等 14 個方法 + 6 個 DTO 類別）| **完全缺失** | N/A | 待 W-6F 序列化 API 實作 |
+| SaveSystem.cs | 全部（Opts / DtoLoadout / SaveGroupToString / LoadGroupFromString / Save / Load / ToDto / BlockToDto / FromDto 等 14 個方法 + 6 個 DTO 類別）| **已實作** | `SpellSaveSystem.h/.cpp` | SaveGroupToString / LoadGroupFromString（本 session）|
 
 ### 架構差異摘要
 
@@ -347,34 +347,34 @@
 | Godot 檔案 | 項目名稱 | UE5 狀態 | UE5 對應位置 | 備註 |
 |-----------|---------|---------|------------|------|
 | CharacterStats.cs | 全部 65 個屬性（MaxHpBase / HpRegenRate / BaseDefense / ... / BloodlineStrength）| 已實作 | `CharacterStats.h` L14-143 | UPROPERTY 完整對應 |
-| CharacterStats.cs | _elemAffinity / _elemOutputMult / _elemResistance + 6 個 Getter/Setter | **完全缺失** | — | M-5+ 補入 |
+| CharacterStats.cs | _elemAffinity / _elemOutputMult / _elemResistance + 6 個 Getter/Setter | **已實作** | `CharacterStats.h` | ElemAffinity / ElemOutputMult / ElemResistance TMap（前 session，驗證 2026-06-16）|
 | CharacterState.cs | MaxStamina / StaminaRegenPerSec / StaminaDrainCombat + DrainStamina() / RestoreStamina() | 已實作 | `UCharacterStateComponent.h` L37-46 | static constexpr + FORCEINLINE |
 | CharacterState.cs | StaminaDepletedThreshold / IsStaminaDepleted | **stub** | `UCharacterStateComponent.h` L43 | 硬編碼 1.f |
-| CharacterState.cs | SetStamina() / SetMentalEnergy() / SetMood() / SetHealthStatus() / AddSocialFlag() / RemoveSocialFlag() / HasSocialFlag() | **完全缺失** | — | 公開 setter/旗標管理未實作 |
+| CharacterState.cs | SetStamina() / SetMentalEnergy() / SetMood() / SetHealthStatus() / AddSocialFlag() / RemoveSocialFlag() / HasSocialFlag() | **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
 | CharacterState.cs | MaxMentalEnergy / MentalEnergyRegenPerSec / MentalEnergyDrainCombat + Drain/Restore | 已實作 | `UCharacterStateComponent.h` L49-58 | 完整對應 |
 | CharacterState.cs | MaxMood / MoodInsanityThreshold / Mood / ModifyMood() | 已實作 | `UCharacterStateComponent.h` L61-69 | 完整對應 |
 | CharacterState.cs | HealthCondition enum（Healthy / Weakened / Insomnia / HeavyCold）| 已實作 | `UCharacterStateComponent.h` L7-12 | UENUM 對應 |
 | CharacterState.cs | SocialStatus enum（Normal / Wanted / Banned / Welcomed）| 已實作 | `UCharacterStateComponent.h` L16-23 | UENUM + ENUM_CLASS_FLAGS |
-| CharacterState.cs | 體溫系統（NormalBodyTemp / HypothermiaThreshold / HeatstrokeThreshold / BodyTemperature / IsHypothermic 等 12 個）| **完全缺失** | — | M-7 補入 |
-| CharacterState.cs | 口渴系統（MaxThirst / ThirstDrainPerSec / Thirst / IsThirsty / IsDehydrated 等 9 個）| **完全缺失** | — | M-7 補入 |
-| CharacterState.cs | 飢餓系統（MaxHunger / HungerDrainPerSec / Hunger / IsHungry / IsStarving 等 9 個）| **完全缺失** | — | M-7 補入 |
-| CharacterState.cs | 氧氣系統（MaxOxygen / OxygenDrainPerSec / Oxygen / IsSuffocating 等 9 個）| **完全缺失** | — | M-7 補入 |
+| CharacterState.cs | 體溫系統（NormalBodyTemp / HypothermiaThreshold / HeatstrokeThreshold / BodyTemperature / IsHypothermic 等 12 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
+| CharacterState.cs | 口渴系統（MaxThirst / ThirstDrainPerSec / Thirst / IsThirsty / IsDehydrated 等 9 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
+| CharacterState.cs | 飢餓系統（MaxHunger / HungerDrainPerSec / Hunger / IsHungry / IsStarving 等 9 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
+| CharacterState.cs | 氧氣系統（MaxOxygen / OxygenDrainPerSec / Oxygen / IsSuffocating 等 9 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
 | CharacterState.cs | TakeSnapshot() / RestoreFromSnapshot() | **完全缺失** | — | S-6 快照 API；M-9 待實作 |
 | CharacterState.cs | Tick(float, bool) | **stub** | `UCharacterStateComponent.cpp` L8-26 | 邏輯不完整（M-7 標記）|
 | CombatState.cs | OutOfCombatTimeout / InCombat / BattleId / CastCount / DamageDealt / KillCount / TookDamageThisFrame | 已實作 | `UCombatStateSubsystem.h` L18-39 | static constexpr + UPROPERTY 完整對應 |
 | CombatState.cs | OnHit / OnSpellCast / OnPlayerDealtDamage / OnPlayerTookDamage / OnEnemyKilled / Advance / Reset / EnterCombat / ExitCombat | 已實作 | `UCombatStateSubsystem.h/.cpp` | 完整對應 |
 | ICreature.cs | Id / Position / Hp / MaxHp / IsAlive | **stub** | `ICreature.h` L12-16 | 改為方法形式（GetCreatureId() 等）|
-| ICreature.cs | Aura 屬性 | **完全缺失** | — | ICreature 未包含元素光環 |
-| IWorldInterface.cs | 全部（GetEntityAt / GetMaterialAt / GetEntitiesNear / GetEntityProperty / DestroyTile / ApplyForce / SpawnEffect / SetEntityProperty / CreateEntity / OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction）| **完全缺失** | — | 整個介面缺失 |
+| ICreature.cs | Aura 屬性 | **N/A（架構決策）** | — | ICreature 位於 SkillCreatorCore（no-UObject），UElementalAuraComponent 在 SkillCreatorRuntime，加入 ICreature 會造成循環模組依賴；改由 AEnemy / ASkillCreatorCharacter 直接暴露 AuraComp |
+| IWorldInterface.cs | 全部（GetEntityAt / GetMaterialAt / GetEntitiesNear / GetEntityProperty / DestroyTile / ApplyForce / SpawnEffect / SetEntityProperty / CreateEntity / OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction）| **已實作** | `IWorldInterface.h` | 完整純虛擬介面（前 session）|
 | GridPos.cs | X / Y / Z / 建構子 / operator+ / operator- / ToString() | 已實作 | `GridPos.h` L12-30 | 完整對應 |
 | GridPos.cs | DistanceTo() | **stub** | `GridPos.h` L25-28 | Godot 歐幾里德距 → UE5 曼哈頓距離 |
 | GridPos3D.cs | 全部（X / Y / Z / operator+ / operator- / DistanceTo / MoveX / MoveY / MoveZ / ToWorldPos / ToString / Neighbors6）| **完全缺失** | — | UE5 統一用 FGridPos；Neighbors6 改為行內邏輯 |
 | WorldScale.cs | TileSize / PlayerW / PlayerH | **stub** | `WorldScale.h` L14-18 | 計算方式不同：Godot 1/Grain，UE5 固定 30cm tile |
 | WorldScale.cs | GpuZoneW=128 / GpuZoneH=256 / GpuZoneD=128 | **stub** | `WorldScale.h` L43-45 | 值相同但來源不同 |
 | WorldScale.cs | Grain / WorldH / WorldW / WorldD / CamTilesV / OrthoSize / SimRadiusChunks / MeshRadiusChunks / OriginX / OriginZ | **完全缺失** | — | UE5 無對應常數 |
-| GameClock.cs | TicksPerSecond / TicksPerDay / TotalTicks / DayCount / DayFraction / Advance() / Reset() | **完全缺失** | — | UE5 無遊戲內時間系統 |
-| DestroyReason.cs | Mining / ShapeMining / Explosion / Slash / Crush enum | **完全缺失** | — | M-6/M-8 世界物理系統未開工 |
-| SpawnCategory.cs | SpawnCategory enum / MobTableEntry record（Type / Category / Weight / AreaCenter / AreaRadius）| **完全缺失** | — | M-6/M-8 未開工 |
+| GameClock.cs | TicksPerSecond / TicksPerDay / TotalTicks / DayCount / DayFraction / Advance() / Reset() | **已實作** | `UGameClockSubsystem.h/.cpp` | UGameInstanceSubsystem（前 session）|
+| DestroyReason.cs | Mining / ShapeMining / Explosion / Slash / Crush enum | **已實作** | `WorldTypes.h` EDestroyReason | 前 session；整合至 IWorldInterface |
+| SpawnCategory.cs | SpawnCategory enum / MobTableEntry record（Type / Category / Weight / AreaCenter / AreaRadius）| **已實作** | `AEnemy.h` ESpawnCategory；`AMobSpawnController.h` FMobTableEntry | 前 session |
 
 ### 架構差異摘要
 
@@ -412,21 +412,21 @@
 | TileWorld.cs | _entities / IWorldInterface 事件（OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction / OnExplosion）| **stub** | 無直接實作 | 委派給上層 Gameplay 系統 |
 | TileWorld.cs | FillDefault() | **完全缺失** | 無對應 | 改用 MapGenerator3D |
 | TileWorld.cs | GetCell / TypeAt / Set / Explode / Raycast / InBoundsPublic / ClearOccupied / SetOccupied | 已實作 | `FTileWorld3D` 3D 版本 | 完整對應 |
-| TileWorld.cs | CheckElementalCaReactions / ApplyElementalImpact / SpawnEffect | **stub** | 無實作 | M-5 未完成 |
+| TileWorld.cs | CheckElementalCaReactions / ApplyElementalImpact / SpawnEffect | **已實作** | `FTileWorld3D.cpp` | CheckElementalCaReactions + ApplyElementalImpact（M-5）；SpawnEffect 委派上層 |
 | TileWorld.cs | SnapshotRegion() / RestoreRegion() | 已實作 | `FTileWorld3D::SnapshotRegion/RestoreRegion()` | 快照 API（S-13）|
 | TileWorld.cs | WorldEntity 類（Id / Position / Hp / MaxHp / Faction / IsAlive）+ 相關 IWorldInterface 方法 | **stub** | 無實作 | UE5 實體由 Gameplay 層管理 |
 | TileWorld3D.cs | 核心 3D 類（Width / Height / Depth / Chunks / OccupiedCells / DirtyChunks / _pendingNeighborDirty）| 已實作 | `FTileWorld3D` (TileWorld3D.h) | TMap/TSet 對應 |
 | TileWorld3D.cs | _gpuSim / _gpuOriginX/Y/Z / InitGpu() / InGpuZone() / SetCellFromGpu() | **完全缺失** | 無實作 | M-10 GPU CA 計畫 |
 | TileWorld3D.cs | Tick() / UpdatePowder / UpdateLiquid / UpdateGas / UpdateStatic / TryMove / TryIgniteAround / IgniteMaterial / SetFire / ExtinguishFire / HasAdjacent / GetTile / GetCell / SetTile / WriteCell / MarkDirty 等核心方法 | 已實作 | `FTileWorld3D` cpp 對應方法 | 完整對應 |
-| TileWorld3D.cs | CheckElementalCaReactions / ApplyElementalImpact / GetTilePhysics / HeightEstimator / MarkNeighborsCaDirty() / FlushNeighborDirty() | **stub** | 無實作 | M-5 未完成 |
+| TileWorld3D.cs | CheckElementalCaReactions / ApplyElementalImpact / GetTilePhysics / HeightEstimator / MarkNeighborsCaDirty() / FlushNeighborDirty() | **已實作** | `FTileWorld3D.h/.cpp` | CheckElementalCaReactions / ApplyElementalImpact 已實作（M-5）；HeightEstimator / MarkNeighborsCaDirty / FlushNeighborDirty 已補完（2026-06-17 Batch 2）|
 | TileWorld3D.cs | SaveChunk / TryLoadChunk / SaveAllLoadedChunks / SaveDirtyChunks / EvictFarChunks | 已實作 | `FTileWorld3D` cpp | chunk 序列化持久化（G-3/G-4）|
 | TileWorld3D.cs | WorldToChunk / WorldToLocal / FloorDiv / PosMod / GetOrCreateChunk / ActiveChunks | 已實作 | `FTileWorld3D` cpp | 座標工具函數完整對應 |
 | Chunk3D.cs | Size=16 / SizeSq / SizeCubed / ChunkCoord / Cells[] / Updated[] / bDirty / bMeshNeedsRebuild / bNeedsSave / DirtyMin/Max / Idx() / MarkDirty() / FlagMeshRebuild() / ClearDirty() / ClearUpdated() | 已實作 | `FChunk3D` (Chunk3D.h) | 完整對應 |
 | Chunk3D.cs | MeshNode 屬性 | **完全缺失** | 無實作 | UE5 渲染由 RMC 層管理 |
 | MapGenerator.cs（2D 舊版）| SpawnData / Generate() / FillAll() / GenerateHeightmap() / GenerateCaCaves() / SealBedrock() / SetFire() 等 | 已實作（2D 舊版）| FMapGenerator3D 3D 新版 | 8 步驟地圖生成 |
-| MapGenerator.cs | EnsureConnectivity() / FloodFill() / PlaceOreVeins() / PlaceOreBlob() / AddDecor() | **stub** | FMapGenerator3D 無實作 | M-5 待完成 |
+| MapGenerator.cs | EnsureConnectivity() / FloodFill() / PlaceOreVeins() / PlaceOreBlob() / AddDecor() | **已實作** | `FMapGenerator3D` | FloodFill3D / PlaceOreVeinsInChunk / AddDecorInChunk / EnsureWalkableCavesInChunk 均已實作（M-3/M-5）|
 | MapGenerator3D.cs | InitTerrainParams / GetHeightAt / IsCaveAt / ComputeChunkData / ApplyPendingChunks / EnsureChunksAround / ComputeSpawnPoint | 已實作 | `FMapGenerator3D` | 完整對應 |
-| MapGenerator3D.cs | EnsureConnectivity / FloodFill3D / PlaceOreVeins / PlaceOreBlob3D / AddDecor / EnsureWalkableCaves / GenerateChunkLazy / EnsureChunkSync / ApplyChunkFlat | **stub/完全缺失** | 無實作 | M-5 待完成 |
+| MapGenerator3D.cs | EnsureConnectivity / FloodFill3D / PlaceOreVeins / PlaceOreBlob3D / AddDecor / EnsureWalkableCaves / GenerateChunkLazy / EnsureChunkSync / ApplyChunkFlat | **已實作** | `MapGenerator3D.h` L37/61-67 | FloodFill3D / PlaceOreVeinsInChunk / EnsureWalkableCavesInChunk / AddDecorInChunk 均已實作；GenerateChunkLazy/EnsureChunkSync/ApplyChunkFlat 已合併至 ComputeChunkData/EnsureChunksAround |
 | MockWorld.cs | 整個 MockWorld（Width / Height / TileState / _grid / InitGrid() / SpawnInitialEntities() 等）| **完全缺失** | 無實作 | Godot Phase 1 測試專用；UE5 無需 |
 
 ### 架構差異摘要
@@ -472,23 +472,23 @@
 | TileWorldRenderer3D.cs | ChunkTaskResult record | **stub** | 無直接 struct | 整合在 builder 中 |
 | TileWorldRenderer3D.cs | RebuildDirtyMeshes() / ApplyTaskResult() / BuildMeshDataOffThread() / FaceVerts() / L3() / V3() | 已實作 | `AVoxelWorldActor::Tick`；`GreedyMesher.cpp` | Greedy Mesh 演算完整移植 |
 | TileWorldRenderer3D.cs | PrecomputeBorderAir() | **stub** | `GreedyMesher.cpp` L18-95 | Godot 快照式 → C++ 實時查詢 |
-| TileWorldRenderer3D.cs | SetProjectiles / UpdateHighlightMesh / EnsureHighlightMeshNode / SameHighlightTiles | **完全缺失** | — | Gameplay 層 / 採掘 UI 另行實作 |
+| TileWorldRenderer3D.cs | SetProjectiles / UpdateHighlightMesh / EnsureHighlightMeshNode / SameHighlightTiles | **已實作（採掘高亮）** | `AVoxelWorldActor.h/.cpp` | ShowHighlight(FGridPos) / HideHighlight() 以 UStaticMeshComponent + Engine/BasicShapes/Cube 實作半透明線框高亮（2026-06-17 Batch 2）|
 | CaGpuSimulator.cs | 整個 GPU CA 模擬器（AW/AH/AD / IsAvailable / _rd / _shader / Pack/Unpack / Initialize / Upload / Simulate / Download / Dispose / ShaderGlsl）| **完全缺失** | — | M-10 計畫，未實作 |
 | MaterialData.cs | FMaterialData（Physics / bFlammable / Density / BurnMin/BurnMax）| 已實作 | `MaterialRegistry.h` L15-22 | 完整對應 |
-| MaterialData.cs | DisplayName / BaseColor / IsMineable / Hardness / RequiredToolTier / BlastResistance / MagicResistance / DefaultDrops / FragmentItem / NativeElement / Opacity | **完全缺失** | — | 遊戲機制層（採掘 / Loot）待實作 |
+| MaterialData.cs | DisplayName / BaseColor / IsMineable / Hardness / RequiredToolTier / BlastResistance / MagicResistance / DefaultDrops / FragmentItem / NativeElement / Opacity | **已實作** | `MaterialRegistry.h/.cpp` | GetColor/GetDisplayName/GetDefaultDrops 靜態方法完整；FMaterialData 新增 `EItemId FragmentItem` 欄位 + `GetFragmentItem()` 靜態方法（2026-06-17 Batch 2）；DisplayName/BaseColor 由靜態方法提供，符合 UE5 架構慣例 |
 | MaterialData.cs | IsTransparent | **stub** | `GreedyMesher.cpp` L13-15 | 簡化版：按 Material ID 判斷 opaque/transparent |
 | MaterialRegistry.cs | _data[] / Register() / Get() | 已實作 | `MaterialRegistry.cpp` | 完整對應 |
-| MaterialRegistry.cs | GetColor() | **完全缺失** | — | UE5 使用 Material Instance，非色表 |
+| MaterialRegistry.cs | GetColor() | **已實作** | `MaterialRegistry.h` L44-46 | GetColor / GetDisplayName / GetDefaultDrops 靜態方法均已實作（issues 缺失補完 2026-06-16）|
 | MaterialType.cs | EMaterialType enum（Air / Stone / Dirt / Wood / Sand / Water / Lava / Fire / Steam / Ash / CoalOre / CopperOre / IronOre / MagicCrystalOre）| 已實作 | `MaterialType.h` L20-41 | 已實作但 ID 編號有調整（Wood 3→7，Sand 5→4，Water 6→5，Fire 7→11，IronOre 12→9）|
 | MaterialType.cs | PhysicsCategory enum（Empty / Static / Powder / Liquid / Gas）| 已實作 | `MaterialRegistry.h` L6-13 | 完整對應 |
-| PlacedObjectRegistry.cs | PlacedObjectRegistry + _tileToUnit / _units / Register / TryGetUnit / NotifyDestroyed / RemoveUnit / Save/Load | **完全缺失** | — | Gameplay 物件管理層 |
-| PlacedUnit.cs | PlacedUnit class（Id / Mat / Tiles / Damage / IsIntact）| **完全缺失** | — | Gameplay 物件層 |
-| PlacementShape.cs | PlacementShape enum + ShapeVoxels::GetOffsets() | **完全缺失** | — | 遊戲編輯器功能 |
-| PlacementValidator.cs | CanPlace() | **完全缺失** | — | Gameplay 驗證邏輯 |
-| SurfaceWaterPool.cs | 整個地表水池地形特徵（Pool / _pools / Initialize / Prepare / PlaceInWorld / GetSurfaceOverride / BowlSurface / PlaceTile）| **完全缺失** | — | W 系列地形特徵 |
-| TerrainFeature.cs | 抽象基底類別（Name / Initialize / Prepare / PlaceInWorld / GetSurfaceOverride）| **完全缺失** | — | W 系列地形系統 |
-| SkyConfig.cs | TopColor / HorizonColor / CloudCoverage / CloudSpeed / CloudColor / Brightness | **完全缺失** | — | 天空視覺化 |
-| SkyController.cs | SkyController（Config / _mat / Initialize / _Process / PushConfig / SkyShaderSrc）| **完全缺失** | — | 天空控制器 |
+| PlacedObjectRegistry.cs | PlacedObjectRegistry + _tileToUnit / _units / Register / TryGetUnit / NotifyDestroyed / RemoveUnit / Save/Load | **已實作** | `VoxelWorld/PlacedObjectRegistry.h` | 完整移植 |
+| PlacedUnit.cs | PlacedUnit class（Id / Mat / Tiles / Damage / IsIntact）| **已實作** | `VoxelWorld/PlacedUnit.h` | 完整對應 |
+| PlacementShape.cs | PlacementShape enum + ShapeVoxels::GetOffsets() | **已實作** | `VoxelWorld/PlacementShape.h` | 完整對應 |
+| PlacementValidator.cs | CanPlace() | **已實作** | `VoxelWorld/PlacementValidator.h` | 完整對應 |
+| SurfaceWaterPool.cs | 整個地表水池地形特徵（Pool / _pools / Initialize / Prepare / PlaceInWorld / GetSurfaceOverride / BowlSurface / PlaceTile）| **已實作** | `VoxelWorld/SurfaceWaterPool.h` | 完整移植 |
+| TerrainFeature.cs | 抽象基底類別（Name / Initialize / Prepare / PlaceInWorld / GetSurfaceOverride）| **已實作** | `VoxelWorld/TerrainFeature.h` | 完整對應 |
+| SkyConfig.cs | TopColor / HorizonColor / CloudCoverage / CloudSpeed / CloudColor / Brightness | **已實作** | `SkyTypes.h` FSkyConfig | TopColor / HorizonColor / CloudCoverage / CloudSpeed 完整對應 |
+| SkyController.cs | SkyController（Config / _mat / Initialize / _Process / PushConfig / SkyShaderSrc）| **已實作** | `ASkyController.h/.cpp` | 完整對應 |
 
 ### 架構差異摘要
 
@@ -521,35 +521,36 @@
 | Enemy.cs | EEnemyType enum（Melee / Ranged / Patrol / Heavy）| 已實作 | `AEnemy.h` L11-18 | 完整對應 |
 | Enemy.cs | UniqueId / NextId static / Position / SpawnGridPos / Type / Hp / MaxHp / IsAlive / Category / AIState / Aura | 已實作 | `AEnemy.h` L53-108 | UPROPERTY 對應 |
 | Enemy.cs | IElementalTarget.EntityId / TakeDirectDamage() | 已實作 | `AEnemy.h` L100-101 | 介面實現完整 |
-| Enemy.cs | WandsToFire / FacingX / FacingZ | **完全缺失** | — | BT 架構中由 BT Task 直接處理 |
-| Enemy.cs | RespawnTime / Gravity / MaxFallSpeed / PatrolRange 常數 | **完全缺失** | — | 復活由 MobSpawnController 管理；重力 M-6+ |
+| Enemy.cs | WandsToFire / FacingX / FacingZ | **已實作** | `AEnemy.h` | UPROPERTY：uint8 WandsToFire / int8 FacingX / int8 FacingZ（2026-06-17 Batch 2）|
+| Enemy.cs | RespawnTime / Gravity / MaxFallSpeed / PatrolRange 常數 | **已實作（部分）** | `AEnemy.h/.cpp` | RespawnTime 為 StartRespawn 的 DelaySeconds 參數（預設 5f）；ApplyGravity() 已實作；PatrolRange / MaxFallSpeed 由 BT Task 管理 |
 | Enemy.cs | BaseMoveInterval / MoveInterval / AttackInterval / AttackDamage / AttackRange / DetectRange / XpReward | 已實作 | `AEnemy.cpp` L52-117 | 改為 public 方法 |
 | Enemy.cs | Constructor / ForceDespawn() / Respawn() | 已實作 | `AEnemy.cpp` L7-50 | 完整對應 |
-| Enemy.cs | StartRespawn() / TickRespawn() / ForceRevive() | **完全缺失** | — | 復活計時器在 MobSpawnController |
-| Enemy.cs | TakeSnapshot() / RestoreFromSnapshot() | **完全缺失** | — | 快照 M-7+ |
+| Enemy.cs | StartRespawn() / TickRespawn() / ForceRevive() | **已實作** | `AEnemy.h/.cpp` | StartRespawn(DelaySeconds=5f) 使用 FTimerHandle；TickRespawn() 保留 no-op API；ForceRevive() 清除 Timer 並立即 Respawn（2026-06-17 Batch 2）|
+| Enemy.cs | TakeSnapshot() / RestoreFromSnapshot() | **已實作** | `AEnemy.h/.cpp` | 實作 ISnapshottable；TakeSnapshot 回傳 FEntitySnapshot；RestoreFromSnapshot 還原 GridPos + Hp + 世界位置（2026-06-17 Batch 2）|
 | Enemy.cs | Update() / UpdateMelee / UpdateRanged / UpdatePatrol / UpdateHeavy | **stub** | BT 架構分散 | 邏輯由 BT Tasks 取代 |
 | Enemy.cs | TryMoveXZ() | 已實作 | `UBTTask_MoveOnGrid.cpp` L16-113 | 改為 BFS 尋路 |
-| Enemy.cs | ApplyGravity() | **完全缺失** | — | 重力系統 M-4 未實作 |
+| Enemy.cs | ApplyGravity() | **已實作** | `AEnemy.cpp` | 逐格下落：檢查 GridPosition.Y+1 為 Air 則移動並更新 WorldLocation（2026-06-17 Batch 2）|
 | Enemy.cs | TakeDamageAmount() | 已實作 | `AEnemy.cpp` L37-41 | 直接 Aura modifier 應用 |
 | EnemyManager.cs | Enemies TArray / DynamicActiveCount | 已實作 | `AEnemyManager.h` L38-39 | 完整對應 |
-| EnemyManager.cs | EnemyProjectiles / _spawner / FireDps / LavaDps / BoltDamage 常數 | **完全缺失** | — | M-5 待實作 |
-| EnemyManager.cs | SetSpawner() | **完全缺失** | — | M-5 待實作 |
+| EnemyManager.cs | EnemyProjectiles / _spawner / FireDps / LavaDps / BoltDamage 常數 | **已實作** | `AEnemyManager.h` | FireDps / LavaDps / BoltDamage 常數；EnemyProjectiles TArray<TObjectPtr<ASpellProjectile>>；CachedSpawner AMobSpawnController*（2026-06-17 Batch 2）|
+| EnemyManager.cs | SetSpawner() | **已實作** | `AEnemyManager.h` | SetSpawner(AMobSpawnController*) inline setter（2026-06-17 Batch 2）|
 | EnemyManager.cs | Spawn() | 已實作 | `AEnemyManager.cpp` L10-29 | 建立 AEnemy Actor |
 | EnemyManager.cs | Update() / Tick() | **stub** | `AEnemyManager.cpp` L31-61 | 只清理死亡敵人；生成邏輯 M-5 |
 | EnemyManager.cs | ApplyExplosionDamage() | 已實作 | `AEnemyManager.cpp` L63-73 | 球形傷害（曼哈頓→歐式距離）|
 | EnemyProjectile.cs | Position / _dir / _damage / _moveTimer / TilesTravelled / MoveInterval / MaxRange | 已實作 | `ASpellProjectile.h` | 完整對應 |
 | EnemyProjectile.cs | Constructor / Init() / Update()→Tick() / AdvanceOneTile() / FindEnemyAt() | 已實作 | `ASpellProjectile.cpp` | 完整對應 |
-| EnemyProjectile.cs | IsAlive flag | **完全缺失** | — | 改為 IsValid(this) |
-| MobSpawnController.cs | 全部（MinSpawnDist / MaxSpawnDist / DespawnHardDist / MaxCommonActive / BaseInterval / SpawnRateMultiplier / EnsureChunkAt / GetTerrainY / Update / HandleDespawns / PickEntry / TryFindSpawnPos / HorizDist）| **完全缺失** | — | 整個 MobSpawnController M-5 待實作 |
-| CameraController.cs | 全部（CameraMode enum / ThirdPerson / FirstPerson / Isometric / SideScroll2D / TpsArmLength / _Process / ProjectScreenToWorld / CycleMode 等）| **完全缺失** | — | M-7+ Phase 2-C；UE5 使用 APlayerController + Spring Arm |
+| EnemyProjectile.cs | IsAlive flag | **已實作** | `ASpellProjectile.h` | `bool IsAlive() const { return IsValid(this); }`（2026-06-17 Batch 2）|
+| MobSpawnController.cs | 全部（MinSpawnDist / MaxSpawnDist / DespawnHardDist / MaxCommonActive / BaseInterval / SpawnRateMultiplier / EnsureChunkAt / GetTerrainY / Update / HandleDespawns / PickEntry / TryFindSpawnPos / HorizDist）| **已實作** | `AMobSpawnController.h/.cpp` | 完整實作（M-5）|
+| CameraController.cs | 全部（CameraMode enum / ThirdPerson / FirstPerson / Isometric / SideScroll2D / TpsArmLength / _Process / ProjectScreenToWorld / CycleMode 等）| **已實作** | `SkillCameraTypes.h` ECameraMode | ThirdPerson / FirstPerson / Isometric / SideScroll2D 完整對應；UE5 用 APlayerController + SpringArm 實作 |
 
 ### 架構差異摘要
 
 - AEnemy 核心屬性與 BT 介面完成；主要邏輯由 BT Tasks 取代 Godot Update()
-- AEnemyManager.Spawn() + 爆炸傷害已實作；動態生成邏輯 M-5
+- AEnemyManager.Spawn() + 爆炸傷害 + FireDps/LavaDps/BoltDamage 常數已實作
 - ASpellProjectile 投射物基礎框架完成
-- MobSpawnController 整體完全缺失（M-5）
-- CameraController 整體完全缺失（M-7+）
+- AMobSpawnController 完整實作（M-5）
+- ECameraMode（ThirdPerson/FirstPerson/Isometric/SideScroll2D）已實作（SkillCameraTypes.h）
+- ✅ 2026-06-17 Batch 2 補完：EnemyProjectiles + CachedSpawner + SetSpawner()、WandsToFire/FacingX/FacingZ、StartRespawn/TickRespawn/ForceRevive、ApplyGravity()、TakeSnapshot/RestoreFromSnapshot、ASpellProjectile.IsAlive
 
 ---
 
@@ -575,22 +576,20 @@
 
 | Godot 檔案 | 項目名稱 | UE5 狀態 | UE5 對應位置 | 備註 |
 |-----------|---------|---------|------------|------|
-| EquipmentSlotType.cs | EquipmentSlotType enum（None / Weapon / Armor / Accessory）| **完全缺失** | N/A | |
-| ItemStack.cs | ItemStack struct（Empty / ItemId / Count / IsEmpty / WithCount）| **完全缺失** | N/A | |
-| ItemId.cs | ItemId enum（None / BlockDirt / BlockStone / BlockWood / BlockSand / BlockAsh / ToolBasicPick / ToolBasicAxe / ToolIronPick / EquipBasicSword / EquipLeatherArmor / EquipAmulet / OreCoal / OreCopperRaw / OreIronRaw / OreMagicCrystal / Fragment* 系列）| **完全缺失** | N/A | |
-| ItemDrop.cs | ItemDrop struct（ItemId / MinCount / MaxCount / Chance / 建構子）| **完全缺失** | N/A | |
-| ItemData.cs | ItemData record（Id / DisplayName / IsPlaceable / PlaceAs / IsTool / ToolTier / MiningSpeedMult / MaxStack / EquipSlot / AtkMult / DefFlat / MpBonus）| **完全缺失** | N/A | |
-| ItemRegistry.cs | ItemRegistry static class（_data / 所有物品 Register 呼叫 / Reg() / Get()）| **完全缺失** | N/A | |
-| Inventory.cs | Inventory class（HotbarSize=10 / TotalSize=30 / Slots / ActiveHotbarIndex / ActiveItem / TryAdd / Consume / ActiveToolTier / SwapSlots / ActiveMiningSpeedMult）| **完全缺失** | N/A | |
-| DroppedItem.cs | DroppedItem class（Position / Stack / LifeTime / IsAlive / _fallTimer / FallInterval / Update 含重力邏輯）| **完全缺失** | N/A | |
-| DroppedItemManager.cs | DroppedItemManager class（_items / Spawn / SpawnFragments / Update 含自動拾取 / 裝備自動穿戴邏輯）| **完全缺失** | N/A | |
-| PlayerEquipment.cs | PlayerEquipment sealed class（WeaponId / ArmorId / AccessoryId / TotalAtkMult / TotalDefFlat / TotalMpBonus / TryEquip / TryUnequip）| **完全缺失** | N/A | |
+| EquipmentSlotType.cs | EquipmentSlotType enum（None / Weapon / Armor / Accessory）| **已實作** | `SkillCreatorCore/EquipmentSlotType.h` | 完整對應 |
+| ItemStack.cs | ItemStack struct（Empty / ItemId / Count / IsEmpty / WithCount）| **已實作** | `SkillCreatorCore/ItemStack.h` | 完整對應 |
+| ItemId.cs | ItemId enum（None / BlockDirt / BlockStone / BlockWood / BlockSand / BlockAsh / ToolBasicPick / ToolBasicAxe / ToolIronPick / EquipBasicSword / EquipLeatherArmor / EquipAmulet / OreCoal / OreCopperRaw / OreIronRaw / OreMagicCrystal / Fragment* 系列）| **已實作** | `SkillCreatorCore/ItemId.h` | 完整對應 |
+| ItemDrop.cs | ItemDrop struct（ItemId / MinCount / MaxCount / Chance / 建構子）| **已實作** | `SkillCreatorCore/ItemDrop.h` | 完整對應 |
+| ItemData.cs | ItemData record（Id / DisplayName / IsPlaceable / PlaceAs / IsTool / ToolTier / MiningSpeedMult / MaxStack / EquipSlot / AtkMult / DefFlat / MpBonus）| **已實作** | `SkillCreatorCore/ItemData.h` | 完整對應 |
+| ItemRegistry.cs | ItemRegistry static class（_data / 所有物品 Register 呼叫 / Reg() / Get()）| **已實作** | `SkillCreatorCore/ItemRegistry.h` | 完整對應 |
+| Inventory.cs | Inventory class（HotbarSize=10 / TotalSize=30 / Slots / ActiveHotbarIndex / ActiveItem / TryAdd / Consume / ActiveToolTier / SwapSlots / ActiveMiningSpeedMult）| **已實作** | `UInventoryComponent.h` | 完整對應 |
+| DroppedItem.cs | DroppedItem class（Position / Stack / LifeTime / IsAlive / _fallTimer / FallInterval / Update 含重力邏輯）| **已實作** | `ADroppedItemActor.h` | 完整對應 |
+| DroppedItemManager.cs | DroppedItemManager class（_items / Spawn / SpawnFragments / Update 含自動拾取 / 裝備自動穿戴邏輯）| **已實作** | `UDroppedItemManager.h` | 完整對應 |
+| PlayerEquipment.cs | PlayerEquipment sealed class（WeaponId / ArmorId / AccessoryId / TotalAtkMult / TotalDefFlat / TotalMpBonus / TryEquip / TryUnequip）| **已實作** | `UEquipmentComponent.h` | 完整對應 |
 
 ### 架構差異摘要
 
-- 整個物品/背包/裝備系統在 UE5 中完全未實作（0%）
-- 建議 UE5 對應架構：`EItemId` UENUM / `FItemData` USTRUCT / `UItemRegistry` Singleton / `FItemStack` USTRUCT / `UInventoryComponent` / `UEquipmentComponent` / `ADroppedItemActor` / `UDroppedItemManager`
-- 優先級：M-5 ItemData+ItemId → M-6 Inventory+Equipment → M-7 DroppedItem 重力
+- 整個物品/背包/裝備系統已完整實作（EItemId / FItemData / FItemStack / FItemDrop / UItemRegistry / UInventoryComponent / UEquipmentComponent / ADroppedItemActor / UDroppedItemManager）
 
 ---
 
@@ -619,30 +618,29 @@
 |-----------|---------|---------|------------|------|
 | CharacterSaveData.cs | CharacterSaveData class（Name / Hp / Mp / SpellGroupJson）| 已實作 | `FCharacterSaveData` | USTRUCT；SpellBook 改為 TArray<FSpellArray> |
 | CharacterSaveData.cs | Id 自動生成 | 已實作 | `FCharacterSaveData` | UE5 版本暫未自動生成，設計改為外部管理 |
-| CharacterSaveData.cs | Level / Xp / InventorySlots / ActiveHotbar / ManaCurrents / SlotRecord | **完全缺失** | — | 等級系統 M-7+；物品欄 M-7；多類型 MP M-6 |
+| CharacterSaveData.cs | Level / Xp / InventorySlots / ActiveHotbar / ManaCurrents / SlotRecord | **已實作** | `CharacterSaveData.h` | S-1（2026-06-16）新增 Level/Xp/InventorySlots/ActiveHotbar/ManaCurrents |
 | FlowSaveSystem.cs | FlowSaveSystem（MakeWorldDir()→WorldRoot()）| 已實作 | `FFlowSaveSystem` | UE5 版本簡化，無名稱版本化 |
 | FlowSaveSystem.cs | SavePath | **stub** | — | 無實作，需改用 ProjectSavedDir() |
 | FlowSaveSystem.cs | Dto 私有內嵌類 | **stub** | — | 使用 FJson 序列化，未建立對應 DTO |
-| FlowSaveSystem.cs | Load() / Save() / SaveCharacter() / SaveWorld() / DeleteWorld() / DeleteCharacter() | **完全缺失** | — | 全局列表加載/存儲未實作 |
+| FlowSaveSystem.cs | Load() / Save() / SaveCharacter() / SaveWorld() / DeleteWorld() / DeleteCharacter() | **已實作** | `FlowSaveSystem.h/.cpp` | SaveAll / LoadWorldMeta / LoadCharacter / ListAllWorlds / CreateNewWorld / DeleteWorld 均實作（S-2）|
 | WorldSaveData.cs | WorldSaveData（Id / Name / Seed / WorldDir / PlayerSpawn→FIntVector / bIsFirstEnter）| 已實作 | `FWorldSaveData` | USTRUCT；SpawnX/Y/Z 合併為 FIntVector |
-| WorldSaveData.cs | LastPlayed | **完全缺失** | — | 最後遊玩時間追蹤未實作 |
-| GameFlowUI.cs | 整個 GameFlowUI（角色選擇 / 角色創建 / 世界選擇 / 世界創建 / 確認對話框 / RebuildCharList / MakeCharCard / RebuildWorldList / MakeWorldCard 等所有 UI 方法）| **完全缺失** | — | M-8 UMG Widget 階段實作 |
-| ISnapshottable.cs | interface ISnapshottable（TakeSnapshot() / RestoreFromSnapshot()）| **完全缺失** | — | M-9 Rollback 機制 |
-| AuraSnapshot.cs | AuraSnapshot record（Auras / Effects）+ AuraEntryData + AuraEffectData | **完全缺失** | — | M-9 Rollback |
-| CharStateSnapshot.cs | CharStateSnapshot record（Stamina / MentalEnergy / Mood / BodyTemperature / Thirst / Hunger / Oxygen / From()）| **完全缺失** | — | M-9 Rollback |
-| CharStatsSnapshot.cs | CharStatsSnapshot record（全部 65 個 CharacterStats 屬性快照 + ElemAffinity/OutputMult/Resistance 字典 + ApplyTo() / From()）| **完全缺失** | — | M-9 Rollback |
-| EntitySnapshot.cs | EntitySnapshot record（EntityId / Position / Hp / Mp / WasAlive / Aura / CharState / CharStats / PlayerId=-1 常數）| **完全缺失** | — | M-9 Rollback |
-| SnapshotManager.cs | SnapshotManager static class（WorldSnapshot（AnchorTimestamp / Entities / Tiles）/ _stack / StackDepth / TakeSnapshot() / ApplyLatest() / Clear()）| **完全缺失** | — | M-9 Rollback |
-| TileWorldSnapshot.cs | TileWorldSnapshot record（Center / Radius）| **完全缺失** | — | M-9 Rollback |
+| WorldSaveData.cs | LastPlayed | **已實作** | `WorldSaveData.h/.cpp` | `FDateTime LastPlayed`；SaveMeta 以 ISO 8601 格式寫入；LoadMeta 以 FDateTime::ParseIso8601 解析（2026-06-17 Batch 2）|
+| GameFlowUI.cs | 整個 GameFlowUI（角色選擇 / 角色創建 / 世界選擇 / 世界創建 / 確認對話框 / RebuildCharList / MakeCharCard / RebuildWorldList / MakeWorldCard 等所有 UI 方法）| **已實作** | `UGameFlowWidget.h/.cpp` | BuildLayout() + OnWorldListRefreshed_Implementation + OnEnterGame_Implementation；BlueprintNativeEvent（UI-1, 2026-06-16）|
+| ISnapshottable.cs | interface ISnapshottable（TakeSnapshot() / RestoreFromSnapshot()）| **已實作** | `ISnapshottable.h` | 純虛函數介面（S-3, 2026-06-16）|
+| AuraSnapshot.cs | AuraSnapshot record（Auras / Effects）+ AuraEntryData + AuraEffectData | **已實作** | `SnapshotTypes.h` FAuraSnapshot | FAuraEntryData + FAuraEffectData + FAuraSnapshot（S-3）|
+| CharStateSnapshot.cs | CharStateSnapshot record（Stamina / MentalEnergy / Mood / BodyTemperature / Thirst / Hunger / Oxygen / From()）| **已實作** | `SnapshotTypes.h` FCharStateSnapshot | Stamina/MentalEnergy/Mood/BodyTemp/Thirst/Hunger/Oxygen 完整對應（S-3）|
+| CharStatsSnapshot.cs | CharStatsSnapshot record（全部 65 個 CharacterStats 屬性快照 + ElemAffinity/OutputMult/Resistance 字典 + ApplyTo() / From()）| **已實作** | `SnapshotTypes.h` FCharStatsSnapshot | `FCharStatsSnapshot { FCharacterStats Data; static From(); ApplyTo(); }`；FCharacterStats 本身已含所有 65 個屬性及元素字典，包裝後完整對應 Godot 原版（2026-06-17 Batch 2）|
+| EntitySnapshot.cs | EntitySnapshot record（EntityId / Position / Hp / Mp / WasAlive / Aura / CharState / CharStats / PlayerId=-1 常數）| **已實作** | `SnapshotTypes.h` FEntitySnapshot L43 | 完整對應（S-3）；CharStats 欄位存在但 FCharStatsSnapshot 本身缺失 |
+| SnapshotManager.cs | SnapshotManager static class（WorldSnapshot（AnchorTimestamp / Entities / Tiles）/ _stack / StackDepth / TakeSnapshot() / ApplyLatest() / Clear()）| **已實作** | `USnapshotManager.h/.cpp` | 完整實作（S-3/S-13, 2026-06-16）|
+| TileWorldSnapshot.cs | TileWorldSnapshot record（Center / Radius）| **已實作** | `SnapshotTypes.h` FTileWorldSnapshot | Center / Radius + TMap<FGridPos,uint8> Cells（S-13, 2026-06-16）|
 | TileWorldSnapshot.cs | Cells 字典 | 已實作 | `FTileWorld3D::SnapshotRegion/RestoreRegion()` | 改用線性 TArray<FTileCell>；無 record 包裝 |
 
 ### 架構差異摘要
 
-- 存檔基礎結構已移植（FCharacterSaveData / FWorldSaveData / FlowSaveSystem）
-- 全局列表加載/存儲（Load/Save）及刪除邏輯未實作（M-7+）
-- GameFlow UI 整體缺失（M-8 UMG 階段）
-- 快照系統全部缺失（M-9）：ISnapshottable / SnapshotManager / EntitySnapshot / CharStatsSnapshot / AuraSnapshot 等
-- 僅 FTileWorld3D::SnapshotRegion/RestoreRegion() 有基礎實作
+- 存檔基礎結構完整移植：FCharacterSaveData（含 Level/Xp/InventorySlots/ManaCurrents）/ FWorldSaveData / FFlowSaveSystem
+- GameFlow UI 已實作：UGameFlowWidget BuildLayout()（UI-1, 2026-06-16）
+- 快照系統已完整實作（S-3/S-13）：ISnapshottable / USnapshotManager / FAuraSnapshot / FCharStateSnapshot / FEntitySnapshot / FTileWorldSnapshot
+- **唯一真正仍缺失**：FCharStatsSnapshot（65 個 CharacterStats 屬性快照 + ApplyTo/From）
 
 ---
 
@@ -674,9 +672,9 @@
 | Main.cs | _player（PlayerController）| 已實作 | `ASkillCreatorCharacter.h / ASkillCreatorPlayerController.h` | 角色控制系統 |
 | Main.cs | _Ready() / StartGameplay() / _Process() / _Input() / SaveAll() | **stub** | `ASkillCreatorGameMode::StartGame()` | 初始化分散；HUD 刷新邏輯缺失 |
 | Main.cs | HpLabel 更新 | **stub** | `UPlayerHUDWidget.h` | HUD 更新分散 |
-| Main.cs | 技能欄位顯示 / 傷害數字池 | **完全缺失** | — | Floating damage text 系統無 |
+| Main.cs | 技能欄位顯示 / 傷害數字池 | **已實作（浮動傷害）** | `UFloatingDamageWidget.h/.cpp` / `AFloatingDamageActor.h/.cpp` | AFloatingDamageActor::Spawn() 在任意世界位置生成 UMG 浮動傷害數字；向上漂移 40cm/s + 後半段淡出 + MaxLifeTime=1.2s 後自動 Destroy（2026-06-17 Batch 2）|
 | InputBindings.cs | RegisterAll() | **stub** | `ASkillCreatorPlayerController::SetupInputBindings()` | UE5 用 Enhanced Input System |
-| InputBindings.cs | GetKeys() / Rebind() / ResetToDefault() / SaveToFile() / LoadFromFile() | **完全缺失** | — | 運行時鍵位配置無 |
+| InputBindings.cs | GetKeys() / Rebind() / ResetToDefault() / SaveToFile() / LoadFromFile() | **已實作** | `UInputSettingsWidget.h/.cpp` | GetCurrentBindings / RemapAction / SaveBindings / LoadAndApplyBindings / ResetToDefaults（UI-2, 2026-06-16）|
 | PlayerController.cs | IElementalTarget 實作 | **stub** | `ASkillCreatorCharacter.h` | 介面存在但方法可能不完整 |
 | PlayerController.cs | Aura / Stats / State / Position / Facing / Inventory / Equipment / Level / Xp / TierName / ActiveManaSlots / Mp / MaxMp | 已實作 | `ASkillCreatorCharacter.h` | 完整對應 |
 | PlayerController.cs | TakeDamage() / UpdateEnvironment() / Tick() / TryMove() / TryMoveDir() / TryMoveDepth() / ApplyPhysics() / IsOnGround() / StartJump() / Respawn() / TickMining() / GainXp() | 已實作 | `ASkillCreatorCharacter.cpp` | 完整對應 |
@@ -684,24 +682,24 @@
 | PlayerController.cs | Snapshot 系統（TakeSnapshot() / RestoreFromSnapshot()）| **stub** | `ASkillCreatorCharacter` 對應方法 | S-7 詳細需驗證 |
 | AbilityEditorUI.cs | SpellGroup / Loadout（當前組）| **stub** | `UBlockEdGraphNode.h` 或對應資料結構 | 技能 Loadout 不完整 |
 | AbilityEditorUI.cs | _Ready() / BuildUI() / InitSpells() / GetSpellGroupJson() / SaveSpell() | **stub** | `SBlockEditorWidget::Construct/LoadSpells` | 框架存在但邏輯不完整 |
-| AbilityEditorUI.cs | SwitchEditorGroup() / 容器效果編輯 | **完全缺失** | — | 編輯器內技能組切換無 |
+| AbilityEditorUI.cs | SwitchEditorGroup() / 容器效果編輯 | **已實作** | `SBlockEditorWidget.h/.cpp` | SwitchEditorGroup(int32 GroupIndex, UBlockEdGraph*) 更新 Graph 並廣播 OnChanged（2026-06-17 Batch 2）|
 | AbilityEditorUI.cs | 技能因子/積木/刻印庫 UI | **stub** | `SBlockEditorWidget` | UI 面板結構存在但內容不完整 |
 | BlockScript.cs | BlockScript 類 / _Ready() / Rebuild() | **stub** | `UBlockEdGraphNode.h` | 卡片重建邏輯簡化 |
-| BlockScript.cs | 分支容器渲染 / SplitAt() / AppendBlocks() | **完全缺失** | — | If / Loop 分支視覺化無 |
+| BlockScript.cs | 分支容器渲染 / SplitAt() / AppendBlocks() | **已實作** | `FBlockNode.h` / `UBlockEdGraphNode.cpp` | 分支渲染：UBlockEdGraphNode::AllocateDefaultPins() 已建立 Then/Else/Body pin（已確認）；SplitAt() / AppendBlocks() 以 MoveTemp 靜態方法補完（2026-06-17 Batch 2）|
 | EditorSettings.cs | AutoInsertBaseEngraving | **stub** | Plugin Settings | 設定框架存在但功能不完整 |
 | ScratchCanvas.cs | SyncFrom() / Scratch 式積木展示 / 拖拉機制（BlockDrag）| **stub** | `SBlockEditorWidget` | 視覺化框架存在但細節不完整 |
-| ScratchCanvas.cs | Changed 事件 | **完全缺失** | — | 變更通知系統無 |
+| ScratchCanvas.cs | Changed 事件 | **已實作** | `SBlockEditorWidget.h/.cpp` | `FSimpleMulticastDelegate OnChanged`；綁定 SGraphEditor::FGraphEditorEvents.OnGraphChanged，任何節點增刪/連線異動時廣播（2026-06-17 Batch 2）|
 | ScriptCanvas.cs | ScriptCanvas 類 / SyncFrom() | **stub** | `SBlockEditorWidget` | 自由畫布模式簡化 |
-| ScriptCanvas.cs | 拖拉重排邏輯 / 磁吸連結 / 縮放平移 | **完全缺失** | — | 自由畫布互動無 |
-| SpellDescriptionGenerator.cs | GenerateStructured() / GenerateProse() | **完全缺失** | — | 技能描述生成 UI 無 |
-| SpellListUI.cs | SpellListUI class / 技能圓球渲染 / Tooltip / 技能組圓點 | **完全缺失** | — | 圓球列表首頁 UI 整體無 |
+| ScriptCanvas.cs | 拖拉重排邏輯 / 磁吸連結 / 縮放平移 | **已實作（SGraphEditor 內建）** | `SBlockEditorWidget.cpp` | UE5 SGraphEditor 原生提供節點拖拉 / pin 連線磁吸 / 滾輪縮放 / 右鍵平移；無需額外實作（2026-06-17 架構確認）|
+| SpellDescriptionGenerator.cs | GenerateStructured() / GenerateProse() | **已實作** | `SpellDescriptionGenerator.h/.cpp` | GenerateStructured + GenerateProse 純 C++ 工具（UI-5, 2026-06-16）|
+| SpellListUI.cs | SpellListUI class / 技能圓球渲染 / Tooltip / 技能組圓點 | **已實作** | `USpellListWidget.h/.cpp` | RefreshSpellList / SetActiveGroup / OnSpellListRefreshed（UI-3, 2026-06-16）|
 | TotemLibrary.cs | AllTotems（27 種）/ AllEngravings（90 種）/ ContainerActionIds / DefaultActionEngraveId | **stub** | `UBlockEdGraphNode.h` 或資料表 | 資料結構存在但內容不完整（許多 TODO-STUB）|
 
 ### 架構差異摘要
 
 - PlayerController（ASkillCreatorCharacter）核心邏輯（移動 / 傷害 / 等級）已完整實作
+- InputBindings 運行時重綁鍵位已實作（UInputSettingsWidget, UI-2）
+- SpellDescriptionGenerator（GenerateStructured/GenerateProse）已實作（UI-5）
+- SpellListUI（USpellListWidget）已實作（UI-3）
 - 積木編輯器框架（SBlockEditorWidget）已建立，但大部分互動邏輯不完整
-- 自由畫布（ScriptCanvas）完全缺失；Scratch 式（ScratchCanvas）邏輯簡化
-- 技能列表 & 圓球 UI（SpellListUI）完全無對應實作
-- Totem & Engrave 資料結構存在但內容不完整
-- InputBindings 運行時重綁鍵位無
+- ✅ 2026-06-17 Batch 2 補完：自由畫布互動（SGraphEditor 內建確認）、OnChanged 事件、SplitAt/AppendBlocks、SwitchEditorGroup、UFloatingDamageWidget + AFloatingDamageActor 浮動傷害數字

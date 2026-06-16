@@ -7,6 +7,8 @@
 #include "GameFramework/Pawn.h"
 #include "Misc/Paths.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 // ============================================================
 // 構造
@@ -24,6 +26,18 @@ AVoxelWorldActor::AVoxelWorldActor()
         TEXT("/Game/M_Voxel.M_Voxel"));
     if (MatFinder.Succeeded())
         VoxelMaterial = MatFinder.Object;
+
+    // 採掘高亮：引擎內建 Cube mesh + 半透明材質（預設隱藏）
+    HighlightMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HighlightMesh"));
+    HighlightMesh->SetupAttachment(RMCComp);
+    HighlightMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    HighlightMesh->SetVisibility(false);
+    HighlightMesh->SetCastShadow(false);
+
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
+        TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (CubeFinder.Succeeded())
+        HighlightMesh->SetStaticMesh(CubeFinder.Object);
 }
 
 // ============================================================
@@ -36,6 +50,22 @@ AVoxelWorldActor* AVoxelWorldActor::FindInWorld(UWorld* World)
     for (TActorIterator<AVoxelWorldActor> It(World); It; ++It)
         return *It;
     return nullptr;
+}
+
+void AVoxelWorldActor::ShowHighlight(FGridPos TilePos)
+{
+    if (!HighlightMesh) return;
+    // Cube mesh 預設 100×100×100 cm；縮放至一個 tile
+    const float S = WorldScale::TileSizeCm / 100.f;
+    HighlightMesh->SetWorldScale3D(FVector(S + 0.02f));  // 稍微放大 0.02 避免 z-fighting
+    HighlightMesh->SetWorldLocation(WorldScale::TileToWorld(TilePos, TileWorld.Height));
+    HighlightMesh->SetVisibility(true);
+}
+
+void AVoxelWorldActor::HideHighlight()
+{
+    if (HighlightMesh)
+        HighlightMesh->SetVisibility(false);
 }
 
 // Floor division correct for negative numerators.

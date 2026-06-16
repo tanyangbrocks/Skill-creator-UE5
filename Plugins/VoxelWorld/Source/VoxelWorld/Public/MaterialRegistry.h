@@ -32,6 +32,7 @@ struct FMaterialData
     float BlastResistance   = 0.f;   // 爆炸傷害抵抗（每點減少等比傷害）
     float MagicResistance   = 0.f;   // 魔法傷害抵抗係數（0-1；1=完全免疫）
     uint8 Opacity           = 255;   // 透明度（255=完全不透明；0=完全透明）
+    EItemId FragmentItem    = EItemId::None; // 採礦/爆炸碎裂後的主要掉落物 ID
 };
 
 class VOXELWORLD_API FMaterialRegistry
@@ -44,4 +45,5 @@ public:
     static FLinearColor           GetColor(EMaterialType Mat);
     static FText                  GetDisplayName(EMaterialType Mat);
     static TArray<FItemDrop>      GetDefaultDrops(EMaterialType Mat);
+    static EItemId                GetFragmentItem(EMaterialType Mat);
 };

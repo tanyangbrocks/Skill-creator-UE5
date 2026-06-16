@@ -36,6 +36,27 @@ struct FBlockNode
     FBlockNode& operator=(FBlockNode&&) = default;
     FBlockNode(const FBlockNode&) = delete;
     FBlockNode& operator=(const FBlockNode&) = delete;
+
+    // ── 靜態輔助：積木列表操作（對應 Godot BlockScript.SplitAt / AppendBlocks）──
+
+    // 將 List 從 Index 處拆成兩段；[Index, end) 移入 RightOut，List 保留 [0, Index)
+    static void SplitAt(TArray<TUniquePtr<FBlockNode>>& List, int32 Index,
+                        TArray<TUniquePtr<FBlockNode>>& RightOut)
+    {
+        RightOut.Reset();
+        for (int32 i = Index; i < List.Num(); ++i)
+            RightOut.Add(MoveTemp(List[i]));
+        List.SetNum(Index, EAllowShrinking::No);
+    }
+
+    // 將 Source 的全部節點移入 Target 末尾（Source 清空）
+    static void AppendBlocks(TArray<TUniquePtr<FBlockNode>>& Target,
+                             TArray<TUniquePtr<FBlockNode>>& Source)
+    {
+        for (TUniquePtr<FBlockNode>& Node : Source)
+            Target.Add(MoveTemp(Node));
+        Source.Reset();
+    }
 };
 
 // UE5 USTRUCT 含不可複製成員的標準做法：

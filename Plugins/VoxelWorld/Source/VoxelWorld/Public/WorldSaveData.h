@@ -11,6 +11,7 @@ struct VOXELWORLD_API FWorldSaveData
     FString    WorldDir;
     FIntVector PlayerSpawn   = FIntVector(0, 0, 0);
     bool       bIsFirstEnter = true;
+    FDateTime  LastPlayed;
 
     // chunks/{cx}_{cy}_{cz}.bin 路徑計算
     static FString GetChunkPath(const FString& InWorldDir, int32 cx, int32 cy, int32 cz);

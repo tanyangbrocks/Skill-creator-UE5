@@ -25,7 +25,18 @@ public:
 
     UBlockEdGraph* GetGraph() const { return Graph.Get(); }
 
+    // 切換到另一個技能 group（切換 Graph 並刷新 SGraphEditor）
+    void SwitchEditorGroup(int32 GroupIndex, UBlockEdGraph* NewGraph);
+
+    // 每當 Graph 內容變更（節點增減 / 連線異動）時廣播
+    FSimpleMulticastDelegate OnChanged;
+
 private:
     TStrongObjectPtr<UBlockEdGraph> Graph;
     TSharedPtr<SGraphEditor> GraphEditor;
+
+    void HandleGraphChanged(const struct FEdGraphEditAction&);
+    void BindGraphChangedHandler();
+
+    FDelegateHandle GraphChangedHandle;
 };

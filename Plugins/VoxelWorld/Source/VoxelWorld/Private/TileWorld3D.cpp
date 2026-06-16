@@ -175,6 +175,31 @@ void FTileWorld3D::MarkNeighborsDirty(FIntVector CC, int32 lx, int32 ly, int32 l
     if (lz == S-1) PendingNeighborDirty.Add(CC + FIntVector( 0, 0, 1));
 }
 
+void FTileWorld3D::FlushNeighborDirty()
+{
+    for (const FIntVector& CC : PendingNeighborDirty)
+        DirtyChunks.Add(CC);
+    PendingNeighborDirty.Empty();
+}
+
+void FTileWorld3D::MarkNeighborsCaDirty(int32 x, int32 y, int32 z)
+{
+    FIntVector CC = WorldToChunk(x, y, z);
+    FIntVector LC = WorldToLocal(x, y, z);
+    MarkNeighborsDirty(CC, LC.X, LC.Y, LC.Z);
+}
+
+int32 FTileWorld3D::HeightEstimator(int32 x, int32 z) const
+{
+    // 從頂部(y=0)往下掃，返回第一個非 Air 格的 Y（即「地表」）
+    for (int32 y = 0; y < Height; ++y)
+    {
+        if (InBounds(x, y, z) && GetTile(x, y, z) != EMaterialType::Air)
+            return y;
+    }
+    return Height > 0 ? Height - 1 : 0;
+}
+
 // ============================================================
 // 實體佔用
 // ============================================================
@@ -256,9 +281,7 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
     }
 
     // 跨 chunk 髒通知延遲刷新
-    for (const FIntVector& CC : PendingNeighborDirty)
-        DirtyChunks.Add(CC);
-    PendingNeighborDirty.Empty();
+    FlushNeighborDirty();
 }
 
 // ============================================================

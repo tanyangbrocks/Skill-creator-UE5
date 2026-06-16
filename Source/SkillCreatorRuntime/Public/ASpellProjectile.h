@@ -36,6 +36,8 @@ public:
     // 命中敵人回調（由 USpellCaster 設定）
     TFunction<void(AEnemy*, FGridPos)> OnHitEnemy;
 
+    bool IsAlive() const { return IsValid(this); }
+
     virtual void Tick(float DeltaTime) override;
 
 private:

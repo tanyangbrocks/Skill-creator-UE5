@@ -66,6 +66,22 @@ struct FTileWorldSnapshot
     TMap<FGridPos, uint8> Tiles; // GridPos → EMaterialType as uint8
 };
 
+// ── 角色基礎屬性快照（對應 Godot CharStatsSnapshot.cs）──────────────────
+// FEntitySnapshot 已含 bHasCharStats + CharStats；本型別供獨立備份/還原使用
+
+struct FCharStatsSnapshot
+{
+    FCharacterStats Data;
+
+    static FCharStatsSnapshot From(const FCharacterStats& S)
+    {
+        FCharStatsSnapshot Snap;
+        Snap.Data = S;
+        return Snap;
+    }
+    void ApplyTo(FCharacterStats& S) const { S = Data; }
+};
+
 // ── 世界快照（對應 Godot WorldSnapshot.cs）────────────────────────────────
 
 struct FWorldSnapshot

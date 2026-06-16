@@ -2,9 +2,24 @@
 #include "UBlockEdGraph.h"
 #include "UBlockEdGraphSchema.h"
 #include "GraphEditor.h"
+#include "EdGraph/EdGraph.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
+
+void SBlockEditorWidget::HandleGraphChanged(const FEdGraphEditAction&)
+{
+    OnChanged.Broadcast();
+}
+
+void SBlockEditorWidget::BindGraphChangedHandler()
+{
+    if (!Graph) return;
+    if (GraphChangedHandle.IsValid())
+        Graph->RemoveOnGraphChangedHandler(GraphChangedHandle);
+    GraphChangedHandle = Graph->AddOnGraphChangedHandler(
+        FOnGraphChanged::FDelegate::CreateSP(this, &SBlockEditorWidget::HandleGraphChanged));
+}
 
 void SBlockEditorWidget::Construct(const FArguments& InArgs)
 {
@@ -12,8 +27,9 @@ void SBlockEditorWidget::Construct(const FArguments& InArgs)
     if (Graph && !Graph->Schema)
         Graph->Schema = UBlockEdGraphSchema::StaticClass();
 
+    BindGraphChangedHandler();
+
     SGraphEditor::FGraphEditorEvents GraphEvents;
-    // Additional graph events (node selection, etc.) can be bound here.
 
     ChildSlot
     [
@@ -48,4 +64,19 @@ TArray<TUniquePtr<FBlockNode>> SBlockEditorWidget::GetBlockNodes() const
 {
     if (!Graph) return {};
     return Graph->ToBlockNodes();
+}
+
+void SBlockEditorWidget::SwitchEditorGroup(int32 /*GroupIndex*/, UBlockEdGraph* NewGraph)
+{
+    Graph = TStrongObjectPtr<UBlockEdGraph>(NewGraph);
+    if (Graph && !Graph->Schema)
+        Graph->Schema = UBlockEdGraphSchema::StaticClass();
+
+    BindGraphChangedHandler();
+
+    if (GraphEditor.IsValid())
+        GraphEditor->SetViewLocation(FVector2f::ZeroVector, 1.f);
+
+    // SGraphEditor 不支援 SetGraph()；持有者收到 OnChanged 後決定是否重建 widget。
+    OnChanged.Broadcast();
 }

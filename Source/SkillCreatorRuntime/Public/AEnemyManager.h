@@ -4,6 +4,9 @@
 #include "AEnemy.h"
 #include "AEnemyManager.generated.h"
 
+class ASpellProjectile;
+class AMobSpawnController;
+
 // 管理場景中所有敵人的生成、死亡、爆炸傷害（對應 Godot EnemyManager.cs）。
 // M-4：基礎框架；投射物管理 → M-5；MobSpawnController → M-5。
 UCLASS()
@@ -36,10 +39,19 @@ public:
     UFUNCTION(BlueprintCallable, Category="EnemyManager")
     void ApplyExplosionDamage(FGridPos Center, int32 Radius, float Damage);
 
+    // ── 投射物管理 ────────────────────────────────────────────────
+    // EnemyProjectiles 由 Ranged 敵人 Spawn 後注冊，Tick 中清除無效項
+    UPROPERTY() TArray<TObjectPtr<ASpellProjectile>> EnemyProjectiles;
+
+    // ── 生成控制器綁定 ────────────────────────────────────────────
+    void SetSpawner(AMobSpawnController* Spawner) { CachedSpawner = Spawner; }
+
     // ── 每幀清理死亡敵人 ──────────────────────────────────────────
     virtual void Tick(float DeltaTime) override;
 
 private:
     UPROPERTY() TArray<AEnemy*> Enemies;
     int32 DynamicActiveCount = 0;
+
+    UPROPERTY() TObjectPtr<AMobSpawnController> CachedSpawner;
 };

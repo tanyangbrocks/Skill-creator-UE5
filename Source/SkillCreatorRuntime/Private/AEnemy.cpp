@@ -1,7 +1,9 @@
 #include "AEnemy.h"
 #include "UElementalAuraComponent.h"
 #include "AEnemyAIController.h"
+#include "AVoxelWorldActor.h"
 #include "WorldScale.h"
+#include "EngineUtils.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -16,6 +18,12 @@ AEnemy::AEnemy()
 void AEnemy::BeginPlay()
 {
     Super::BeginPlay();
+
+    for (TActorIterator<AVoxelWorldActor> It(GetWorld()); It; ++It)
+    {
+        CachedVoxelWorld = *It;
+        break;
+    }
 
     // 若 MaxHp 未在 Editor 覆蓋，則依 Type 設預設值
     if (MaxHp <= 0.f)
@@ -43,11 +51,65 @@ void AEnemy::TakeDamageAmount(float Amount)
 
 void AEnemy::Respawn()
 {
-    GridPosition = SpawnGridPos;
-    Hp           = MaxHp;
-    AIState      = EEnemyState::Idle;
+    bPendingRespawn = false;
+    GridPosition    = SpawnGridPos;
+    Hp              = MaxHp;
+    AIState         = EEnemyState::Idle;
     AuraComp->Reset();
-    SetActorLocation(WorldScale::TileToWorld(SpawnGridPos));
+    const int32 WH = CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld()->Height
+                                      : WorldScale::DefaultWorldHeight;
+    SetActorLocation(WorldScale::TileToWorld(SpawnGridPos, WH));
+}
+
+void AEnemy::StartRespawn(float DelaySeconds)
+{
+    if (bPendingRespawn) return;
+    bPendingRespawn = true;
+    GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AEnemy::Respawn, DelaySeconds, false);
+}
+
+void AEnemy::ForceRevive()
+{
+    GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
+    bPendingRespawn = false;
+    Respawn();
+}
+
+void AEnemy::ApplyGravity()
+{
+    if (!CachedVoxelWorld) return;
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return;
+
+    // 每次呼叫向下移動一格（由 AIController 每幀決定是否呼叫）
+    int32 Below = GridPosition.Y + 1;
+    if (TW->InBounds(GridPosition.X, Below, GridPosition.Z)
+        && TW->GetTile(GridPosition.X, Below, GridPosition.Z) == EMaterialType::Air)
+    {
+        GridPosition.Y = Below;
+        SetActorLocation(WorldScale::TileToWorld(GridPosition, TW->Height));
+    }
+}
+
+FEntitySnapshot AEnemy::TakeSnapshot() const
+{
+    FEntitySnapshot Snap;
+    Snap.EntityId  = UniqueId;
+    Snap.Position  = GridPosition;
+    Snap.Hp        = Hp;
+    Snap.Mp        = 0.f;
+    Snap.bWasAlive = IsAlive();
+    return Snap;
+}
+
+void AEnemy::RestoreFromSnapshot(const FEntitySnapshot& Snap)
+{
+    GridPosition = Snap.Position;
+    Hp           = Snap.Hp;
+    if (Snap.bWasAlive && !IsAlive())
+        ForceRevive();
+    SetActorLocation(WorldScale::TileToWorld(GridPosition,
+        CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld()->Height : WorldScale::DefaultWorldHeight));
 }
 
 float AEnemy::GetBaseMoveInterval() const
