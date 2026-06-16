@@ -169,6 +169,70 @@ void ASkillCreatorCharacter::MoveRight(float Value)
     AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Value);
 }
 
+// ── Camera Mode ──────────────────────────────────────────────────────────
+
+static FCameraModeParams DefaultParamsFor(ECameraMode Mode)
+{
+    FCameraModeParams P;
+    switch (Mode)
+    {
+        case ECameraMode::ThirdPerson:
+            P.ArmLength = 600.f; P.PitchDeg = -15.f; P.bUsePawnControlRotation = true;
+            break;
+        case ECameraMode::FirstPerson:
+            P.ArmLength = 0.f;   P.PitchDeg = 0.f;   P.bUsePawnControlRotation = true;
+            break;
+        case ECameraMode::Isometric:
+            P.ArmLength = 1200.f; P.PitchDeg = -55.f; P.bUsePawnControlRotation = false;
+            P.FixedYawDeg = 45.f;
+            break;
+        case ECameraMode::SideScroll2D:
+            P.ArmLength = 900.f; P.PitchDeg = -10.f; P.bUsePawnControlRotation = false;
+            P.FixedYawDeg = 90.f;
+            break;
+        default: break;
+    }
+    return P;
+}
+
+void ASkillCreatorCharacter::SetCameraMode(ECameraMode NewMode)
+{
+    CameraMode = NewMode;
+
+    FCameraModeParams Params = DefaultParamsFor(NewMode);
+    if (FCameraModeParams* P = CameraPresets.Find(NewMode))
+        Params = *P;
+
+    SpringArm->TargetArmLength           = Params.ArmLength;
+    SpringArm->bUsePawnControlRotation   = Params.bUsePawnControlRotation;
+
+    if (NewMode == ECameraMode::FirstPerson)
+    {
+        // 一人稱：將 SpringArm 移到頭部位置（眼高 = 128cm ≒ 兩格）
+        SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 128.f));
+        SpringArm->SetRelativeRotation(FRotator::ZeroRotator);
+    }
+    else if (Params.bUsePawnControlRotation)
+    {
+        SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 64.f));
+        SpringArm->SetRelativeRotation(FRotator(Params.PitchDeg, 0.f, 0.f));
+    }
+    else
+    {
+        SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 64.f));
+        SpringArm->SetWorldRotation(FRotator(Params.PitchDeg, Params.FixedYawDeg, 0.f));
+    }
+}
+
+void ASkillCreatorCharacter::CycleCameraMode()
+{
+    const ECameraMode Next = static_cast<ECameraMode>(
+        (static_cast<uint8>(CameraMode) + 1) % 4);
+    SetCameraMode(Next);
+}
+
+// ── Spell Input ─────────────────────────────────────────────────────────
+
 void ASkillCreatorCharacter::HandleSpellInput()
 {
     if (!SpellCasterComp) return;

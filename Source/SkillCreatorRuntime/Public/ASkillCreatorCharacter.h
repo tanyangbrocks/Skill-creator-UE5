@@ -5,6 +5,7 @@
 #include "IElementalTarget.h"
 #include "CharacterStats.h"
 #include "ActionBus.h"
+#include "SkillCameraTypes.h"
 #include "ASkillCreatorCharacter.generated.h"
 
 class UCharacterStateComponent;
@@ -47,6 +48,22 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")
     TObjectPtr<UCameraComponent> Camera;
+
+    // ── 攝影機模式（對應 Godot CameraController.cs）──────────────────
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Camera")
+    ECameraMode CameraMode = ECameraMode::ThirdPerson;
+
+    // 各模式參數（可覆寫預設值）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Camera")
+    TMap<ECameraMode, FCameraModeParams> CameraPresets;
+
+    // 切換至下一個攝影機模式（循環）
+    UFUNCTION(BlueprintCallable, Category="Camera")
+    void CycleCameraMode();
+
+    // 切換至指定模式並套用
+    UFUNCTION(BlueprintCallable, Category="Camera")
+    void SetCameraMode(ECameraMode NewMode);
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UCharacterStateComponent> StateComp;
