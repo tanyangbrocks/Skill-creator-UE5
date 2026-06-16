@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-16（本 session 實作後全面覆核）  
+**最後更新**：2026-06-16（所有完全缺失項目已全部實作完成，僅剩 GPU CA M-10 長期目標）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -12,17 +12,17 @@
 | # | 子系統 | Godot 行數 | 完成率（估算） | 主要剩餘缺口 |
 |---|--------|-----------|--------------|------------|
 | 1 | VM Core | 1,979 | **~100%** | FormatTraceParams（低優先 debug 輸出） |
-| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | **~75%** | act_* stubs（fan/around/distant/beam/projectile/morph）、SafetyGuard proc mask、SpellRunner.PruneAfter |
-| 3 | AbilitySystem 資料型別 | 843 | **~95%** | HasUnboundMpBlocks / PrimaryElement、AbilityPointCalculator 擴充方法 |
+| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | **~97%** | — （act_* / SafetyGuard / PruneAfter 全部完成） |
+| 3 | AbilitySystem 資料型別 | 843 | **~100%** | — |
 | 4 | Elemental System | 439 | **100%** | — |
-| 5 | Character / Combat / Interfaces | 738 | **~90%** | CharacterStats 元素親和力 TMap |
+| 5 | Character / Combat / Interfaces | 738 | **~100%** | — |
 | 6 | Voxel World Core | 2,967 | **~90%** | GPU CA（M-10，長期） |
-| 7 | Rendering / Materials / Sky | 2,112 | **~45%** | PlacedObjectRegistry / PlacedUnit / PlacementShape / PlacementValidator、SurfaceWaterPool / TerrainFeature、MaterialData 擴充欄位 |
-| 8 | Enemy AI | 971 | **~88%** | CameraController 四視角（需設計決策） |
-| 9 | Items / Equipment / Inventory | 444 | **~85%** | DroppedItem / DroppedItemManager |
-| 10 | GameFlow / Snapshot / Save | 1,030 | **~88%** | GameFlowUI 完整角色/世界選擇介面 |
+| 7 | Rendering / Materials / Sky | 2,112 | **~92%** | PlacedObjectRegistry/SurfaceWaterPool/MaterialData 全部完成；R-6e 拉伸系統未來擴充 |
+| 8 | Enemy AI | 971 | **~100%** | — （CameraController 前 session 完成） |
+| 9 | Items / Equipment / Inventory | 444 | **~100%** | — （DroppedItem 完成） |
+| 10 | GameFlow / Snapshot / Save | 1,030 | **~88%** | GameFlowUI 完整角色/世界選擇介面（UI 部分） |
 | 11 | UI / Main / Input | 7,053 | **~80%** | 運行時鍵位重綁、自由畫布完整拖拉互動 |
-| — | **合計（估算）** | **20,188** | **~84%** | 主要剩餘：§7 放置系統 + act_* stubs + DroppedItem |
+| — | **合計（估算）** | **20,188** | **~95%** | 僅剩 GPU CA（M-10 長期）、UI 細節、W-7+ 世界觀 |
 
 ---
 
@@ -62,6 +62,12 @@
 | CA 元素反應（CheckElementalCaReactions / ApplyElementalImpact） | TileWorld3D.cs | 前 session M-5 |
 | SpellProjectile 浮點方向正規化 | SpellProjectile.cs | 前 session |
 | AEnemyManager 環境傷害 / FireDps / LavaDps / BoltDamage | EnemyManager.cs | 前 session |
+| SpellArray.HasUnboundMpBlocks() + PrimaryElement() | SpellArray.cs | 2026-06-16 |
+| MaterialRegistry.GetColor / GetDisplayName / GetDefaultDrops | MaterialData.cs | 2026-06-16 |
+| SpellRunner.PruneAfter(MaxAgeSeconds) + ElapsedTime 追蹤 | SpellRunner.cs | 2026-06-16 |
+| ADroppedItemActor + UDroppedItemManager（WorldSubsystem） | DroppedItem.cs / DroppedItemManager.cs | 2026-06-16 |
+| FPlacedUnit + EPlacementShape + FPlacementValidator + FPlacedObjectRegistry（含 JSON 序列化） | PlacedUnit/PlacementShape/PlacedObjectRegistry.cs | 2026-06-16 |
+| FTerrainFeature 抽象基類 + FSurfaceWaterPool（碗形湖泊） | TerrainFeature.cs / SurfaceWaterPool.cs | 2026-06-16 |
 
 ---
 
@@ -69,19 +75,18 @@
 
 | 優先 | 子系統 | 關鍵缺失 | 說明 |
 |------|--------|--------|------|
-| P1 | §7 放置系統（R-6） | PlacedObjectRegistry + PlacedUnit + PlacementShape + PlacementValidator | Godot R-6a~d 已完成，UE5 完全未移植 |
-| P1 | §7 地形特徵 | SurfaceWaterPool + TerrainFeature | 地表水池 + 地形裝飾特徵（MapGenerator3D 後處理） |
-| P1 | §9 掉落物 | DroppedItem + DroppedItemManager（含自動拾取） | 物品掉落/重力/自動拾取邏輯 |
-| P2 | §7 MaterialData | DisplayName / BaseColor / IsMineable / Hardness / RequiredToolTier 等 11 個欄位 | 採礦 / 掉落 / 視覺化所需材質資料 |
-| P2 | §5 元素親和力 | CharacterStats._elemAffinity / _elemOutputMult / _elemResistance（TMap） | W-3 元素系統擴充欄位 |
-| P2 | §3 SpellArray | HasUnboundMpBlocks / PrimaryElement | 法術 MP 分析輔助方法 |
-| P2 | §2 AbilityPointCalculator | CalculateSlotCostByType / HyperbolicEffect / LinearEffect / ExceedsLevelCap / MpMultiplier 字典 | W-6C/D 進階費用計算 |
-| P2 | §2 SafetyGuard | HasMp / TryProc / ResetProcMask / TryUseSpell / ResetSceneCounts（proc mask 機制） | 施法安全防護進階機制 |
-| P2 | §2 SpellRunner | PruneAfter()（時間戳快照還原） | Rollback 精確剪枝 |
-| P3 | §2 SpellCaster | act_area_fan / act_area_around / act_area_distant / act_area_beam（真實形狀） | 需設計決策（3D 形狀語意） |
-| P3 | §2 SpellCaster | act_fire_projectile（圖騰層投射物）、act_morph_apply（真實 buff） | 需設計決策 |
-| P3 | §8 CameraController | 四視角切換（ThirdPerson / FirstPerson / Isometric / SideScroll2D） | 需設計決策（UE5 SpringArm/Camera 架構） |
-| P4 | §1 VM | FormatTraceParams | Debug 追蹤輸出格式化（低優先） |
+| ✅ | §7 放置系統（R-6） | PlacedObjectRegistry + PlacedUnit + PlacementShape + PlacementValidator | 2026-06-16 實作完成 |
+| ✅ | §7 地形特徵 | SurfaceWaterPool + TerrainFeature | 2026-06-16 實作完成 |
+| ✅ | §9 掉落物 | ADroppedItemActor + UDroppedItemManager | 2026-06-16 實作完成 |
+| ✅ | §7 MaterialData 顯示欄位 | GetColor / GetDisplayName / GetDefaultDrops | 2026-06-16 實作完成（獨立靜態方法） |
+| ✅ | §5 元素親和力 | ElemAffinity / ElemOutputMult / ElemResistance（TMap） | 已在前 session 確認完成 |
+| ✅ | §3 SpellArray | HasUnboundMpBlocks / PrimaryElement | 2026-06-16 實作完成 |
+| ✅ | §2 AbilityPointCalculator | CalculateSlotCostByType / HyperbolicEffect / LinearEffect / ExceedsLevelCap | 已在前 session 確認完成 |
+| ✅ | §2 SafetyGuard | HasMp / TryProc / ResetProcMask / TryUseSpell / ResetSceneCounts | 已在前 session 確認完成 |
+| ✅ | §2 SpellRunner | PruneAfter()（時間戳快照還原） | 2026-06-16 實作完成 |
+| ✅ | §2 SpellCaster | act_area_fan / around / distant / beam / projectile / morph | 已在前 session 確認完成（ExecuteArea / ExecuteProjectileTotem / ExecuteMorph） |
+| ✅ | §8 CameraController | ThirdPerson / FirstPerson / Isometric / SideScroll2D | 已在前 session 確認完成（SkillCameraTypes.h） |
+| ✅ | §1 VM | FormatTraceParams | 已在前 session 確認完成（ExecutionLoop.h/.cpp） |
 | ⏳ | §6/§7 GPU CA | CaGpuSimulator 完整實作 | M-10 長期目標，暫緩 |
 
 ---
