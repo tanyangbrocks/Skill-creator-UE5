@@ -1,4 +1,4 @@
-# UE5 已完成里程碑（歸檔）
+﻿# UE5 已完成里程碑（歸檔）
 
 > 歸檔時間：2026-06-16（超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
 
@@ -21,3 +21,4 @@
 | P2 GPU CA stub（M-10）| `CaGpuSimulator.h/.cpp` `TileWorld3D.h/.cpp` | FCaGpuSimulator：Initialize(stub→false) / SetOrigin / Upload / Simulate / Download / Release；TileWorld3D 新增 InitGpu / UpdateGpuOrigin / InGpuZone（IsAvailable=false 時恆 false，CPU 路徑不受影響）/ SetCellFromGpu（M-10 正式實作：RDG Compute Shader + async readback）|
 | P3 FormatTraceParams | `ExecutionLoop.h/.cpp` | FormatTraceParams(PC, Instr) → "PC=N | OpCode | PayloadType(key args)"；WaitArgs/JumpArgs/SetVarArgs 特化格式；Step() 在 bTraceMode=true 時逐指令 UE_LOG 輸出 |
 | P3 Sky System | `SkyTypes.h` `ASkyController.h/.cpp` | FSkyConfig（TopColor/HorizonColor/CloudCoverage/CloudSpeed/CloudColor/Brightness）；ASkyController：SunLight/Atmosphere/SkyLight 三組件；PushConfig/ApplyConfig/TransitionTo（Tick LerpUsingHSV 插值）；OnSkyConfigChanged BlueprintImplementableEvent |
+| P3 Camera System | `SkillCameraTypes.h` `ASkillCreatorCharacter.h/.cpp` | ECameraMode（ThirdPerson/FirstPerson/Isometric/SideScroll2D）；FCameraModeParams（ArmLength/PitchDeg/bUsePawnControlRotation/FixedYawDeg）；TMap CameraPresets；SetCameraMode（重設 SpringArm 臂長/角度，一人稱眼高 128cm）；CycleCameraMode（循環四模式）|

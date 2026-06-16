@@ -15,12 +15,21 @@ enum class EPhysicsCategory : uint8
 
 struct FMaterialData
 {
-    EPhysicsCategory Physics     = EPhysicsCategory::Static;
-    float            Density     = 0.f;                    // 液體密度（高密度可置換低密度）
-    bool             bFlammable  = false;                  // 可被引燃（Static 燃燒用）
-    uint8            BurnMin     = 0;                      // CA_State 燃燒倒計時下限
-    uint8            BurnMax     = 0;                      // CA_State 燃燒倒計時上限
-    ESkillElementType NativeElement = ESkillElementType::None; // 材質對應元素（CA 元素反應用）
+    // ── CA 物理 ────────────────────────────────────────────────────────
+    EPhysicsCategory  Physics       = EPhysicsCategory::Static;
+    float             Density       = 0.f;    // 液體密度（高密度可置換低密度）
+    bool              bFlammable    = false;  // 可被引燃（Static 燃燒用）
+    uint8             BurnMin       = 0;      // CA_State 燃燒倒計時下限
+    uint8             BurnMax       = 0;      // CA_State 燃燒倒計時上限
+    ESkillElementType NativeElement = ESkillElementType::None; // CA 元素反應用
+
+    // ── 採礦 / 遊戲機制（對應 Godot MaterialData.cs）──────────────────
+    bool  bIsMineable       = false; // 可被採礦工具摧毀
+    float Hardness          = 0.f;   // 硬度（0-5；影響採礦速度）
+    int32 RequiredToolTier  = 0;     // 最低所需工具等級（0=徒手，1=基礎，2=鐵，3=高階）
+    float BlastResistance   = 0.f;   // 爆炸傷害抵抗（每點減少等比傷害）
+    float MagicResistance   = 0.f;   // 魔法傷害抵抗係數（0-1；1=完全免疫）
+    uint8 Opacity           = 255;   // 透明度（255=完全不透明；0=完全透明）
 };
 
 class VOXELWORLD_API FMaterialRegistry

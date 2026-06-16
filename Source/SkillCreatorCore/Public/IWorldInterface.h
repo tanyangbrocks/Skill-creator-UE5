@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GridPos.h"
 #include "MaterialType.h"
+#include "WorldTypes.h"
 #include "ICreature.h"
 
 // 能力系統與世界之間的介面合約（對應 Godot IWorldInterface.cs §16）。
@@ -22,7 +23,8 @@ public:
 
     // ── 指令 ────────────────────────────────────────────────────────────
     // 摧毀 Pos 格（設為 Air），觸發 OnTileDestroyed
-    virtual void DestroyTile(FGridPos Pos)                                          = 0;
+    virtual void DestroyTile(FGridPos Pos,
+                             EDestroyReason Reason = EDestroyReason::Mining)        = 0;
     // 在 XZ 平面向 Entity 施加位移力（單位：格/秒；負值代表反方向）
     virtual void ApplyForce(ICreature* Entity, float Dx, float Dz)                 = 0;
     // 生成效果（如火焰、水、煙霧）；Params 為浮點數 key-value（"Radius", "Duration" 等）
@@ -32,7 +34,7 @@ public:
     // ── 事件回呼（實作者在事件發生後呼叫；外部訂閱者綁 TFunction）───────
     TFunction<void(ICreature* /*Attacker*/, ICreature* /*Target*/, float /*Dmg*/)>
         OnEntityHit;
-    TFunction<void(FGridPos /*Pos*/, EMaterialType /*Mat*/)>
+    TFunction<void(FGridPos /*Pos*/, EMaterialType /*Mat*/, EDestroyReason /*Reason*/)>
         OnTileDestroyed;
     TFunction<void(ICreature* /*Entity*/)>
         OnEntityDied;
