@@ -9,14 +9,15 @@ ASpellProjectile::ASpellProjectile()
     PrimaryActorTick.bCanEverTick = true;
 }
 
-void ASpellProjectile::Init(FGridPos InOrigin, FIntVector InDir,
+void ASpellProjectile::Init(FGridPos InOrigin, FVector InDir,
                              AEnemyManager* InEnemyMgr, AVoxelWorldActor* InVoxelWorld)
 {
     CurrentPos = InOrigin;
-    TileDir    = InDir;
+    TileDir    = InDir.GetSafeNormal();  // 正規化；零向量時回傳 (0,0,0) → 不移動
+    FloatPos   = FVector((float)InOrigin.X, (float)InOrigin.Y, (float)InOrigin.Z);
     EnemyMgr   = InEnemyMgr;
     VoxelWorld = InVoxelWorld;
-    SetActorLocation(FVector((float)CurrentPos.X, (float)CurrentPos.Y, (float)CurrentPos.Z));
+    SetActorLocation(FloatPos);
 }
 
 void ASpellProjectile::Tick(float DeltaTime)
@@ -40,11 +41,22 @@ void ASpellProjectile::AdvanceOneTile()
         return;
     }
 
+    // 累積浮點位置：每步沿正規化方向前進一個單位長度
+    FloatPos += TileDir;
+
+    // 四捨五入得到當前所在的 tile 格座標（支援對角線投射）
     FGridPos NextPos(
-        CurrentPos.X + TileDir.X,
-        CurrentPos.Y + TileDir.Y,
-        CurrentPos.Z + TileDir.Z
+        FMath::RoundToInt(FloatPos.X),
+        FMath::RoundToInt(FloatPos.Y),
+        FMath::RoundToInt(FloatPos.Z)
     );
+
+    if (NextPos == CurrentPos)
+    {
+        // 對角線移動時可能未跨格，繼續累積直到整格
+        ++TilesTravelled;
+        return;
+    }
 
     // 先檢查是否命中敵人（優先於 tile 碰撞）
     if (AEnemy* Hit = FindEnemyAt(NextPos))
@@ -71,7 +83,7 @@ void ASpellProjectile::AdvanceOneTile()
 
     CurrentPos = NextPos;
     ++TilesTravelled;
-    SetActorLocation(FVector((float)CurrentPos.X, (float)CurrentPos.Y, (float)CurrentPos.Z));
+    SetActorLocation(FloatPos);  // 使用連續浮點位置讓視覺移動平滑
 }
 
 AEnemy* ASpellProjectile::FindEnemyAt(const FGridPos& Pos) const

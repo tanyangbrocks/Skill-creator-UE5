@@ -87,13 +87,7 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
         if (Proj)
         {
             FVector Fwd = Char->GetActorForwardVector();
-            FIntVector Dir(
-                FMath::Abs(Fwd.X) >= FMath::Abs(Fwd.Z) ? (Fwd.X > 0 ? 1 : -1) : 0,
-                0,
-                FMath::Abs(Fwd.Z) >  FMath::Abs(Fwd.X) ? (Fwd.Z > 0 ? 1 : -1) : 0
-            );
-
-                Proj->Init(Char->GetPosition(), Dir, CachedEnemyMgr, CachedVoxelWorld);
+            Proj->Init(Char->GetPosition(), Fwd, CachedEnemyMgr, CachedVoxelWorld);
 
             float Dmg = Proj->BaseDamage;
             const ESkillElementType Elem = Spell.SpellElement;
@@ -631,11 +625,7 @@ void USpellCaster::ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origi
     if (!Proj) return;
 
     FVector Fwd = Char->GetActorForwardVector();
-    FIntVector Dir(
-        FMath::Abs(Fwd.X) >= FMath::Abs(Fwd.Z) ? (Fwd.X > 0 ? 1 : -1) : 0, 0,
-        FMath::Abs(Fwd.Z) >  FMath::Abs(Fwd.X) ? (Fwd.Z > 0 ? 1 : -1) : 0
-    );
-    Proj->Init(Origin, Dir, CachedEnemyMgr, VW ? VW : CachedVoxelWorld.Get());
+    Proj->Init(Origin, Fwd, CachedEnemyMgr, VW ? VW : CachedVoxelWorld.Get());
 
     const FSpellMods M = ReadMods(Slot);
     float Dmg = Proj->BaseDamage * (1.f + M.DmgBonus);

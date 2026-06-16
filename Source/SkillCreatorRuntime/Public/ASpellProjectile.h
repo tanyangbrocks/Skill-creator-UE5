@@ -19,7 +19,8 @@ public:
     ASpellProjectile();
 
     // 初始化（由 USpellCaster 在 Spawn 後立即呼叫）
-    void Init(FGridPos InOrigin, FIntVector InDir,
+    // InDir：浮點方向向量（不需預先正規化；Init 內部自動 Normalize）
+    void Init(FGridPos InOrigin, FVector InDir,
               AEnemyManager* InEnemyMgr, AVoxelWorldActor* InVoxelWorld);
 
     // ── 可調參數 ──────────────────────────────────────────────────
@@ -39,7 +40,8 @@ public:
 
 private:
     FGridPos    CurrentPos;
-    FIntVector  TileDir;
+    FVector     TileDir;          // 正規化浮點方向向量（支援對角線/任意角度投射）
+    FVector     FloatPos;         // 累積浮點位置；整數部份決定下一個目標 tile
     int32       TilesTravelled = 0;
     float       MoveTimer      = 0.f;
 
