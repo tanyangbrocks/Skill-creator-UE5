@@ -83,6 +83,37 @@ bool FExecutionLoop::EvalCompare(const FConditionArgs& Cond,
     return false;
 }
 
+// ── FormatTraceParams（對應 Godot ExecutionLoop.FormatTraceParams）────
+
+FString FExecutionLoop::FormatTraceParams(int32 PC, const FInstruction& Instr)
+{
+    const UEnum* OpEnum = StaticEnum<EOpCode>();
+    FString OpName = OpEnum
+        ? OpEnum->GetNameStringByValue(static_cast<int64>(Instr.OpCode))
+        : FString::Printf(TEXT("Op%d"), static_cast<int32>(Instr.OpCode));
+
+    FString PayloadStr = TEXT("-");
+    if (Instr.Payload.IsValid())
+    {
+        const UScriptStruct* S = Instr.Payload.GetScriptStruct();
+        PayloadStr = S ? S->GetName() : TEXT("?");
+
+        // 常見 payload 的關鍵欄位格式化
+        if (const FWaitArgs* W = Instr.Payload.GetPtr<FWaitArgs>())
+        {
+            PayloadStr += W->Duration.Var.IsNone()
+                ? FString::Printf(TEXT("(%.2fs)"), W->Duration.Val)
+                : FString::Printf(TEXT("($%s)"), *W->Duration.Var.ToString());
+        }
+        else if (const FJumpArgs* J = Instr.Payload.GetPtr<FJumpArgs>())
+            PayloadStr += FString::Printf(TEXT("(%d)"), J->TargetPC);
+        else if (const FSetVarArgs* V = Instr.Payload.GetPtr<FSetVarArgs>())
+            PayloadStr += FString::Printf(TEXT("(%s)"), *V->VarName.ToString());
+    }
+
+    return FString::Printf(TEXT("PC=%d | %-24s | %s"), PC, *OpName, *PayloadStr);
+}
+
 // ── Step（對應 Godot ExecutionLoop.Step）────────────────────────
 
 bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
@@ -170,6 +201,8 @@ bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
     {
         if (ExecutionsThisTick >= MaxExecutionsPerTick) return false;
 
+        if (FExecutionContext::bTraceMode)
+            UE_LOG(LogTemp, Log, TEXT("[VM] %s"), *FormatTraceParams(Ctx.PC, Ctx.Code[Ctx.PC]));
         Execute(Ctx.Code[Ctx.PC], Ctx);
         ++ExecutionsThisTick;
 

@@ -28,7 +28,11 @@ private:
     bool EvalCondition(const FConditionArgs& Cond, const FExecutionContext& Ctx) const;
     bool EvalCompare(const FConditionArgs& Cond, const FExecutionContext& Ctx) const;
 
-    static float ResolveNum(const FNumRef& Ref, const FExecutionContext& Ctx);
+    static float   ResolveNum(const FNumRef& Ref, const FExecutionContext& Ctx);
+
+    // VM Debug 追蹤：格式化單條指令為可讀字串（對應 Godot FormatTraceParams）
+    // 輸出格式：PC=N | OpCode | PayloadType [key args…]
+    static FString FormatTraceParams(int32 PC, const FInstruction& Instr);
 
     static FName  VecKey(FName VecName, TCHAR Comp);
     static void   GetVec(const TMap<FName, float>& Vars, FName Name,
