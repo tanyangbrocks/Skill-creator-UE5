@@ -15,6 +15,7 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInventoryComponent;
 class UEquipmentComponent;
+class AVoxelWorldActor;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
@@ -121,4 +122,9 @@ private:
     void MoveForward(float Value);
     void MoveRight(float Value);
     void HandleSpellInput();
+
+    // 環境傷害：站在 Fire/Lava tile 時每幀扣血
+    void ApplyEnvironmentalDamage(float DeltaTime);
+
+    UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
 };

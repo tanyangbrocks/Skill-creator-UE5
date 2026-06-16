@@ -308,7 +308,6 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
 
     const FVector  Fwd    = Char->GetActorForwardVector();
     const FGridPos Origin = Char->GetPosition();
-    constexpr int32 MeleeRange = 3;
 
     // 前方 MeleeRange 格 3D 掃描，找第一個存活敵人
     AEnemy*   Target = nullptr;

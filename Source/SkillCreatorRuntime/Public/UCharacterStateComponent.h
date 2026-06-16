@@ -43,8 +43,9 @@ public:
     float Stamina = MaxStamina;
     bool IsStaminaDepleted() const { return Stamina <= StaminaDepletedThreshold; }
 
-    void DrainStamina(float V)   { Stamina = FMath::Max(0.f, Stamina - V); }
-    void RestoreStamina(float V) { Stamina = FMath::Min(MaxStamina, Stamina + V); }
+    void DrainStamina(float V)    { Stamina = FMath::Max(0.f, Stamina - V); }
+    void RestoreStamina(float V)  { Stamina = FMath::Min(MaxStamina, Stamina + V); }
+    void SetStamina(float V)      { Stamina = FMath::Clamp(V, 0.f, MaxStamina); }
 
     // ════════════════════════════════════════════════════════════════
     //  精力（MentalEnergy）
@@ -59,6 +60,7 @@ public:
 
     void DrainMentalEnergy(float V)   { MentalEnergy = FMath::Max(0.f, MentalEnergy - V); }
     void RestoreMentalEnergy(float V) { MentalEnergy = FMath::Min(MaxMentalEnergy, MentalEnergy + V); }
+    void SetMentalEnergy(float V)     { MentalEnergy = FMath::Clamp(V, 0.f, MaxMentalEnergy); }
 
     // ════════════════════════════════════════════════════════════════
     //  心情（Mood）
@@ -72,6 +74,8 @@ public:
     bool IsInsane() const { return Mood <= MoodInsanityThreshold; }
 
     void ModifyMood(float D) { Mood = FMath::Clamp(Mood + D, 0.f, MaxMood); }
+    void SetMood(float V)    { Mood = FMath::Clamp(V, 0.f, MaxMood); }
+    void SetHealthStatus(EHealthCondition C) { HealthStatus = C; }
 
     // ════════════════════════════════════════════════════════════════
     //  體溫（BodyTemperature）

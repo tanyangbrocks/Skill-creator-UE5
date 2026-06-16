@@ -55,6 +55,9 @@ private:
 
     ASkillCreatorCharacter* GetOwnerCharacter() const;
 
+    // 近戰接觸範圍（格數，對應 Godot SpellCaster.cs MeleeRange 常數）
+    static constexpr int32 MeleeRange = 3;
+
     // Contact 類型：前方 MeleeRange 格 3D 掃描，命中後施加元素 Aura + 傷害 + SpawnEffect
     void ExecuteContactHit(const FSpellArray& Spell);
 

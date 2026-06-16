@@ -6,6 +6,9 @@
 #include "UEquipmentComponent.h"
 #include "UCombatStateSubsystem.h"
 #include "UGameClockSubsystem.h"
+#include "AVoxelWorldActor.h"
+#include "TileWorld3D.h"
+#include "AEnemyManager.h"
 #include "ExecutionContext.h"
 #include "GridPos.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -47,6 +50,8 @@ void ASkillCreatorCharacter::BeginPlay()
     Super::BeginPlay();
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
+
+    CachedVoxelWorld = AVoxelWorldActor::FindInWorld(GetWorld());
 
     // 遊戲內時間歸零（新局開始）
     if (auto* GI = GetWorld()->GetGameInstance())
@@ -91,6 +96,8 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
 
     AuraComp->Process(DeltaTime);
     ActionBus.Update(DeltaTime);
+
+    ApplyEnvironmentalDamage(DeltaTime);
 }
 
 float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -135,6 +142,25 @@ FGridPos ASkillCreatorCharacter::GetPosition() const
 {
     FVector Loc = GetActorLocation();
     return FGridPos(FMath::RoundToInt(Loc.X), FMath::RoundToInt(Loc.Y), FMath::RoundToInt(Loc.Z));
+}
+
+void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
+{
+    if (CurrentHp <= 0.f || !CachedVoxelWorld) return;
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return;
+
+    FGridPos Pos = GetPosition();
+    EMaterialType Tile = TW->GetTile(Pos.X, Pos.Y, Pos.Z);
+
+    float Dps = 0.f;
+    if (Tile == EMaterialType::Fire)
+        Dps = AEnemyManager::FireDps;
+    else if (Tile == EMaterialType::Lava)
+        Dps = AEnemyManager::LavaDps;
+
+    if (Dps > 0.f)
+        TakeDirectDamage(Dps * DeltaTime);
 }
 
 void ASkillCreatorCharacter::GainXp(float Amount)

@@ -13,6 +13,11 @@ class SKILLCREATORRUNTIME_API AEnemyManager : public AActor
 public:
     AEnemyManager();
 
+    // ── 環境傷害常數（對應 Godot EnemyManager.cs §486）────────────────
+    static constexpr float FireDps    = 5.f;   // 玩家站在火焰格每秒受到的傷害
+    static constexpr float LavaDps    = 15.f;  // 玩家站在熔岩格每秒受到的傷害
+    static constexpr float BoltDamage = 8.f;   // 敵人投射物命中單次傷害
+
     // ── 生成 ──────────────────────────────────────────────────────
     UFUNCTION(BlueprintCallable, Category="EnemyManager")
     AEnemy* Spawn(FGridPos Pos,
