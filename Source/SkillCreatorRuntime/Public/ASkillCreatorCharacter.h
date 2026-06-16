@@ -12,6 +12,8 @@ class UElementalAuraComponent;
 class USpellCaster;
 class USpringArmComponent;
 class UCameraComponent;
+class UInventoryComponent;
+class UEquipmentComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
@@ -54,6 +56,12 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<USpellCaster> SpellCasterComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<UInventoryComponent> InventoryComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<UEquipmentComponent> EquipmentComp;
 
     // ── 事件 ──────────────────────────────────────────────────────
     UPROPERTY(BlueprintAssignable, Category="Events")

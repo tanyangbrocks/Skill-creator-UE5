@@ -2,6 +2,8 @@
 #include "UCharacterStateComponent.h"
 #include "UElementalAuraComponent.h"
 #include "USpellCaster.h"
+#include "UInventoryComponent.h"
+#include "UEquipmentComponent.h"
 #include "UCombatStateSubsystem.h"
 #include "ExecutionContext.h"
 #include "GridPos.h"
@@ -35,6 +37,8 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     StateComp       = CreateDefaultSubobject<UCharacterStateComponent>(TEXT("StateComp"));
     AuraComp        = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     SpellCasterComp = CreateDefaultSubobject<USpellCaster>(TEXT("SpellCasterComp"));
+    InventoryComp   = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComp"));
+    EquipmentComp   = CreateDefaultSubobject<UEquipmentComponent>(TEXT("EquipmentComp"));
 }
 
 void ASkillCreatorCharacter::BeginPlay()
