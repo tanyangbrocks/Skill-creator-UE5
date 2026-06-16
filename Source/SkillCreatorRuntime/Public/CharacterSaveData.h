@@ -20,6 +20,10 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     UPROPERTY() float      MentalEnergy  = 100.f;
     UPROPERTY() float      Mood          = 70.f;
 
+    // W-6: FSpellGroup 全組序列化 JSON（ActiveGroupIndex + 5 組 × 10 槽 + 被動）
+    // 由 FSpellSaveSystem::SaveGroupToString 產生，LoadGroupFromString 還原
+    UPROPERTY() FString    SpellGroupJson;
+
     // Player's collected spell builds.
     // Each FSpellArray is serialized by its UPROPERTY fields (Name, Slots, etc.).
     UPROPERTY() TArray<FSpellArray> SpellBook;
