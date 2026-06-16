@@ -115,6 +115,7 @@ struct FSpellSlot
 
     UPROPERTY(EditAnywhere) FName          Name;            // 插槽名稱（空 = 自動命名 slot_N）
     UPROPERTY(EditAnywhere) FName          TotemId;         // 技能因子 ID（空 = 插槽為空）
+    UPROPERTY(EditAnywhere) ETotemType     TotemType   = ETotemType::Custom; // 因子類型（編輯器填入）
     UPROPERTY(EditAnywhere) FName          ManaTypeKey;     // MP 類型 key（None = 未指定）
     UPROPERTY(EditAnywhere) TArray<FEngraveData> LocalEngravings;
 
@@ -147,6 +148,34 @@ struct FSpellArray
     static constexpr int32 MaxManaTypes = 3;
 
     bool IsValid() const { return !Name.IsEmpty() && Slots.ContainsByPredicate([](const FSpellSlot& S){ return !S.IsEmpty(); }); }
+
+    // 是否為被動技能：任一插槽的 TotemType == Passive
+    bool IsPassive() const
+    {
+        return Slots.ContainsByPredicate([](const FSpellSlot& S){
+            return !S.IsEmpty() && S.TotemType == ETotemType::Passive;
+        });
+    }
+
+    // 收集此技能整構（含容器效果）已指定的 ManaTypeKey 集合（去重）
+    TSet<FName> GetUsedManaTypes(bool bRecursive = true) const
+    {
+        TSet<FName> Result;
+        for (const FSpellSlot& S : Slots)
+            if (!S.ManaTypeKey.IsNone()) Result.Add(S.ManaTypeKey);
+        if (bRecursive && ContainerEffect.IsValid())
+        {
+            TSet<FName> Inner = ContainerEffect->GetUsedManaTypes(true);
+            Result.Append(Inner);
+        }
+        return Result;
+    }
+
+    // MP 種類數是否在上限內（預設 MaxManaTypes = 3）
+    bool IsValidManaTypeCount(int32 Limit = MaxManaTypes) const
+    {
+        return (int32)GetUsedManaTypes().Num() <= Limit;
+    }
 
     // 積木 AST 根節點（SpellCompiler 編譯後填入，載入時從 JSON 反序列化）
     // 不能 UPROPERTY — TUniquePtr<FBlockNode> 不支援 UHT 反射

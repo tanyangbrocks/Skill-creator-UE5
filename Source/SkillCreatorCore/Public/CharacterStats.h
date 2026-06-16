@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "ElementType.h"
 #include "CharacterStats.generated.h"
 
 // 玩家角色完整數值結構（對應 Godot CharacterStats.cs W-5a）。
@@ -95,7 +96,27 @@ struct FCharacterStats
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
     float Stealth        = 0.f;
 
-    // ── 元素親和力 / 輸出 / 抗性 → M-5+ 補入 ────────────────────
+    // ── 元素親和力 / 輸出 / 抗性（對應 Godot CharacterStats.cs）────
+    // ElemAffinity：受到元素 Aura 時的額外加成（0 = 無加成）
+    // ElemOutputMult：施放元素技能傷害倍率（1.0 = 標準）
+    // ElemResistance：受到元素傷害的抵抗係數（0 = 無抗性；1.0 = 完全免疫）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Element")
+    TMap<ESkillElementType, float> ElemAffinity;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Element")
+    TMap<ESkillElementType, float> ElemOutputMult;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Element")
+    TMap<ESkillElementType, float> ElemResistance;
+
+    float GetElemAffinity(ESkillElementType E)   const
+    { const float* V = ElemAffinity.Find(E);   return V ? *V : 0.f; }
+    float GetElemOutputMult(ESkillElementType E) const
+    { const float* V = ElemOutputMult.Find(E); return V ? *V : 1.f; }
+    float GetElemResistance(ESkillElementType E) const
+    { const float* V = ElemResistance.Find(E); return V ? *V : 0.f; }
+
+    void SetElemAffinity(ESkillElementType E, float V)   { ElemAffinity[E]   = V; }
+    void SetElemOutputMult(ESkillElementType E, float V) { ElemOutputMult[E] = V; }
+    void SetElemResistance(ESkillElementType E, float V) { ElemResistance[E] = V; }
 
     // ── 經驗加成（stub）──────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Experience")
