@@ -52,7 +52,8 @@ void ASkillCreatorHUD::DrawHUD()
 
     // ── Spell hotbar ──────────────────────────────────────────────────
     if (Char->SpellCasterComp)
-        HUDWidget->UpdateSpellHotBar(
-            Char->SpellCasterComp->HotBar,
-            Char->SpellCasterComp->ActiveSlot);
+    {
+        const FSpellLoadout& L = Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
+        HUDWidget->UpdateSpellHotBar(L.Slots, L.ActiveIndex);
+    }
 }

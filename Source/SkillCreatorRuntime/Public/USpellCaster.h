@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "SpellArray.h"
+#include "SpellGroup.h"
 #include "Instruction.h"
 #include "SpellRunner.h"
 #include "USpellCaster.generated.h"
@@ -30,24 +31,19 @@ public:
     UPROPERTY(EditAnywhere, Category="SpellCaster")
     float GlobalCooldown = 0.3f;
 
-    // ── Hotbar (up to 10 spell arrays; index 0-9) ─────────────────────
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpellCaster|HotBar")
-    TArray<FSpellArray> HotBar;
+    // ── 技能組（5 組 × 10 欄，V 鍵切組）────────────────────────────────
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpellCaster|Groups")
+    FSpellGroup SpellGroups;
 
-    // Currently selected hotbar slot (0-based).
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="SpellCaster|HotBar")
-    int32 ActiveSlot = 0;
-
-    // Switch directly to slot Idx (clamped to valid range).
-    UFUNCTION(BlueprintCallable, Category="SpellCaster|HotBar")
+    // 切換目前配置中的主動欄位（clamped to 0~MaxSlots-1）
+    UFUNCTION(BlueprintCallable, Category="SpellCaster|Groups")
     void SwitchSlot(int32 Idx);
 
-    // Advance the active slot by Delta (wraps around the hotbar).
-    UFUNCTION(BlueprintCallable, Category="SpellCaster|HotBar")
+    // 循環移動欄位選擇（wraps around MaxSlots）
+    UFUNCTION(BlueprintCallable, Category="SpellCaster|Groups")
     void CycleSlot(int32 Delta);
 
-    // Select slot SlotIndex and attempt to cast it (compiles from HotBar[SlotIndex]).
-    // M-9: full SpellCompiler pipeline; M-5: passes empty code for Projectile/DirectCast test.
+    // 選中 SlotIndex 並嘗試施放（M-9 接 SpellCompiler；M-5 空 Code）
     void TryCastSlot(int32 SlotIndex);
 
 private:

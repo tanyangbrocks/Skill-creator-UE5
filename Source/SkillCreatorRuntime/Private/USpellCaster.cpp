@@ -261,23 +261,24 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
 
 void USpellCaster::SwitchSlot(int32 Idx)
 {
-    if (HotBar.IsEmpty()) return;
-    ActiveSlot = FMath::Clamp(Idx, 0, HotBar.Num() - 1);
+    SpellGroups.GetActiveLoadout().ActiveIndex =
+        FMath::Clamp(Idx, 0, FSpellLoadout::MaxSlots - 1);
 }
 
 void USpellCaster::CycleSlot(int32 Delta)
 {
-    if (HotBar.IsEmpty()) return;
-    const int32 N = HotBar.Num();
-    ActiveSlot = ((ActiveSlot + Delta) % N + N) % N;
+    FSpellLoadout& L = SpellGroups.GetActiveLoadout();
+    const int32 N    = FSpellLoadout::MaxSlots;
+    L.ActiveIndex    = ((L.ActiveIndex + Delta) % N + N) % N;
 }
 
 void USpellCaster::TryCastSlot(int32 SlotIndex)
 {
-    if (!HotBar.IsValidIndex(SlotIndex)) return;
+    FSpellLoadout& L = SpellGroups.GetActiveLoadout();
+    if (!L.Slots.IsValidIndex(SlotIndex)) return;
     SwitchSlot(SlotIndex);
     // M-9: full SpellCompiler pipeline here. For M-5: pass empty code.
-    TryCast(HotBar[SlotIndex], {});
+    TryCast(L.Slots[SlotIndex], {});
 }
 
 void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
