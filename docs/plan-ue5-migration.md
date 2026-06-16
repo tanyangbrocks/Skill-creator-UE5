@@ -549,12 +549,13 @@ Build 確認 0 錯誤，進入 M-2。
 - [x] `MaterialRegistry`：`FMaterialData.NativeElement`（`ESkillElementType`）欄位，17 種材質映射
 - [x] `TileWorld3D`：`CheckElementalCaReactions`（Water→Sand 0.5%、Lava+Water→Stone+Steam 3%）+ `ApplyElementalImpact`（沸騰/流沙/燃燒）
 
-**待完成：**
-- [ ] `SpellCaster.h/cpp`：TryCast、消耗 MP、施放冷卻
-- [ ] `SpellProjectile.h/cpp`：投射物移動、碰撞、命中回調
-- [ ] `ExecuteContactHit()`：Contact 命中判定（3D 向前掃描 MeleeRange=3 格）+ `FActionBus`（DamageShield/DeathGuard 攔截管線，`FPlatformTime::Seconds()` 計時）
-- [ ] 接通 SpellRunner ↔ TileWorld3D（技能效果修改 tile、爆炸等）
-- [ ] 接通 SpellRunner ↔ EnemyManager（傷害、控制效果）
+**已完成（2026-06-16，全部）：**
+- [x] `SpellCaster.h/cpp`：TryCast、消耗 MP、施放冷卻、Projectile/Contact 分派
+- [x] `SpellProjectile.h/cpp`：投射物移動、碰撞、命中回調（OnHitEnemy）
+- [x] `ExecuteContactHit()`：Contact 命中判定（3D 向前掃描 MeleeRange=3 格）+ `FActionBus`（DamageShield/DeathGuard，DeltaTime 計時 pause-aware）
+- [x] SpellProjectile OnHitEnemy：ApplyImmediate（元素 Aura）+ ApplyElementalImpact（命中 tile CA 反應）
+- [x] SpellRunner ↔ TileWorld3D：RaycastQuery / AnchorSnapshot / RollbackSnapshot / FocalPointQuery 全接通
+- [x] SpellRunner ↔ EnemyManager：OnEntityDamage / OnEntityMove / EntityQuery 全接通
 
 ---
 

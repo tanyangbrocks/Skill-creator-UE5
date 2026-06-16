@@ -95,8 +95,9 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                 Proj->Init(Char->GetPosition(), Dir, CachedEnemyMgr, CachedVoxelWorld);
 
             float Dmg = Proj->BaseDamage;
+            const ESkillElementType Elem = Spell.SpellElement;
             TWeakObjectPtr<USpellCaster> WeakThis(this);
-            Proj->OnHitEnemy = [WeakThis, Dmg](AEnemy* Enemy, FGridPos /*HitPos*/)
+            Proj->OnHitEnemy = [WeakThis, Dmg, Elem](AEnemy* Enemy, FGridPos HitPos)
             {
                 if (!WeakThis.IsValid() || !Enemy) return;
                 float HpBefore = Enemy->GetHp();
@@ -109,6 +110,14 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                     Sub->OnPlayerDealtDamage(Dmg);
                     if (HpBefore > 0.f && Enemy->GetHp() <= 0.f)
                         Sub->OnEnemyKilled();
+                }
+                if (Elem != ESkillElementType::None)
+                {
+                    if (Enemy->AuraComp)
+                        Enemy->AuraComp->ApplyImmediate(Elem, UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                    if (AVoxelWorldActor* VW = WeakThis->CachedVoxelWorld.Get())
+                    if (FTileWorld3D* TW = VW->GetTileWorld())
+                        TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Elem);
                 }
             };
         }
