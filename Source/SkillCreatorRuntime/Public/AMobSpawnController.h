@@ -54,6 +54,9 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
 
+    // MobTable 為空時由此填入預設條目；外部可在 Editor 覆寫 MobTable 取代之
+    void PopulateDefaultTable();
+
 private:
     static constexpr int32 SpawnTriesPerAttempt = 24;
     static constexpr float SoftDespawnRate      = 0.05f;

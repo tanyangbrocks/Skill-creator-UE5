@@ -1,6 +1,7 @@
 #include "AEnemy.h"
 #include "UElementalAuraComponent.h"
 #include "AEnemyAIController.h"
+#include "WorldScale.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -46,7 +47,7 @@ void AEnemy::Respawn()
     Hp           = MaxHp;
     AIState      = EEnemyState::Idle;
     AuraComp->Reset();
-    SetActorLocation(FVector(SpawnGridPos.X, SpawnGridPos.Y, SpawnGridPos.Z));
+    SetActorLocation(WorldScale::TileToWorld(SpawnGridPos));
 }
 
 float AEnemy::GetBaseMoveInterval() const

@@ -18,6 +18,8 @@
 #include "ItemDrop.h"
 #include "WorldScale.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -35,12 +37,22 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Camera rig: SpringArm follows controller rotation (Minecraft style)
+    // 碰撞膠囊：依 WorldScale 尺度，改 TileSizeCm 自動跟進
+    GetCapsuleComponent()->InitCapsuleSize(
+        WorldScale::CapsuleRadius,
+        WorldScale::CapsuleHalfHeight
+    );
+
+    // 移動速度：依 WorldScale 尺度
+    GetCharacterMovement()->MaxWalkSpeed  = WorldScale::WalkSpeedCm;
+    GetCharacterMovement()->JumpZVelocity = WorldScale::JumpZVelocityCm;
+
+    // 鏡頭 rig：臂長與偏移依 WorldScale 尺度
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
     SpringArm->SetupAttachment(RootComponent);
-    SpringArm->TargetArmLength = 600.f;
+    SpringArm->TargetArmLength         = WorldScale::CameraArmLength;
     SpringArm->bUsePawnControlRotation = true;
-    SpringArm->SetRelativeLocation(FVector(0.f, 0.f, 64.f));
+    SpringArm->SetRelativeLocation(FVector(0.f, 0.f, WorldScale::CameraArmZOffset));
 
     Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
     Camera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
@@ -200,16 +212,11 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 
 FGridPos ASkillCreatorCharacter::GetPosition() const
 {
-    FVector Loc = GetActorLocation();
-    // UE5→voxel: X→X, Y→Z(depth), Z→WorldH-Y(vertical inverted)
-    const float InvS = 1.f / WorldScale::TileSizeCm;
-    const int32 VoxX = FMath::RoundToInt(Loc.X * InvS);
-    const int32 VoxZ = FMath::RoundToInt(Loc.Y * InvS);
-    int32 VoxY = 128; // 若 VoxelWorld 不可用則用近似中心高度
+    int32 WorldH = WorldScale::DefaultWorldHeight;
     if (CachedVoxelWorld)
         if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
-            VoxY = FMath::RoundToInt(static_cast<float>(TW->Height) - Loc.Z * InvS);
-    return FGridPos(VoxX, VoxY, VoxZ);
+            WorldH = TW->Height;
+    return WorldScale::WorldToTile(GetActorLocation(), WorldH);
 }
 
 void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
@@ -218,13 +225,8 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
     if (!TW) return;
 
-    // 直接在此做 UE5→voxel 轉換，不依賴 GetPosition() 的近似值
-    const FVector Loc = GetActorLocation();
-    const float InvS = 1.f / WorldScale::TileSizeCm;
-    const int32 VoxX = FMath::RoundToInt(Loc.X * InvS);
-    const int32 VoxY = FMath::RoundToInt(static_cast<float>(TW->Height) - Loc.Z * InvS);
-    const int32 VoxZ = FMath::RoundToInt(Loc.Y * InvS);
-    EMaterialType Tile = TW->GetTile(VoxX, VoxY, VoxZ);
+    const FGridPos Pos = WorldScale::WorldToTile(GetActorLocation(), TW->Height);
+    EMaterialType Tile = TW->GetTile(Pos.X, Pos.Y, Pos.Z);
 
     float Dps = 0.f;
     if (Tile == EMaterialType::Fire)
@@ -610,18 +612,8 @@ void ASkillCreatorCharacter::OnMine()
     PC->GetPlayerViewPoint(CamLoc, CamRot);
     const FVector CamDir = CamRot.Vector();
 
-    // UE5→voxel 座標轉換：X→X, Y→Z(depth), Z→WorldH-Y(vertical inverted)
-    const float InvS = 1.f / WorldScale::TileSizeCm;
-    FVector TileStart;
-    TileStart.X = CamLoc.X * InvS;
-    TileStart.Y = static_cast<float>(TW->Height) - CamLoc.Z * InvS; // UE5 Z → voxel Y
-    TileStart.Z = CamLoc.Y * InvS;                                    // UE5 Y → voxel Z
-
-    // 方向向量同樣需要轉換
-    FVector VoxDir;
-    VoxDir.X = CamDir.X;
-    VoxDir.Y = -CamDir.Z; // UE5 +Z(上) = voxel -Y(天頂方向)
-    VoxDir.Z = CamDir.Y;  // UE5 +Y(右) = voxel +Z(深度)
+    const FVector TileStart = WorldScale::WorldToTileF(CamLoc, TW->Height);
+    const FVector VoxDir    = WorldScale::DirToVoxel(CamDir);
 
     FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
     if (!Hit.bHit) return;

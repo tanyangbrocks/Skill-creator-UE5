@@ -96,3 +96,59 @@ SkillCreatorUE5/
 │   └── SkillCreatorUI/         積木編輯器 Slate UI
 └── docs/                       計畫文件
 ```
+
+---
+
+## 擴充速查（新增內容時必看）
+
+> **通則**：凡是改 `.h` 裡的 `UENUM / UCLASS / UPROPERTY`，必須關 Editor + 完整 Rebuild（不可 Live Coding）。
+
+### 新增材質 / 地形
+
+1. `Plugins/VoxelWorld/.../MaterialType.h` — 在 `EMaterialType` 加新 enum 值
+2. `Plugins/VoxelWorld/.../MaterialRegistry.cpp` — 在 `FMaterialRegistry::Initialize()` 呼叫 `Register()`，填 Physics / Color / Drops
+3. （可選）`Plugins/VoxelWorld/.../ElementalReactionTable.cpp` — 若有元素碰撞反應，加到反應表
+
+### 新增物品
+
+1. `Source/SkillCreatorCore/Public/ItemId.h` — 在 `EItemId` 加新值
+2. `Source/SkillCreatorCore/Public/ItemRegistry.cpp` — `FItemRegistry::Initialize()` 呼叫 `Register()`，填 `FItemData`（DisplayName / IsPlaceable / IsTool / EquipSlot / AtkMult …）
+
+### 新增敵人類型
+
+1. `Source/SkillCreatorRuntime/Public/AEnemy.h` — 在 `EEnemyType` 加新值
+2. `Source/SkillCreatorRuntime/Private/AEnemy.cpp` — 在 constructor 設預設屬性
+3. `Plugins/VoxelWorld/.../BTTask_*.cpp` — 新增對應 BT Task（移動 / 攻擊邏輯）
+4. `Source/SkillCreatorRuntime/Private/AMobSpawnController.cpp` — 在 MobTable 加 `FMobTableEntry`
+
+### 新增積木（Spell Block）
+
+1. `Source/SkillCreatorCore/Public/BlockNode.h` — 在 `EBlockType` 加新值
+2. `Plugins/AbilitySystem/.../SpellCompiler.cpp` — 在 `EmitBlock()` 加 case → 輸出 `FInstruction`
+3. `Plugins/AbilitySystem/.../ExecutionLoop.cpp` — 在 `Step()` 加對應 OpCode handler
+4. `Plugins/SkillCreatorUI/.../SBlockEditorWidget.cpp` — 在 palette 加積木卡片（顏色 / 名稱 / 預設參數）
+
+### 新增地形特徵（TerrainFeature）
+
+1. 在 `Plugins/VoxelWorld/Public/` 新建 `.h`，繼承 `FTerrainFeature`，覆寫 `Initialize / Prepare / PlaceInWorld / GetSurfaceOverride`
+2. `Plugins/VoxelWorld/.../MapGenerator3D.cpp` — 在地圖生成流程中實例化並呼叫
+
+### 新增元素反應
+
+1. `Plugins/AbilitySystem/.../ElementalReactionTable.cpp` — 在 `BuildTable()` 加 `FElementalReaction` 條目（Attacker / Defender / Effect / CaEffect）
+
+### 新增刻印 / 圖騰資料
+
+1. `Plugins/SkillCreatorUI/Public/TotemLibrary.h/.cpp` — 在 `AllEngravings` / `AllTotems` 陣列加條目
+
+### 新增 UI Widget
+
+- 不需要 `.uasset`：在 C++ 繼承 `UUserWidget`，在 `NativeConstruct()` 呼叫 `BuildLayout()` 程式化建立 WidgetTree，用 `CreateWidget<T>(PC, T::StaticClass())` 實例化
+- 參考：`UGameFlowWidget` / `UInputSettingsWidget` / `USpellListWidget`
+
+### 世界尺度說明（給未來 AI）
+
+- **Tile 大小**：固定 `WorldScale::TileSizeCm = 30f`（Grain=1 基準）。未來縮小 tile 只需改此值並調整碰撞體積；不需要全局 OriginX/Z，tile 座標 × TileSizeCm 即 UE5 世界座標
+- **水平無邊界**：`AVoxelWorldActor::WorldWidth/Depth = 0` = 無限懶載入，`ChunkStreamingManager` 動態 evict；不要在 WorldScale 加固定 WorldW/D 常數
+- **垂直上限**：`AVoxelWorldActor::WorldHeight = 256 tiles`（約 7.6m @ 30cm），可直接改此 UPROPERTY
+- **GrainTarget = 64**：長期目標（M-10+ GPU CA 後）；不要現在用它推導任何數值

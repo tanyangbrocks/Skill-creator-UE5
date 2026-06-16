@@ -16,6 +16,18 @@ void AMobSpawnController::BeginPlay()
     Super::BeginPlay();
     for (TActorIterator<AEnemyManager>    It(GetWorld()); It; ++It) { CachedEnemyMgr    = *It; break; }
     for (TActorIterator<AVoxelWorldActor> It(GetWorld()); It; ++It) { CachedVoxelWorld  = *It; break; }
+
+    if (MobTable.IsEmpty())
+        PopulateDefaultTable();
+}
+
+void AMobSpawnController::PopulateDefaultTable()
+{
+    // 預設生成表；在 Editor 的 Details 面板覆寫 MobTable 可完全取代此設定
+    MobTable.Add({ EEnemyType::Melee,  ESpawnCategory::Common, 3.f });
+    MobTable.Add({ EEnemyType::Ranged, ESpawnCategory::Common, 2.f });
+    MobTable.Add({ EEnemyType::Patrol, ESpawnCategory::Common, 2.f });
+    MobTable.Add({ EEnemyType::Heavy,  ESpawnCategory::Common, 1.f });
 }
 
 void AMobSpawnController::Tick(float DeltaTime)
