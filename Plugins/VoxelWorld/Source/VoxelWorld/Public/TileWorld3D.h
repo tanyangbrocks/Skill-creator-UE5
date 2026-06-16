@@ -3,6 +3,7 @@
 #include "Chunk3D.h"
 #include "MaterialRegistry.h"
 #include "CaGpuSimulator.h"
+#include "WorldTypes.h"
 
 struct FRaycastResult3D
 {
@@ -53,7 +54,12 @@ public:
     void SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte);
 
     // --- Gameplay ---
+    // 摧毀格（設為 Air），並觸發 OnTileDestroyed 回呼（掉落物 / 特效使用）
+    void             DestroyTile(int32 x, int32 y, int32 z, EDestroyReason Reason = EDestroyReason::Mining);
     void             Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Chance = 1.f);
+
+    // tile 摧毀事件（由 AVoxelWorldActor / SkillCreatorRuntime 從外部綁定）
+    TFunction<void(int32 x, int32 y, int32 z, EMaterialType OldMat, EDestroyReason Reason)> OnTileDestroyed;
     FRaycastResult3D Raycast(FVector Start, FVector Dir, float MaxDist) const;
     TArray<FTileCell> SnapshotRegion(FIntVector Min, FIntVector Max) const;
     void              RestoreRegion(FIntVector Min, FIntVector Max, const TArray<FTileCell>& Snapshot);

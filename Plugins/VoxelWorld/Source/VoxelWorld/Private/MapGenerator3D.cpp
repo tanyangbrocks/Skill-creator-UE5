@@ -3,6 +3,7 @@
 #include "Chunk3D.h"
 #include "WorldScale.h"
 #include "Tasks/Task.h"
+#include "SurfaceWaterPool.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "FastNoiseLite.h"
@@ -440,4 +441,10 @@ void FMapGenerator3D::PostProcessRegion(FTileWorld3D& World,
             break;
         }
     }
+
+    // 地表水池（SurfaceWaterPool）
+    FSurfaceWaterPool WaterPool;
+    WaterPool.Initialize(WorldSeed, WorldW, WorldH, WorldD);
+    WaterPool.Prepare(World, ChunkMin, ChunkMax);
+    WaterPool.PlaceInWorld(World, ChunkMin, ChunkMax);
 }

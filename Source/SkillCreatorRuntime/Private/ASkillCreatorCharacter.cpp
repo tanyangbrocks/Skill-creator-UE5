@@ -13,12 +13,17 @@
 #include "USnapshotManager.h"
 #include "AEnemy.h"
 #include "GridPos.h"
+#include "UDroppedItemManager.h"
+#include "MaterialRegistry.h"
+#include "ItemDrop.h"
+#include "WorldScale.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Math/RotationMatrix.h"
 #include "InputCoreTypes.h"
+#include "EngineUtils.h"
 
 ASkillCreatorCharacter::ASkillCreatorCharacter()
 {
@@ -58,6 +63,31 @@ void ASkillCreatorCharacter::BeginPlay()
     ActiveManaSlots.Add(FManaSlot(TEXT("gui_dao"), Stats.MaxMpBase, Stats.MpRegenRate));
 
     CachedVoxelWorld = AVoxelWorldActor::FindInWorld(GetWorld());
+
+    // 快取 EnemyManager（關卡可能手動放置或由 GameMode 自動生成）
+    for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It)
+    { CachedEnemyMgr = *It; break; }
+
+    // 綁定採掘掉落回呼（從 SkillCreatorRuntime 側接入，避免循環依賴）
+    if (CachedVoxelWorld)
+    if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+    {
+        TWeakObjectPtr<UWorld> WeakWorld(GetWorld());
+        TW->OnTileDestroyed = [WeakWorld](int32 x, int32 y, int32 z,
+                                           EMaterialType OldMat, EDestroyReason Reason)
+        {
+            UWorld* W = WeakWorld.Get();
+            if (!W) return;
+            auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
+            if (!DropMgr) return;
+            FRandomStream Rng;
+            Rng.Initialize(FMath::Rand());
+            for (const FItemDrop& D : FMaterialRegistry::GetDefaultDrops(OldMat))
+                if (D.ItemId != EItemId::None && Rng.FRand() <= D.Chance)
+                    DropMgr->SpawnDrop(D.ItemId, Rng.RandRange(D.MinCount, D.MaxCount),
+                                       FGridPos(x, y, z));
+        };
+    }
 
     // 遊戲內時間歸零（新局開始）
     if (auto* GI = GetWorld()->GetGameInstance())
@@ -110,6 +140,15 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     ActionBus.Update(DeltaTime);
 
     ApplyEnvironmentalDamage(DeltaTime);
+
+    // 自動拾取玩家周圍掉落物
+    if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
+    {
+        TArray<FItemStack> Picked = DropMgr->TryPickupAll(this);
+        for (const FItemStack& S : Picked)
+            if (InventoryComp && S.ItemId != EItemId::None)
+                InventoryComp->TryAdd(S.ItemId, S.Count);
+    }
 }
 
 float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -133,7 +172,10 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 
     if (auto* GI = GetWorld()->GetGameInstance())
         if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+        {
             Sub->OnPlayerTookDamage();
+            Sub->OnHit.Broadcast(GetPosition(), Final, true);
+        }
 
     if (CurrentHp <= 0.f)
     {
@@ -234,6 +276,7 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)
     Input->BindAction("DebugTrace",         IE_Pressed, this, &ASkillCreatorCharacter::OnDebugTrace);
     Input->BindAction("DebugSnapshotTake",  IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
     Input->BindAction("DebugSnapshotApply", IE_Pressed, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
+    Input->BindAction("Mine",               IE_Pressed, this, &ASkillCreatorCharacter::OnMine);
 }
 
 void ASkillCreatorCharacter::MoveForward(float Value)
@@ -387,8 +430,9 @@ void ASkillCreatorCharacter::OnDebugSnapshotTake()
     auto* Snap = GI ? GI->GetSubsystem<USnapshotManager>() : nullptr;
     if (!Snap) return;
 
-    TArray<AEnemy*> NoEnemies;
-    Snap->TakeSnapshot(this, NoEnemies, CachedVoxelWorld);
+    static const TArray<AEnemy*> NoEnemies;
+    const TArray<AEnemy*>& Enemies = CachedEnemyMgr ? CachedEnemyMgr->GetEnemies() : NoEnemies;
+    Snap->TakeSnapshot(this, Enemies, CachedVoxelWorld);
     if (GEngine)
         GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green,
             FString::Printf(TEXT("[F5] 快照已儲存（堆疊深度 %d）"), Snap->StackDepth()));
@@ -400,8 +444,9 @@ void ASkillCreatorCharacter::OnDebugSnapshotApply()
     auto* Snap = GI ? GI->GetSubsystem<USnapshotManager>() : nullptr;
     if (!Snap) return;
 
-    TArray<AEnemy*> NoEnemies;
-    bool bOk = Snap->ApplyLatest(this, NoEnemies, CachedVoxelWorld);
+    static const TArray<AEnemy*> NoEnemies;
+    const TArray<AEnemy*>& Enemies = CachedEnemyMgr ? CachedEnemyMgr->GetEnemies() : NoEnemies;
+    bool bOk = Snap->ApplyLatest(this, Enemies, CachedVoxelWorld);
     if (GEngine)
         GEngine->AddOnScreenDebugMessage(-1, 3.f, bOk ? FColor::Green : FColor::Red,
             bOk ? TEXT("[F6] 快照已還原") : TEXT("[F6] 無快照可還原"));
@@ -435,4 +480,32 @@ void ASkillCreatorCharacter::HandleSpellInput()
 
     if (Slot >= 0)
         SpellCasterComp->TryCastSlot(Slot);
+}
+
+// ── Mining ──────────────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::OnMine()
+{
+    if (!CachedVoxelWorld) return;
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    FVector CamLoc;
+    FRotator CamRot;
+    PC->GetPlayerViewPoint(CamLoc, CamRot);
+    FVector CamDir = CamRot.Vector();
+
+    // 攝影機位置 → tile 索引（cm / TileSizeCm）
+    FVector TileStart = CamLoc / WorldScale::TileSizeCm;
+    FRaycastResult3D Hit = TW->Raycast(TileStart, CamDir, 10.f);
+    if (!Hit.bHit) return;
+
+    EMaterialType OldMat = TW->GetTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
+
+    // DestroyTile 內部已觸發 OnTileDestroyed（掉落回呼），此處不重複派送
+    TW->DestroyTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, EDestroyReason::Mining);
+
+    (void)OldMat; // 掉落已由 OnTileDestroyed lambda 統一處理
 }

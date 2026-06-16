@@ -1,5 +1,6 @@
 #include "AEnemyManager.h"
 #include "UCombatStateSubsystem.h"
+#include "UDroppedItemManager.h"
 #include "Kismet/GameplayStatics.h"
 
 AEnemyManager::AEnemyManager()
@@ -42,6 +43,9 @@ void AEnemyManager::Tick(float DeltaTime)
                 if (auto* GI = GetWorld()->GetGameInstance())
                 if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
                     Sub->OnEnemyKilled();
+
+                if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
+                    DropMgr->SpawnDrop(EItemId::FragmentStone, 1, E->GridPosition);
 
                 bool bDynamic = (E->Category == ESpawnCategory::Common || E->Category == ESpawnCategory::Area);
                 if (bDynamic)

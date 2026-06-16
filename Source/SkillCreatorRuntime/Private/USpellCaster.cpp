@@ -38,6 +38,7 @@ void USpellCaster::BeginPlay()
                 Sub->OnPlayerDealtDamage(Damage);
                 if (HpBefore > 0.f && E->GetHp() <= 0.f)
                     Sub->OnEnemyKilled();
+                Sub->OnHit.Broadcast(E->GridPosition, Damage, false);
             }
             return;
         }
@@ -123,6 +124,7 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                     Sub->OnPlayerDealtDamage(Dmg);
                     if (HpBefore > 0.f && Enemy->GetHp() <= 0.f)
                         Sub->OnEnemyKilled();
+                    Sub->OnHit.Broadcast(HitPos, Dmg, false);
                 }
                 if (Elem != ESkillElementType::None)
                 {

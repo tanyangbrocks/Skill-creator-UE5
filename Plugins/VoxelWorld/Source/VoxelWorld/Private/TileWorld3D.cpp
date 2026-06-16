@@ -45,6 +45,14 @@ void FTileWorld3D::SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte)
     SetTile(x, y, z, static_cast<EMaterialType>(MaterialByte));
 }
 
+void FTileWorld3D::DestroyTile(int32 x, int32 y, int32 z, EDestroyReason Reason)
+{
+    EMaterialType OldMat = GetTile(x, y, z);
+    if (OldMat == EMaterialType::Air) return;
+    SetTile(x, y, z, EMaterialType::Air);
+    if (OnTileDestroyed) OnTileDestroyed(x, y, z, OldMat, Reason);
+}
+
 // ============================================================
 // 座標轉換
 // ============================================================
@@ -457,7 +465,7 @@ void FTileWorld3D::Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Cha
         int32 wx = cx+dx, wy = cy+dy, wz = cz+dz;
         if (GetTile(wx, wy, wz) != EMaterialType::Air)
         {
-            SetTile(wx, wy, wz, EMaterialType::Air);
+            DestroyTile(wx, wy, wz, EDestroyReason::Explosion);
             if (Rng.FRand() < 0.3f)
                 SetFire(wx, wy-1, wz);
         }

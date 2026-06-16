@@ -17,6 +17,7 @@ class UCameraComponent;
 class UInventoryComponent;
 class UEquipmentComponent;
 class AVoxelWorldActor;
+class AEnemyManager;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
@@ -155,6 +156,8 @@ private:
     void OnDebugTrace();
     void OnDebugSnapshotTake();
     void OnDebugSnapshotApply();
+    void OnMine();
 
     UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
+    UPROPERTY() TObjectPtr<AEnemyManager>    CachedEnemyMgr;
 };
