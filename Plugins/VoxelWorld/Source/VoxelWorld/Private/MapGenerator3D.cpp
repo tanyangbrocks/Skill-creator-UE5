@@ -121,6 +121,10 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         int32 Idx = lz*S*S + ly*S + lx;
         OutCells[Idx].MaterialID = MatID;
     }
+
+    EnsureWalkableCavesInChunk(OutCells);
+    PlaceOreVeinsInChunk(OutCells, CC, Seed, Height);
+    AddDecorInChunk(OutCells, CC, Seed);
 }
 
 // ============================================================
@@ -203,4 +207,237 @@ FSpawnData FMapGenerator3D::ComputeSpawnPoint(const FTileWorld3D& /*World*/) con
     int32 SY     = GetHeightAt(SpawnX, SpawnZ);
     Out.PlayerSpawn = FIntVector(SpawnX, SY - 1, SpawnZ);  // 站在地表正上方
     return Out;
+}
+
+// ============================================================
+// 礦脈生成（per-chunk 確定性 BFS blob）
+// ============================================================
+
+void FMapGenerator3D::PlaceOreVeinsInChunk(TArray<FTileCell>& Cells,
+                                             FIntVector CC, int32 Seed, int32 WorldH)
+{
+    constexpr int32 S   = WorldScale::ChunkSize;
+    const    int32  WY0 = CC.Y * S;
+
+    // LCG 偽隨機（per-chunk 確定性，不需 Random 物件）
+    uint32 St = (uint32)(CC.X * 1664525u ^ CC.Y * 22695477u ^ CC.Z * 1013904223u ^ (uint32)Seed);
+    auto RandF = [&]() -> float  { St = St * 1664525u + 1013904223u; return float(St & 0xFFFFu) / 65535.f; };
+    auto RandN = [&](int32 N) -> int32 { return N > 0 ? (int32)((St = St * 1664525u + 1013904223u) % (uint32)N) : 0; };
+
+    struct FVeinCfg { EMaterialType Mat; float YMinR; float YMaxR; int32 Blobs; int32 MaxSz; };
+    const FVeinCfg Cfgs[] = {
+        { EMaterialType::Ore_Coal,         0.28f, 0.62f, 2, 9 },
+        { EMaterialType::Ore_Copper,       0.44f, 0.78f, 2, 6 },
+        { EMaterialType::Ore_Iron,         0.58f, 0.90f, 1, 5 },
+        { EMaterialType::Ore_MagicCrystal, 0.74f, 0.95f, 1, 3 },
+    };
+    static const int32 D6[6][3] = {{0,1,0},{0,-1,0},{1,0,0},{-1,0,0},{0,0,1},{0,0,-1}};
+
+    for (const FVeinCfg& Cfg : Cfgs)
+    {
+        int32 LYMin = FMath::Max(0,   FMath::RoundToInt(WorldH * Cfg.YMinR) - WY0);
+        int32 LYMax = FMath::Min(S-1, FMath::RoundToInt(WorldH * Cfg.YMaxR) - WY0);
+        if (LYMin > LYMax) continue;
+
+        for (int32 Blob = 0; Blob < Cfg.Blobs; ++Blob)
+        {
+            int32 lx = RandN(S), ly = LYMin + RandN(LYMax - LYMin + 1), lz = RandN(S);
+            int32 SI = lz*S*S + ly*S + lx;
+            if (Cells[SI].MaterialID != (uint8)EMaterialType::Stone) continue;
+
+            Cells[SI].MaterialID = (uint8)Cfg.Mat;
+            int32 Placed = 1;
+            TArray<int32> BfsQ;
+            BfsQ.Reserve(Cfg.MaxSz);
+            BfsQ.Add(SI);
+
+            for (int32 Qi = 0; Qi < BfsQ.Num() && Placed < Cfg.MaxSz; ++Qi)
+            {
+                int32 I = BfsQ[Qi];
+                int32 ix = I % S, iy = (I / S) % S, iz = I / (S * S);
+                for (const auto& D : D6)
+                {
+                    if (Placed >= Cfg.MaxSz) break;
+                    int32 nx = ix+D[0], ny = iy+D[1], nz = iz+D[2];
+                    if ((uint32)nx>=(uint32)S||(uint32)ny>=(uint32)S||(uint32)nz>=(uint32)S) continue;
+                    int32 NI = nz*S*S + ny*S + nx;
+                    if (Cells[NI].MaterialID != (uint8)EMaterialType::Stone) continue;
+                    if (RandF() < 0.65f) { Cells[NI].MaterialID = (uint8)Cfg.Mat; BfsQ.Add(NI); ++Placed; }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// 可行進洞穴保證（per-chunk，確保洞穴地板有 >= PlayerH 格淨空）
+// ============================================================
+
+void FMapGenerator3D::EnsureWalkableCavesInChunk(TArray<FTileCell>& Cells)
+{
+    constexpr int32 S        = WorldScale::ChunkSize;
+    constexpr int32 MinClear = WorldScale::PlayerH;  // 2
+
+    for (int32 lz = 0; lz < S; ++lz)
+    for (int32 lx = 0; lx < S; ++lx)
+    {
+        for (int32 ly = 1; ly < S - 1; ++ly)
+        {
+            if (Cells[lz*S*S + ly*S + lx].MaterialID     != 0) continue;  // not air
+            if (Cells[lz*S*S + (ly+1)*S + lx].MaterialID == 0) continue;  // below is air → not a floor
+
+            // Count headroom upward (toward smaller ly)
+            int32 Clear = 1;
+            for (int32 up = ly - 1; up >= 0 && Cells[lz*S*S + up*S + lx].MaterialID == 0; --up)
+                ++Clear;
+
+            if (Clear < MinClear)
+            {
+                int32 TopAir = ly - (Clear - 1);
+                int32 ToCarve = MinClear - Clear;
+                for (int32 i = 1; i <= ToCarve; ++i)
+                {
+                    int32 ty = TopAir - i;
+                    if (ty < 0) break;
+                    Cells[lz*S*S + ty*S + lx].MaterialID = 0;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// 裝飾（per-chunk 確定性：鐘乳石從天花板往下 + 小水坑在洞穴地板）
+// ============================================================
+
+void FMapGenerator3D::AddDecorInChunk(TArray<FTileCell>& Cells, FIntVector CC, int32 Seed)
+{
+    constexpr int32 S = WorldScale::ChunkSize;
+    uint32 St = (uint32)(CC.X * 1013904223u ^ CC.Y * 1664525u ^ CC.Z * 22695477u ^ (uint32)Seed ^ 0xBEEFu);
+    auto RandF = [&]() -> float  { St = St * 1664525u + 1013904223u; return float(St & 0xFFFFu) / 65535.f; };
+    auto RandN = [&](int32 N) -> int32 { return N > 0 ? (int32)((St = St * 1664525u + 1013904223u) % (uint32)N) : 0; };
+
+    // 鐘乳石：air tile，上方（ly-1）是 Stone → 往下（+Y）生長
+    for (int32 lz = 0; lz < S; ++lz)
+    for (int32 ly = 1; ly < S - 3; ++ly)
+    for (int32 lx = 0; lx < S; ++lx)
+    {
+        if (Cells[lz*S*S + ly*S + lx].MaterialID     != 0)                       continue;
+        if (Cells[lz*S*S + (ly-1)*S + lx].MaterialID != (uint8)EMaterialType::Stone) continue;
+        if (RandF() >= 0.04f) continue;
+
+        int32 Len = 1 + RandN(3);
+        for (int32 i = 0; i < Len; ++i)
+        {
+            int32 ty = ly + i;
+            if (ty >= S) break;
+            int32 TI = lz*S*S + ty*S + lx;
+            if (Cells[TI].MaterialID != 0) break;
+            Cells[TI].MaterialID = (uint8)EMaterialType::Stone;
+        }
+    }
+
+    // 小水坑：air tile，下方（ly+1）是 Stone → 在此 air 位置放 Water
+    for (int32 lz = 1; lz < S-1; ++lz)
+    for (int32 ly = 1; ly < S-1; ++ly)
+    for (int32 lx = 1; lx < S-1; ++lx)
+    {
+        if (Cells[lz*S*S + ly*S + lx].MaterialID     != 0)                       continue;
+        if (Cells[lz*S*S + (ly+1)*S + lx].MaterialID != (uint8)EMaterialType::Stone) continue;
+        if (RandF() >= 0.03f) continue;
+
+        for (int32 dz = -1; dz <= 1; ++dz)
+        for (int32 dx = -1; dx <= 1; ++dx)
+        {
+            int32 px = lx + dx, pz = lz + dz;
+            if ((uint32)px >= (uint32)S || (uint32)pz >= (uint32)S) continue;
+            int32 PIdx = pz*S*S + ly*S + px;
+            if (Cells[PIdx].MaterialID == 0)
+                Cells[PIdx].MaterialID = (uint8)EMaterialType::Water;
+        }
+    }
+}
+
+// ============================================================
+// FloodFill3D（BFS 可達空格集合，主執行緒用）
+// ============================================================
+
+TSet<FIntVector> FMapGenerator3D::FloodFill3D(FTileWorld3D& World, FIntVector Start,
+                                               FIntVector BMin, FIntVector BMax)
+{
+    TSet<FIntVector> Visited;
+    if (World.GetTile(Start.X, Start.Y, Start.Z) != EMaterialType::Air) return Visited;
+
+    TQueue<FIntVector> Queue;
+    Queue.Enqueue(Start);
+    Visited.Add(Start);
+
+    static const FIntVector Dirs6[] = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+    while (!Queue.IsEmpty())
+    {
+        FIntVector Pos;
+        Queue.Dequeue(Pos);
+        for (const FIntVector& D : Dirs6)
+        {
+            FIntVector N = Pos + D;
+            if (N.X < BMin.X || N.X > BMax.X ||
+                N.Y < BMin.Y || N.Y > BMax.Y ||
+                N.Z < BMin.Z || N.Z > BMax.Z) continue;
+            if (World.GetTile(N.X, N.Y, N.Z) != EMaterialType::Air) continue;
+            bool bAlreadyIn = false;
+            Visited.Add(N, &bAlreadyIn);
+            if (!bAlreadyIn) Queue.Enqueue(N);
+        }
+    }
+    return Visited;
+}
+
+// ============================================================
+// PostProcessRegion（連通性後處理，主執行緒，初始生成區全 Apply 後呼叫）
+// ============================================================
+
+void FMapGenerator3D::PostProcessRegion(FTileWorld3D& World,
+                                         FIntVector ChunkMin, FIntVector ChunkMax)
+{
+    constexpr int32 S = WorldScale::ChunkSize;
+    FIntVector WMin(ChunkMin.X * S, ChunkMin.Y * S, ChunkMin.Z * S);
+    FIntVector WMax((ChunkMax.X+1) * S - 1, (ChunkMax.Y+1) * S - 1, (ChunkMax.Z+1) * S - 1);
+    if (WorldW > 0) WMax.X = FMath::Min(WMax.X, WorldW - 1);
+    if (WorldH > 0) WMax.Y = FMath::Min(WMax.Y, WorldH - 1);
+    if (WorldD > 0) WMax.Z = FMath::Min(WMax.Z, WorldD - 1);
+
+    int32 MidX = (WMin.X + WMax.X) / 2;
+    int32 MidZ = (WMin.Z + WMax.Z) / 2;
+    int32 SurfY = GetHeightAt(MidX, MidZ);
+
+    // 找到一個確實是 Air 的出發點
+    FIntVector Start(MidX, FMath::Max(WMin.Y, SurfY - 1), MidZ);
+    while (Start.Y <= WMax.Y && World.GetTile(Start.X, Start.Y, Start.Z) != EMaterialType::Air)
+        ++Start.Y;
+    if (Start.Y > WMax.Y) return;
+
+    TSet<FIntVector> Visited = FloodFill3D(World, Start, WMin, WMax);
+    int32 CaveDeepY = WMin.Y + FMath::RoundToInt((WMax.Y - WMin.Y) * 0.35f);
+
+    // 每隔 4 格掃描一列：若有孤立 Air，從地表打通垂直通道
+    int32 XFrom = WMin.X + (WMax.X - WMin.X) / 4;
+    int32 XTo   = WMin.X + (WMax.X - WMin.X) * 3 / 4;
+    int32 ZFrom = WMin.Z + (WMax.Z - WMin.Z) / 4;
+    int32 ZTo   = WMin.Z + (WMax.Z - WMin.Z) * 3 / 4;
+
+    for (int32 x = XFrom; x <= XTo; x += 4)
+    for (int32 z = ZFrom; z <= ZTo; z += 4)
+    {
+        int32 ColSurf = GetHeightAt(x, z);
+        for (int32 y = CaveDeepY; y <= WMax.Y - 2; ++y)
+        {
+            if (World.GetTile(x, y, z) != EMaterialType::Air) continue;
+            if (Visited.Contains(FIntVector(x, y, z))) continue;
+
+            // 孤立洞穴：從地表 Y 向下打通通道
+            for (int32 sy = FMath::Max(WMin.Y, ColSurf); sy <= y; ++sy)
+                World.SetTile(x, sy, z, EMaterialType::Air);
+            break;
+        }
+    }
 }

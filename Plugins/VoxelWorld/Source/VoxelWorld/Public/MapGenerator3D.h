@@ -5,11 +5,6 @@
 
 class FTileWorld3D;
 
-// M-3 簡化版：僅實作高度圖 + CA 洞穴雕刻
-// ⚠️ M-5 TODO：加入礦脈佈置（BFS blob）、裝飾物（鐘乳石/水坑）、
-//             連通性驗證（FloodFill3D）、ConcurrentBag noise 池優化、
-//             非同步 chunk 生成完整取消機制
-
 struct VOXELWORLD_API FSpawnData
 {
     FIntVector PlayerSpawn = FIntVector(0, 0, 0);
@@ -38,6 +33,10 @@ public:
 
     bool IsChunkGenerated(FIntVector CC) const { return GeneratedChunks.Contains(CC); }
 
+    // 連通性後處理（主執行緒，初始 chunk 群全部 Apply 後呼叫）
+    // FloodFill3D 確認可達空間，對孤立洞穴打通垂直通道
+    void PostProcessRegion(FTileWorld3D& World, FIntVector ChunkMin, FIntVector ChunkMax);
+
 private:
     struct FPendingChunk
     {
@@ -54,7 +53,17 @@ private:
     TSet<FIntVector>                         InFlightChunks;
     TQueue<FPendingChunk, EQueueMode::Mpsc>  ReadyQueue;
 
-    // 純函數（thread-safe）：計算一個 chunk 的所有 tile
+    // 純函數（thread-safe）：計算一個 chunk 的所有 tile（含礦脈/裝飾/可行進洞穴）
     static void ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
                                   TArray<FTileCell>& OutCells);
+
+    // ── per-chunk 後處理（靜態，thread-safe，僅操作 OutCells buffer）──────
+    static void PlaceOreVeinsInChunk(TArray<FTileCell>& Cells, FIntVector CC,
+                                      int32 Seed, int32 WorldH);
+    static void EnsureWalkableCavesInChunk(TArray<FTileCell>& Cells);
+    static void AddDecorInChunk(TArray<FTileCell>& Cells, FIntVector CC, int32 Seed);
+
+    // ── 主執行緒連通性（操作 FTileWorld3D）────────────────────────────────
+    static TSet<FIntVector> FloodFill3D(FTileWorld3D& World, FIntVector Start,
+                                         FIntVector BMin, FIntVector BMax);
 };
