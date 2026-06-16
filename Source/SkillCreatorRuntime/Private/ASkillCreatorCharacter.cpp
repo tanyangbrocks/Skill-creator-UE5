@@ -51,6 +51,10 @@ void ASkillCreatorCharacter::BeginPlay()
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
 
+    // W-6: 初始化預設法力插槽（"gui_dao" = 主法力池，對應 Godot Mp）
+    ActiveManaSlots.Reset();
+    ActiveManaSlots.Add(FManaSlot(TEXT("gui_dao"), Stats.MaxMpBase, Stats.MpRegenRate));
+
     CachedVoxelWorld = AVoxelWorldActor::FindInWorld(GetWorld());
 
     // 遊戲內時間歸零（新局開始）
@@ -70,8 +74,14 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // MP 自然回復
-    CurrentMp = FMath::Min(Stats.MaxMpBase, CurrentMp + Stats.MpRegenRate * DeltaTime);
+    // W-6: 法力插槽 Tick（slot[0] 同步 Stats 上限與回復率，所有插槽逐幀回復）
+    if (ActiveManaSlots.Num() > 0)
+    {
+        ActiveManaSlots[0].Max      = Stats.MaxMpBase;
+        ActiveManaSlots[0].RegenRate = Stats.MpRegenRate;
+    }
+    for (FManaSlot& Slot : ActiveManaSlots) Slot.Tick(DeltaTime);
+    if (ActiveManaSlots.Num() > 0) CurrentMp = ActiveManaSlots[0].Current;
 
     // HP 自然回復（若有設定）
     if (Stats.HpRegenRate > 0.f && CurrentHp > 0.f)
@@ -163,9 +173,16 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
         TakeDirectDamage(Dps * DeltaTime);
 }
 
+FManaSlot* ASkillCreatorCharacter::GetManaSlot(FName Key)
+{
+    for (FManaSlot& Slot : ActiveManaSlots)
+        if (Slot.ManaTypeKey == Key) return &Slot;
+    return nullptr;
+}
+
 void ASkillCreatorCharacter::GainXp(float Amount)
 {
-    // M-7 等級系統建立後填入
+    // W-10 等級系統建立後填入
 }
 
 void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* Input)

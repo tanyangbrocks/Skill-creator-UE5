@@ -6,6 +6,7 @@
 #include "CharacterStats.h"
 #include "ActionBus.h"
 #include "SkillCameraTypes.h"
+#include "ManaSlot.h"
 #include "ASkillCreatorCharacter.generated.h"
 
 class UCharacterStateComponent;
@@ -42,6 +43,13 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats")
     float CurrentMp = 100.f;
+
+    // W-6: 多重法力插槽；slot[0]（"gui_dao"）與 CurrentMp 保持同步（向後相容）
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats")
+    TArray<FManaSlot> ActiveManaSlots;
+
+    // 依 ManaTypeKey 查找插槽；找不到回傳 nullptr
+    FManaSlot* GetManaSlot(FName Key);
 
     // ── 組件 ──────────────────────────────────────────────────────
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Camera")

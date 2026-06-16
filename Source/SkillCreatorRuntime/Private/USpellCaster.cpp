@@ -71,8 +71,26 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     ASkillCreatorCharacter* Char = GetOwnerCharacter();
     if (!Char || !Char->IsAlive()) return false;
 
-    if (Char->CurrentMp < Spell.BaseMpCost) return false;
-    Char->CurrentMp -= Spell.BaseMpCost;
+    // W-6: 優先從技能使用的法力類型插槽扣除；找不到對應 key 則降格至 slot[0]
+    FManaSlot* Source = nullptr;
+    for (const FName& Key : Spell.GetUsedManaTypes())
+    {
+        Source = Char->GetManaSlot(Key);
+        if (Source) break;
+    }
+    if (!Source && Char->ActiveManaSlots.Num() > 0)
+        Source = &Char->ActiveManaSlots[0];
+
+    float Available = Source ? Source->Current : Char->CurrentMp;
+    if (Available < Spell.BaseMpCost) return false;
+
+    if (Source)
+        Source->Consume(Spell.BaseMpCost);
+    else
+        Char->CurrentMp -= Spell.BaseMpCost;
+
+    if (Char->ActiveManaSlots.Num() > 0)
+        Char->CurrentMp = Char->ActiveManaSlots[0].Current;
     CooldownRemaining = FMath::Max(GlobalCooldown, Spell.CastDelay);
     ApplyGlobalEngravings(Spell);
 
