@@ -12,4 +12,5 @@ class SKILLCREATORRUNTIME_API ASkillCreatorGameMode : public AGameModeBase
     GENERATED_BODY()
 public:
     ASkillCreatorGameMode();
+    virtual void BeginPlay() override;
 };

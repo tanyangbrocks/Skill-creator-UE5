@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Misc/Paths.h"
+#include "UObject/ConstructorHelpers.h"
 
 // ============================================================
 // 構造
@@ -17,6 +18,12 @@ AVoxelWorldActor::AVoxelWorldActor()
 
     RMCComp = CreateDefaultSubobject<URealtimeMeshComponent>(TEXT("RMC"));
     SetRootComponent(RMCComp);
+
+    // 自動載入 M_Voxel 材質，不需要在 Editor 手動指定
+    static ConstructorHelpers::FObjectFinder<UMaterialInterface> MatFinder(
+        TEXT("/Game/M_Voxel.M_Voxel"));
+    if (MatFinder.Succeeded())
+        VoxelMaterial = MatFinder.Object;
 }
 
 // ============================================================
