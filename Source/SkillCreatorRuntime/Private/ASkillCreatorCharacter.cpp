@@ -5,6 +5,7 @@
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
 #include "UCombatStateSubsystem.h"
+#include "UGameClockSubsystem.h"
 #include "ExecutionContext.h"
 #include "GridPos.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -47,6 +48,11 @@ void ASkillCreatorCharacter::BeginPlay()
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
 
+    // 遊戲內時間歸零（新局開始）
+    if (auto* GI = GetWorld()->GetGameInstance())
+    if (auto* Clock = GI->GetSubsystem<UGameClockSubsystem>())
+        Clock->Reset();
+
     // T-01: 清除跨 PIE session 殘留的全域狀態
     FExecutionContext::GlobalVars.Empty();
     FExecutionContext::GlobalLists.Empty();
@@ -69,10 +75,14 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     // CharacterState Tick（體力、精力、心情）
     bool bInCombat = false;
     if (auto* GI = GetWorld()->GetGameInstance())
-    if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
     {
-        bInCombat = Sub->bInCombat;
-        Sub->Advance(DeltaTime);
+        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+        {
+            bInCombat = Sub->bInCombat;
+            Sub->Advance(DeltaTime);
+        }
+        if (auto* Clock = GI->GetSubsystem<UGameClockSubsystem>())
+            Clock->Advance(DeltaTime);
     }
 
     float SurvivalDamage = StateComp->TickState(DeltaTime, bInCombat);
