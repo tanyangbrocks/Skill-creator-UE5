@@ -52,7 +52,8 @@ void FSpellRunner::Advance(FActiveEntry& Entry, float DeltaTime)
 
         if (!Ctx.PendingInvokeTotem.IsNone())
         {
-            if (OnInvokeTotem) OnInvokeTotem(Ctx, Ctx.PendingInvokeTotem);
+            if (Ctx.InvokeTotemFn) Ctx.InvokeTotemFn(Ctx, Ctx.PendingInvokeTotem);
+            else if (OnInvokeTotem) OnInvokeTotem(Ctx, Ctx.PendingInvokeTotem);
             Ctx.PendingInvokeTotem = NAME_None;
             continue;
         }

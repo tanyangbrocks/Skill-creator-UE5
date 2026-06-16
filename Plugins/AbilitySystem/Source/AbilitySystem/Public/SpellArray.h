@@ -15,14 +15,39 @@ enum class EContainerType : uint8
     Area         UMETA(DisplayName="區域"),
 };
 
-// 刻印資料（精簡版，M-4 角色系統補完）
+// 刻印分類（對應 Godot EngraveCategory.cs）
+UENUM(BlueprintType)
+enum class EEngraveCategory : uint8
+{
+    Action    UMETA(DisplayName="行動"),   // act_* 刻印：決定效果類型
+    Modifier  UMETA(DisplayName="修飾"),   // white_/blue_/elem_/orange_/red_/yellow_
+    Other     UMETA(DisplayName="其他"),
+};
+
+// 刻印觸發時機（對應 Godot EngraveTrigger.cs）
+UENUM(BlueprintType)
+enum class EEngraveTrigger : uint8
+{
+    OnCast  UMETA(DisplayName="施放時"),
+    OnTick  UMETA(DisplayName="每幀"),
+    OnHit   UMETA(DisplayName="命中時"),
+    None    UMETA(DisplayName="無"),
+};
+
+// 刻印資料（對應 Godot EngraveData.cs）
 USTRUCT(BlueprintType)
 struct FEngraveData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere) FName EngraveId;
-    UPROPERTY(EditAnywhere) int32 Points = 0;
+    UPROPERTY(EditAnywhere) FName            EngraveId;
+    UPROPERTY(EditAnywhere) int32            Points   = 0;
+    UPROPERTY(EditAnywhere) EEngraveCategory Category = EEngraveCategory::Other;
+    UPROPERTY(EditAnywhere) EEngraveTrigger  Trigger  = EEngraveTrigger::None;
+    // 效果基礎值；CalculateEffect() 按 Points 縮放：Effect * (1 + Points * 0.1)
+    UPROPERTY(EditAnywhere) float            Effect   = 0.f;
+
+    float CalculateEffect() const { return Effect * (1.f + (float)Points * 0.1f); }
 };
 
 // 技能因子插槽（對應 Godot SpellSlot.cs）

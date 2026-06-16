@@ -78,6 +78,8 @@ public:
     TFunction<void(int32 Mode)>                                         SetActivationModeFn;
     TFunction<void(FName FilterType, FName Mode, bool bOneShot, float Threshold, float CapValue)>
                                                                         RegisterFilterFn;
+    // InvokeTotem 分派（TryCast 時按技能整構設定，捕捉 slot 對照表）
+    TFunction<void(FExecutionContext&, FName TotemName)>                InvokeTotemFn;
 
     // ── ForEach 實體迭代 ──────────────────────────────────────────
     TArray<FEntityIterFrame> EntityIterators;

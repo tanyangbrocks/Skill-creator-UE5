@@ -59,4 +59,38 @@ private:
     void ExecuteContactHit(const FSpellArray& Spell);
 
     virtual void BeginPlay() override;
+
+    // ── 技能施放核心（技能因子派發，對應 Godot SpellCaster.cs）────────
+    struct FSpellMods
+    {
+        float DmgBonus  = 0.f;
+        int32 Multi     = 1;
+        bool  bFire = false, bWater = false, bIce = false, bThunder = false;
+        float PushDist  = 0.f, PullDist  = 0.f;
+        float SlowDur   = 0.f, FreezeDur = 0.f, StunDur = 0.f;
+        float HpCost    = 0.f;
+    };
+
+    static FSpellMods ReadMods(const FSpellSlot& Slot);
+    static void       SpawnEffectTiles(AVoxelWorldActor* VW, FName EffectType,
+                                       FGridPos Pos, int32 Radius);
+
+    void ApplyGlobalEngravings(const FSpellArray& Spell);
+    void ApplyModsToNearbyEnemies(const FSpellMods& Mods, FGridPos Origin,
+                                   AVoxelWorldActor* VW);
+    void ResolveTotem(FName TotemName, const FSpellSlot& Slot,
+                      FExecutionContext& Ctx, bool bAtHitPoint, AVoxelWorldActor* VW);
+    void DispatchAction(const FString& ActionId, const FSpellSlot& Slot,
+                        FGridPos Origin, bool bAtHitPoint, AVoxelWorldActor* VW);
+    void ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
+                     FGridPos Origin, bool bFromHitPoint, AVoxelWorldActor* VW);
+    void ExecuteTechnique(const FSpellSlot& Slot, FGridPos Origin,
+                          bool bAtHitPoint, AVoxelWorldActor* VW);
+    void ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origin,
+                                AVoxelWorldActor* VW);
+    void ExecuteMorph(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW);
+    void ExecuteDisplacement(const FString& ActionId, const FSpellSlot& Slot,
+                              AVoxelWorldActor* VW);
+    void ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW);
+    void ExecuteDomain(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW);
 };
