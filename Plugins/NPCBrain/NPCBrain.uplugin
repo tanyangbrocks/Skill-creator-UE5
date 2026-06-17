@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "NPCBrain",
+	"Description": "LLM-powered NPC brain: identity, memory, world perception, dialogue",
+	"Category": "SkillCreator",
+	"CreatedBy": "SkillCreatorUE5",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Modules": [
+		{
+			"Name": "NPCBrain",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
