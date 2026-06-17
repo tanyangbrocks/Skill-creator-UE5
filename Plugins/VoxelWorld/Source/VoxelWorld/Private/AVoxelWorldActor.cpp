@@ -9,6 +9,8 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "TileMaterialRegistry.h"
+#include "MaterialType.h"
 
 // ============================================================
 // 構造
@@ -21,11 +23,17 @@ AVoxelWorldActor::AVoxelWorldActor()
     RMCComp = CreateDefaultSubobject<URealtimeMeshComponent>(TEXT("RMC"));
     SetRootComponent(RMCComp);
 
-    // 自動載入 M_Voxel 材質，不需要在 Editor 手動指定
+    // 自動載入 M_Voxel 材質（fallback）
     static ConstructorHelpers::FObjectFinder<UMaterialInterface> MatFinder(
         TEXT("/Game/M_Voxel.M_Voxel"));
     if (MatFinder.Succeeded())
         VoxelMaterial = MatFinder.Object;
+
+    // AR-B：自動載入 Tile 材質登記表（不存在時保持 null，BeginPlay 會 fallback 到 VoxelMaterial）
+    static ConstructorHelpers::FObjectFinder<UTileMaterialRegistry> RegFinder(
+        TEXT("/Game/Data/DA_TileMaterialRegistry.DA_TileMaterialRegistry"));
+    if (RegFinder.Succeeded())
+        TileMaterialRegistry = RegFinder.Object;
 
     // 採掘高亮：引擎內建 Cube mesh + 半透明材質（預設隱藏）
     HighlightMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HighlightMesh"));
@@ -94,9 +102,20 @@ void AVoxelWorldActor::BeginPlay()
 
     Streaming.Init(WorldWidth, WorldHeight, WorldDepth, WorldSeed, AbsWorldDir);
 
-    // M-6 RMC init.
+    // M-6 / AR-B RMC init.
+    // 每個 EMaterialType 值對應一個 material slot（PolyGroup = MaterialID）。
+    // Registry 未建立或某 slot 為 null 時，fallback 到 VoxelMaterial。
     RMCMesh = RMCComp->InitializeRealtimeMesh<URealtimeMeshSimple>();
-    RMCMesh->SetupMaterialSlot(0, TEXT("VoxelMaterial"), VoxelMaterial);
+    const int32 MatCount = static_cast<int32>(EMaterialType::Count);
+    for (int32 i = 0; i < MatCount; ++i)
+    {
+        UMaterialInterface* Mat = nullptr;
+        if (TileMaterialRegistry)
+            Mat = TileMaterialRegistry->GetSurface(static_cast<EMaterialType>(i));
+        if (!Mat)
+            Mat = VoxelMaterial;
+        RMCMesh->SetupMaterialSlot(i, *FString::Printf(TEXT("TileMat_%d"), i), Mat);
+    }
 }
 
 // ============================================================

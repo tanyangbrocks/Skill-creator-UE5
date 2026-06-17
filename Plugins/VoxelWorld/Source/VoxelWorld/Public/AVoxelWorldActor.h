@@ -7,6 +7,7 @@
 #include "RealtimeMeshComponent.h"
 #include "RealtimeMeshSimple.h"
 #include "GridPos.h"
+#include "TileMaterialRegistry.h"
 #include "AVoxelWorldActor.generated.h"
 
 // UE Actor wrapper for FTileWorld3D + RMC rendering.
@@ -39,8 +40,14 @@ public:
     FString WorldSaveDir = TEXT("World_0001");
 
     // ── Rendering (M-6) ───────────────────────────────────────────
+    // Fallback：無 Registry 或 Registry 缺某材質時使用
     UPROPERTY(EditAnywhere, Category="VoxelWorld|Rendering")
     TObjectPtr<UMaterialInterface> VoxelMaterial;
+
+    // AR-B：每種 EMaterialType 對應獨立材質
+    // 自動從 /Game/Data/DA_TileMaterialRegistry 載入；為 null 時全 fallback 到 VoxelMaterial
+    UPROPERTY(EditAnywhere, Category="VoxelWorld|Rendering")
+    TObjectPtr<UTileMaterialRegistry> TileMaterialRegistry;
 
     UPROPERTY(VisibleAnywhere, Category="VoxelWorld|Rendering")
     TObjectPtr<URealtimeMeshComponent> RMCComp;

@@ -251,17 +251,18 @@ if (!Registry->Validate(Errors))
 
 ## 十、分階段實作
 
-### AR-A — DataAsset 骨架（M-6 之前）
+### AR-A — DataAsset 骨架 ✅
 
-- `TileMaterialRegistry.h/cpp` 建立，空 Entries
-- `DA_TileMaterialRegistry.uasset` 在 Editor 建立
-- `Validate()` 可以執行（全部 WARN，尚未填素材）
-- Build 0 錯誤
+- [x] `TileMaterialRegistry.h/cpp` 建立（`UTileMaterialRegistry : UDataAsset`、`FTileMaterialEntry`、`Validate()`）
+- [ ] `DA_TileMaterialRegistry.uasset` 在 Editor 建立（⚠️ **使用者手動**：Content Browser → Data Asset → UTileMaterialRegistry，存到 `/Game/Data/`，Entries 設 17 格）
+- [ ] 每個 Entry 填入對應材質（⚠️ **使用者手動**：建立材質資產後逐一拖入）
+- Build 0 錯誤 ✅
 
-### AR-B — 接入 M-6 渲染（M-6 同步）
+### AR-B — 接入渲染 ✅
 
-- `VoxelWorldRenderer` 啟動時載入 `DA_TileMaterialRegistry`
-- Greedy Mesh 提交時從 Registry 取 `UMaterialInterface*` 套用
+- [x] `GreedyMesher.cpp`：`PolyGroupBuilder.Add(Mat)` 取代固定 `0`（PolyGroup = MaterialID）
+- [x] `AVoxelWorldActor.h`：新增 `TObjectPtr<UTileMaterialRegistry> TileMaterialRegistry`
+- [x] `AVoxelWorldActor.cpp`：constructor 自動從 `/Game/Data/DA_TileMaterialRegistry` 載入 Registry；BeginPlay 迴圈設定 `EMaterialType::Count` 個 material slot，無 Registry 或 slot 為 null 時 fallback 到 `VoxelMaterial`（現有行為完全保留）
 - 行為與 hardcode 路徑版一致，只是來源改為 DataAsset
 
 ### AR-C — 多包層疊（M-8 之後）

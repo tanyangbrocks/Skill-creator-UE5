@@ -171,8 +171,9 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                             TriBuilder.Add(TIndex3<uint32>(V0, V2, V1));
                             TriBuilder.Add(TIndex3<uint32>(V0, V3, V2));
                         }
-                        PolyGroupBuilder.Add(0);
-                        PolyGroupBuilder.Add(0);
+                        // PolyGroup = MaterialID → RMC maps to material slot index
+                        PolyGroupBuilder.Add(Mat);
+                        PolyGroupBuilder.Add(Mat);
 
                         // Clear consumed mask cells
                         for (int32 di = 0; di < h; ++di)
