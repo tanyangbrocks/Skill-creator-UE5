@@ -91,8 +91,18 @@ AEnemy* ASpellProjectile::FindEnemyAt(const FGridPos& Pos) const
     if (!EnemyMgr) return nullptr;
     for (AEnemy* E : EnemyMgr->GetEnemies())
     {
-        if (E && E->IsAlive() && E->GetPosition() == Pos)
-            return E;
+        if (!E || !E->IsAlive()) continue;
+        if (E->GetPosition() == Pos) return E;
+        // Heavy 佔 2×2 footprint（X/Z 各延伸 1 格），投射物命中任一佔用格即觸發
+        if (E->Type == EEnemyType::Heavy)
+        {
+            const FGridPos EP = E->GetPosition();
+            if (Pos.Y == EP.Y)
+                for (int32 DX = 0; DX <= 1; ++DX)
+                    for (int32 DZ = 0; DZ <= 1; ++DZ)
+                        if (EP.X + DX == Pos.X && EP.Z + DZ == Pos.Z)
+                            return E;
+        }
     }
     return nullptr;
 }

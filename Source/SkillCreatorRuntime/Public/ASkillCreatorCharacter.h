@@ -5,6 +5,7 @@
 struct FInputActionValue;
 #include "ICreature.h"
 #include "IElementalTarget.h"
+#include "ISnapshottable.h"
 #include "CharacterStats.h"
 #include "ActionBus.h"
 #include "SkillCameraTypes.h"
@@ -32,6 +33,7 @@ class SKILLCREATORRUNTIME_API ASkillCreatorCharacter
     : public ACharacter
     , public ICreature
     , public IElementalTarget
+    , public ISnapshottable
 {
     GENERATED_BODY()
 public:
@@ -126,6 +128,11 @@ public:
     UFUNCTION(BlueprintCallable, Category="Combat")
     bool IsAliveChar() const { return CurrentHp > 0.f; }
 
+    // 重新尋找並綁定 AVoxelWorldActor / AEnemyManager（GameMode 在 GameFlow 選好世界、
+    // 延後生成 AVoxelWorldActor 之後呼叫；BeginPlay 當下世界可能還不存在）
+    UFUNCTION(BlueprintCallable, Category="World")
+    void RebindWorldSystems();
+
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return -1; }
     virtual FGridPos GetPosition()   const override;
@@ -136,6 +143,10 @@ public:
     // ── IElementalTarget ──────────────────────────────────────────
     virtual int32 GetEntityId()              const override { return -1; }
     virtual void  TakeDirectDamage(float Amount)   override;
+
+    // ── ISnapshottable ────────────────────────────────────────────
+    virtual FEntitySnapshot TakeSnapshot()                              const override;
+    virtual void            RestoreFromSnapshot(const FEntitySnapshot&)       override;
 
     // ── UE5 overrides ─────────────────────────────────────────────
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,

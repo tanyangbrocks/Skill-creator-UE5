@@ -110,9 +110,6 @@ bool AMobSpawnController::TryFindSpawnPos(const FGridPos& Player,
         int32 TX = FMath::Clamp(Player.X + FMath::RoundToInt(FMath::Cos(Angle) * HDist), 1, W - 2);
         int32 TZ = FMath::Clamp(Player.Z + FMath::RoundToInt(FMath::Sin(Angle) * HDist), 1, D - 2);
 
-        // 從玩家高度往下找第一個 Air tile 緊接固體的位置
-        int32 TY = FMath::Clamp(Player.Y + 2, 0, H - 2);
-
         // Area 怪物：需在指定半徑內
         if (Entry.Category == ESpawnCategory::Area && Entry.AreaRadius > 0)
         {
@@ -122,9 +119,17 @@ bool AMobSpawnController::TryFindSpawnPos(const FGridPos& Player,
                 continue;
         }
 
-        // 找可站立位置：腳下 Air，腳下一格固體
+        // 7a: 用 HeightEstimator 取地表高度（回傳第一個固體 tile 的 Y；Y=0 為頂部）
+        int32 SurfaceY = TW->HeightEstimator(TX, TZ);
+        if (SurfaceY <= 0 || SurfaceY >= H - 1) continue;
+
+        // 7g: 確保生成點所在 chunk 已載入（未載入時 GetCell 誤回傳 Air，永遠找不到地板）
+        TW->EnsureChunkAt(TX, SurfaceY - 1, TZ);
+
+        // 找可站立位置：腳下 Air（SurfaceY-1），腳下一格固體（SurfaceY）
+        int32 TY = SurfaceY - 1;
         if (TW->GetTile(TX, TY, TZ) == EMaterialType::Air
-         && TW->GetTile(TX, TY + 1, TZ) != EMaterialType::Air)
+         && TW->GetTile(TX, SurfaceY, TZ) != EMaterialType::Air)
         {
             OutPos = FGridPos(TX, TY, TZ);
             return true;

@@ -680,13 +680,19 @@ bool FTileWorld3D::TryLoadChunk(int32 cx, int32 cy, int32 cz, const FString& Wor
     FChunk3D& C = *GetOrCreateChunk(CC);
     Ar->Serialize(C.Cells, sizeof(C.Cells));
 
-    // 標記整個 chunk 為 dirty 供渲染初始化
+    // 標記整個 chunk 為 dirty 供渲染初始化；載入自磁碟的 chunk 不需要重存
     C.DirtyMin[0] = C.DirtyMin[1] = C.DirtyMin[2] = 0;
     C.DirtyMax[0] = C.DirtyMax[1] = C.DirtyMax[2] = FChunk3D::Size - 1;
     C.bDirty = true;
     C.bMeshNeedsRebuild = true;
+    C.bNeedsSave = false;
     DirtyChunks.Add(CC);
     return true;
+}
+
+FChunk3D* FTileWorld3D::EnsureChunkAt(int32 x, int32 y, int32 z)
+{
+    return GetOrCreateChunk(WorldToChunk(x, y, z));
 }
 
 void FTileWorld3D::SaveDirtyChunks(const FString& WorldDir)

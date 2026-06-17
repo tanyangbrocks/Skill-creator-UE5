@@ -69,6 +69,9 @@ public:
     // --- 高度估算（從 y=0 往下找第一個非 Air 格的 Y 值；若全為 Air 返回 Height-1）---
     int32 HeightEstimator(int32 x, int32 z) const;
 
+    // --- 確保 (x,y,z) 所在 chunk 存在記憶體中（若未載入則建立空 chunk，防止 GetCell 誤回傳 Air）---
+    FChunk3D* EnsureChunkAt(int32 x, int32 y, int32 z);
+
     // --- CA 鄰居骯髒標記（公開版：由世界座標換算 chunk 後呼叫 MarkNeighborsDirty）---
     void MarkNeighborsCaDirty(int32 x, int32 y, int32 z);
 

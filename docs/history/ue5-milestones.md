@@ -1,9 +1,16 @@
 ﻿# UE5 已完成里程碑（歸檔）
 
-> 歸檔時間：2026-06-16（超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+> 歸檔時間：2026-06-17（超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
 
 | 功能 | 關鍵檔案 | 摘要 |
 |------|---------|------|
+| S-1 CharacterSaveData 補完 | `CharacterSaveData.h` | 新增 Level(int32) / Xp(float) / InventorySlots(TArray<FItemStack>) / ActiveHotbar(int32) / ManaCurrents(TMap<FName,float>)，對應 UInventoryComponent.Slots 型別 |
+| UI-5 SpellDescriptionGenerator | `SpellDescriptionGenerator.h/.cpp` | FSpellDescriptionGenerator 純 C++ 工具：GenerateStructured（插槽/刻印/容器效果逐行結構化）/ GenerateProse（自然語言技能描述散文）；11 元素、11 EngraveColor、ContainerType 中文映射 |
+| UI-2 InputSettingsWidget + UI-3 SpellListWidget | `UInputSettingsWidget.h/.cpp` `USpellListWidget.h/.cpp` | UInputSettingsWidget：GetCurrentBindings / RemapAction（修改 IMC + 重套 Sub）/ SaveBindings（GConfig→PlayerInputBindings.ini）/ LoadAndApplyBindings / ResetToDefaults；USpellListWidget：RefreshSpellList（從 SpellGroups 讀取）/ SetActiveGroup / OnSpellListRefreshed / OnSlotHovered；FKeyBindingEntry + FSpellSlotDisplayInfo USTRUCT |
+| DefaultIMC 公開 + Character.h 補欄位 | `ASkillCreatorCharacter.h/.cpp` | 新增 UPROPERTY() DefaultIMC；SetupPlayerInputComponent 改存至 DefaultIMC；GetDefaultMappingContext() BlueprintPure |
+| UE5.7 UInputSettingsWidget 修正 | `UInputSettingsWidget.h/.cpp` | Mappings 已於 UE5.7 設為 protected；改用 GetMappings()（const）/ UnmapKey() / MapKey()；OriginalKeys 快照 NativeConstruct 拍攝；Build 0 error |
+| Widget 重設計：移除 Abstract + 程式化 UI 建構 | `UGameFlowWidget.h/.cpp` `UInputSettingsWidget.h/.cpp` `USpellListWidget.h/.cpp` | 三個 Widget 移除 UCLASS(Abstract)；BlueprintImplementableEvent→BlueprintNativeEvent；新增 BuildLayout() 於 NativeConstruct 程式化建立 WidgetTree（VerticalBox/ScrollBox/Button/EditableText）；新增 _Implementation 預設邏輯；CreateWidget\<T\>(PC,T::StaticClass()) 可直接實例化，不需要任何 .uasset |
+| WorldScale 單一真相架構 + 座標轉換集中化 + MobTable 預設值 | `WorldScale.h` `ASkillCreatorCharacter.cpp` `AEnemy.cpp` `AMobSpawnController.h/.cpp` | WorldScale.h 完整重寫：TileSizeCm 一改 → CapsuleRadius/CapsuleHalfHeight/CameraArmLength/WalkSpeedCm/JumpZVelocityCm 全自動跟進；新增 TileToWorld/WorldToTile/WorldToTileF/DirToVoxel 座標轉換函數；Character.cpp 建構子/GetPosition/ApplyEnvironmentalDamage/OnMine 全換 WorldScale API；AEnemy::Respawn() 修正 30× 座標錯誤；AMobSpawnController::PopulateDefaultTable() 補 C++ 預設 MobTable（Melee×3/Ranged×2/Patrol×2/Heavy×1）|
 | TerrainFeature + SurfaceWaterPool | `TerrainFeature.h` `SurfaceWaterPool.h/.cpp` | FTerrainFeature 抽象基類；FSurfaceWaterPool：Prepare 隨機碗形水池；PlaceInWorld 雕刻凹陷並填 Water |
 | R-6 PlacedObjectRegistry/PlacedUnit/PlacementShape/PlacementValidator | `PlacedUnit.h` `PlacementShape.h/.cpp` `PlacementValidator.h/.cpp` `PlacedObjectRegistry.h/.cpp` | FPlacedUnit + EPlacementShape（GetOffsets）+ FPlacementValidator（三重驗證）+ FPlacedObjectRegistry（雙索引 / JSON 序列化）|
 | DroppedItem + DroppedItemManager | `ADroppedItemActor.h/.cpp` `UDroppedItemManager.h/.cpp` | ADroppedItemActor（PickupRadius/Lifetime/Tick）+ UDroppedItemManager（UWorldSubsystem）SpawnDrop / TryPickupAll / Clear |

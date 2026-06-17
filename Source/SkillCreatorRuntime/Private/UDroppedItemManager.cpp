@@ -1,6 +1,8 @@
 #include "UDroppedItemManager.h"
 #include "ADroppedItemActor.h"
 #include "ASkillCreatorCharacter.h"
+#include "MaterialRegistry.h"
+#include "ItemDrop.h"
 #include "WorldScale.h"
 #include "Engine/World.h"
 
@@ -57,6 +59,30 @@ void UDroppedItemManager::Clear()
     for (ADroppedItemActor* Drop : ActiveDrops)
         if (IsValid(Drop)) Drop->Destroy();
     ActiveDrops.Empty();
+}
+
+void UDroppedItemManager::SpawnForReason(int32 x, int32 y, int32 z,
+                                          EMaterialType OldMat, EDestroyReason Reason)
+{
+    switch (Reason)
+    {
+    case EDestroyReason::Explosion:
+        // 爆炸由技能邏輯另行生成碎片掉落物，此處跳過一般掉落避免重複
+        return;
+    case EDestroyReason::Mining:
+    case EDestroyReason::ShapeMining:
+    case EDestroyReason::Slash:
+    case EDestroyReason::Crush:
+        // 一般摧毀：依材質預設掉落表生成掉落物
+        break;
+    }
+
+    FRandomStream Rng;
+    Rng.Initialize(FMath::Rand());
+    const FGridPos Pos(x, y, z);
+    for (const FItemDrop& D : FMaterialRegistry::GetDefaultDrops(OldMat))
+        if (D.ItemId != EItemId::None && Rng.FRand() <= D.Chance)
+            SpawnDrop(D.ItemId, Rng.RandRange(D.MinCount, D.MaxCount), Pos);
 }
 
 void UDroppedItemManager::OnDropPickedUp(ADroppedItemActor* Drop)

@@ -81,13 +81,31 @@ void AEnemy::ApplyGravity()
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
     if (!TW) return;
 
-    // 每次呼叫向下移動一格（由 AIController 每幀決定是否呼叫）
     int32 Below = GridPosition.Y + 1;
-    if (TW->InBounds(GridPosition.X, Below, GridPosition.Z)
-        && TW->GetTile(GridPosition.X, Below, GridPosition.Z) == EMaterialType::Air)
+
+    if (Type == EEnemyType::Heavy)
     {
-        GridPosition.Y = Below;
-        SetActorLocation(WorldScale::TileToWorld(GridPosition, TW->Height));
+        // Heavy 佔 2×2 footprint：只要任一腳下有固體就撐住，全部為 Air 才落下
+        bool bSupported = false;
+        for (int32 DX = 0; DX <= 1 && !bSupported; ++DX)
+            for (int32 DZ = 0; DZ <= 1 && !bSupported; ++DZ)
+                if (TW->InBounds(GridPosition.X + DX, Below, GridPosition.Z + DZ) &&
+                    TW->GetTile(GridPosition.X + DX, Below, GridPosition.Z + DZ) != EMaterialType::Air)
+                    bSupported = true;
+        if (!bSupported)
+        {
+            GridPosition.Y = Below;
+            SetActorLocation(WorldScale::TileToWorld(GridPosition, TW->Height));
+        }
+    }
+    else
+    {
+        if (TW->InBounds(GridPosition.X, Below, GridPosition.Z) &&
+            TW->GetTile(GridPosition.X, Below, GridPosition.Z) == EMaterialType::Air)
+        {
+            GridPosition.Y = Below;
+            SetActorLocation(WorldScale::TileToWorld(GridPosition, TW->Height));
+        }
     }
 }
 

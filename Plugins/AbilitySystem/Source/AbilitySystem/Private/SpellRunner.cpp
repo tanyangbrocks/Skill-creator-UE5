@@ -1,5 +1,6 @@
 #include "SpellRunner.h"
 #include "ExecutionLoop.h"
+#include "SafetyGuard.h"
 
 FSpellRunner::FSpellRunner()
     : Loop(MakeUnique<FExecutionLoop>())
@@ -72,7 +73,7 @@ void FSpellRunner::Advance(FActiveEntry& Entry, float DeltaTime)
         {
             FName NextSpell = Ctx.PendingInvokeSpell;
             Ctx.PendingInvokeSpell = NAME_None;
-            if (OnBuildComboContext && Entry.ComboDepth < 8)
+            if (OnBuildComboContext && Entry.ComboDepth < FSafetyGuard::MaxComboDepth)
             {
                 auto ComboCtx = OnBuildComboContext(NextSpell);
                 if (ComboCtx)

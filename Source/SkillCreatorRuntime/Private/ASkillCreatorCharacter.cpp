@@ -14,8 +14,6 @@
 #include "AEnemy.h"
 #include "GridPos.h"
 #include "UDroppedItemManager.h"
-#include "MaterialRegistry.h"
-#include "ItemDrop.h"
 #include "WorldScale.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -80,9 +78,27 @@ void ASkillCreatorCharacter::BeginPlay()
     ActiveManaSlots.Reset();
     ActiveManaSlots.Add(FManaSlot(TEXT("gui_dao"), Stats.MaxMpBase, Stats.MpRegenRate));
 
+    RebindWorldSystems();
+
+    // 遊戲內時間歸零（新局開始）
+    if (auto* GI = GetWorld()->GetGameInstance())
+    if (auto* Clock = GI->GetSubsystem<UGameClockSubsystem>())
+        Clock->Reset();
+
+    // T-01: 清除跨 PIE session 殘留的全域狀態
+    FExecutionContext::GlobalVars.Empty();
+    FExecutionContext::GlobalLists.Empty();
+    FExecutionContext::TaskCounters.Empty();
+    FExecutionContext::TaskCounterReached.Empty();
+    FExecutionContext::bTraceMode = false;
+}
+
+void ASkillCreatorCharacter::RebindWorldSystems()
+{
     CachedVoxelWorld = AVoxelWorldActor::FindInWorld(GetWorld());
 
     // 快取 EnemyManager（關卡可能手動放置或由 GameMode 自動生成）
+    CachedEnemyMgr = nullptr;
     for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It)
     { CachedEnemyMgr = *It; break; }
 
@@ -98,26 +114,9 @@ void ASkillCreatorCharacter::BeginPlay()
             if (!W) return;
             auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
             if (!DropMgr) return;
-            FRandomStream Rng;
-            Rng.Initialize(FMath::Rand());
-            for (const FItemDrop& D : FMaterialRegistry::GetDefaultDrops(OldMat))
-                if (D.ItemId != EItemId::None && Rng.FRand() <= D.Chance)
-                    DropMgr->SpawnDrop(D.ItemId, Rng.RandRange(D.MinCount, D.MaxCount),
-                                       FGridPos(x, y, z));
+            DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
         };
     }
-
-    // 遊戲內時間歸零（新局開始）
-    if (auto* GI = GetWorld()->GetGameInstance())
-    if (auto* Clock = GI->GetSubsystem<UGameClockSubsystem>())
-        Clock->Reset();
-
-    // T-01: 清除跨 PIE session 殘留的全域狀態
-    FExecutionContext::GlobalVars.Empty();
-    FExecutionContext::GlobalLists.Empty();
-    FExecutionContext::TaskCounters.Empty();
-    FExecutionContext::TaskCounterReached.Empty();
-    FExecutionContext::bTraceMode = false;
 }
 
 void ASkillCreatorCharacter::Tick(float DeltaTime)
@@ -208,6 +207,30 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
             OnCharacterDied.Broadcast();
         }
     }
+}
+
+FEntitySnapshot ASkillCreatorCharacter::TakeSnapshot() const
+{
+    FEntitySnapshot Snap;
+    Snap.EntityId  = FEntitySnapshot::PlayerEntityId;
+    Snap.Position  = GetPosition();
+    Snap.Hp        = CurrentHp;
+    Snap.Mp        = CurrentMp;
+    Snap.bWasAlive = IsAlive();
+    return Snap;
+}
+
+void ASkillCreatorCharacter::RestoreFromSnapshot(const FEntitySnapshot& Snap)
+{
+    CurrentHp = Snap.Hp;
+    CurrentMp = Snap.Mp;
+    if (ActiveManaSlots.Num() > 0)
+        ActiveManaSlots[0].Current = CurrentMp;
+    OnHpChanged.Broadcast(CurrentHp);
+    const int32 WorldH = CachedVoxelWorld
+        ? CachedVoxelWorld->GetTileWorld()->Height
+        : WorldScale::DefaultWorldHeight;
+    SetActorLocation(WorldScale::TileToWorld(Snap.Position, WorldH));
 }
 
 FGridPos ASkillCreatorCharacter::GetPosition() const
