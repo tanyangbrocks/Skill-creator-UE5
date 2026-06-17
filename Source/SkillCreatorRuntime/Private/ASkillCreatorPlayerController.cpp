@@ -1,6 +1,8 @@
 #include "ASkillCreatorPlayerController.h"
 #include "ASkillCreatorCharacter.h"
+#include "ASkillCreatorHUD.h"
 #include "USpellCaster.h"
+#include "UInventoryComponent.h"
 #include "GameFramework/Pawn.h"
 #if WITH_EDITOR
 #include "Framework/Docking/TabManager.h"
@@ -15,16 +17,31 @@ void ASkillCreatorPlayerController::BeginPlay()
 void ASkillCreatorPlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
-    // 滑鼠滾輪與功能鍵用 BindKey（直接按鍵，不走 ActionMappings 查表）
-    InputComponent->BindKey(EKeys::MouseScrollUp,   IE_Pressed, this, &ASkillCreatorPlayerController::OnScrollUp);
-    InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ASkillCreatorPlayerController::OnScrollDown);
-    InputComponent->BindKey(EKeys::E,               IE_Pressed, this, &ASkillCreatorPlayerController::OnOpenEditor);
-    InputComponent->BindKey(EKeys::One,             IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar1);
-    InputComponent->BindKey(EKeys::Two,             IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar2);
-    InputComponent->BindKey(EKeys::Three,           IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar3);
-    InputComponent->BindKey(EKeys::Four,            IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar4);
-    InputComponent->BindKey(EKeys::Five,            IE_Pressed, this, &ASkillCreatorPlayerController::OnHotbar5);
+
+    auto Bind = [&](FKey Key, auto Fn)
+    {
+        InputComponent->BindKey(Key, IE_Pressed, this, Fn);
+    };
+
+    Bind(EKeys::MouseScrollUp,   &ASkillCreatorPlayerController::OnScrollUp);
+    Bind(EKeys::MouseScrollDown, &ASkillCreatorPlayerController::OnScrollDown);
+    Bind(EKeys::E,               &ASkillCreatorPlayerController::OnOpenEditor);
+    Bind(EKeys::One,             &ASkillCreatorPlayerController::OnHotbar1);
+    Bind(EKeys::Two,             &ASkillCreatorPlayerController::OnHotbar2);
+    Bind(EKeys::Three,           &ASkillCreatorPlayerController::OnHotbar3);
+    Bind(EKeys::Four,            &ASkillCreatorPlayerController::OnHotbar4);
+    Bind(EKeys::Five,            &ASkillCreatorPlayerController::OnHotbar5);
+    Bind(EKeys::B,               &ASkillCreatorPlayerController::OnOpenSettings);
+    Bind(EKeys::N,               &ASkillCreatorPlayerController::OnOpenShapeMenu);
+    Bind(EKeys::V,               &ASkillCreatorPlayerController::OnSpellGroupSwitch);
+    Bind(EKeys::Z,               &ASkillCreatorPlayerController::OnOpenInventory);
+    Bind(EKeys::X,               &ASkillCreatorPlayerController::OnOpenEquipment);
+    Bind(EKeys::C,               &ASkillCreatorPlayerController::OnOpenStats);
+    Bind(EKeys::Q,               &ASkillCreatorPlayerController::OnEquipItem);
+    Bind(EKeys::Tab,             &ASkillCreatorPlayerController::OnToggleXray);
 }
+
+// ── Spell hotbar ─────────────────────────────────────────────────────────
 
 void ASkillCreatorPlayerController::SetActiveSpellSlot(int32 Idx)
 {
@@ -50,6 +67,14 @@ void ASkillCreatorPlayerController::OnScrollDown()
         Char->SpellCasterComp->CycleSlot(-1);
 }
 
+void ASkillCreatorPlayerController::OnHotbar1() { SetActiveSpellSlot(0); }
+void ASkillCreatorPlayerController::OnHotbar2() { SetActiveSpellSlot(1); }
+void ASkillCreatorPlayerController::OnHotbar3() { SetActiveSpellSlot(2); }
+void ASkillCreatorPlayerController::OnHotbar4() { SetActiveSpellSlot(3); }
+void ASkillCreatorPlayerController::OnHotbar5() { SetActiveSpellSlot(4); }
+
+// ── 技能編輯器 ───────────────────────────────────────────────────────────
+
 void ASkillCreatorPlayerController::OnOpenEditor()
 {
 #if WITH_EDITOR
@@ -57,8 +82,56 @@ void ASkillCreatorPlayerController::OnOpenEditor()
 #endif
 }
 
-void ASkillCreatorPlayerController::OnHotbar1() { SetActiveSpellSlot(0); }
-void ASkillCreatorPlayerController::OnHotbar2() { SetActiveSpellSlot(1); }
-void ASkillCreatorPlayerController::OnHotbar3() { SetActiveSpellSlot(2); }
-void ASkillCreatorPlayerController::OnHotbar4() { SetActiveSpellSlot(3); }
-void ASkillCreatorPlayerController::OnHotbar5() { SetActiveSpellSlot(4); }
+// ── HUD 面板開關（每個都取 HUD 並呼叫對應 Toggle）───────────────────────
+
+void ASkillCreatorPlayerController::OnOpenSettings()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSettings();
+}
+
+void ASkillCreatorPlayerController::OnOpenShapeMenu()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleShapeMenu();
+}
+
+void ASkillCreatorPlayerController::OnSpellGroupSwitch()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSpellGroup();
+}
+
+void ASkillCreatorPlayerController::OnOpenInventory()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInventory();
+}
+
+void ASkillCreatorPlayerController::OnOpenEquipment()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleEquipment();
+}
+
+void ASkillCreatorPlayerController::OnOpenStats()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleStats();
+}
+
+// ── Q：裝備/使用熱鍵格物品 ───────────────────────────────────────────────
+
+void ASkillCreatorPlayerController::OnEquipItem()
+{
+    ASkillCreatorCharacter* Char =
+        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char || !Char->InventoryComp || !Char->EquipmentComp) return;
+
+    int32 ActiveIdx = Char->InventoryComp->ActiveHotbarIndex;
+    if (!Char->InventoryComp->Slots.IsValidIndex(ActiveIdx)) return;
+    if (Char->InventoryComp->Slots[ActiveIdx].IsEmpty()) return;
+
+    Char->EquipmentComp->TryEquip(Char->InventoryComp, ActiveIdx);
+}
+
+// ── Tab：X-ray 切換（顯示牆後敵人，待 M-8 攝影機） ─────────────────────
+
+void ASkillCreatorPlayerController::OnToggleXray()
+{
+    // TODO M-8: 通知 VoxelWorldActor 切換 X-ray 渲染模式
+}

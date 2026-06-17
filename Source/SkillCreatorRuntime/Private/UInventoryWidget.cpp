@@ -1,0 +1,323 @@
+#include "UInventoryWidget.h"
+#include "UInventoryComponent.h"
+#include "ItemRegistry.h"
+#include "ItemData.h"
+#include "Blueprint/WidgetTree.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/TextBlock.h"
+#include "Components/Border.h"
+
+// ── 顏色查詢（和 Godot GetItemIconColor 對應）──────────────────────────────
+
+FLinearColor UInventoryWidget::GetItemColor(EItemId Id) const
+{
+    if (Id == EItemId::None) return FLinearColor(0.10f, 0.10f, 0.12f);
+    const FItemData& D = FItemRegistry::Get(Id);
+    if (D.bIsPlaceable)
+    {
+        // 放置物件用材質顏色（暫用固定淡色；完整版從 MaterialRegistry 取）
+        return FLinearColor(0.45f, 0.55f, 0.40f);
+    }
+    switch (Id)
+    {
+        case EItemId::ToolBasicPick:     return FLinearColor(0.75f, 0.75f, 0.82f);
+        case EItemId::ToolIronPick:      return FLinearColor(0.60f, 0.62f, 0.68f);
+        case EItemId::EquipBasicSword:   return FLinearColor(0.80f, 0.80f, 0.95f);
+        case EItemId::EquipLeatherArmor: return FLinearColor(0.60f, 0.40f, 0.20f);
+        case EItemId::EquipAmulet:       return FLinearColor(0.90f, 0.30f, 0.85f);
+        default:                          return FLinearColor(0.85f, 0.75f, 0.15f);
+    }
+}
+
+// ── NativeConstruct ─────────────────────────────────────────────────────────
+
+void UInventoryWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    constexpr float SlotW = 38.f, SlotH = 38.f, GapX = 3.f, GapY = 3.f;
+    constexpr float PadX  = 8.f,  PadY  = 8.f;
+
+    float InnerW = Cols * SlotW + (Cols - 1) * GapX;
+    float PanelW = InnerW + 2.f * PadX;
+
+    // 行 Y 起點（相對於面板左上角）
+    float Row0Y   = PadY + 20.f + 14.f;
+    float Row1Y   = Row0Y + SlotH + GapY;
+    float BagLblY = Row1Y + SlotH + GapY + 2.f;
+    float Row2Y   = BagLblY + 14.f;
+
+    float RowY[6];
+    RowY[0] = Row0Y;
+    RowY[1] = Row1Y;
+    RowY[2] = Row2Y;
+    for (int32 r = 3; r < 6; ++r) RowY[r] = Row2Y + (r - 2) * (SlotH + GapY);
+
+    float PanelH = RowY[5] + SlotH + PadY;
+
+    UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
+    WidgetTree->RootWidget = Root;
+
+    // 面板（螢幕中央偏左，靠近螢幕左側 1/4 處）
+    UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InvPanel"));
+    Panel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.10f, 0.92f));
+    Panel->SetPadding(FMargin(0.f));
+    Root->AddChild(Panel);
+    if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Panel->Slot))
+    {
+        S->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+        S->SetPosition(FVector2D(-PanelW - 5.f, 20.f));
+        S->SetSize(FVector2D(PanelW, PanelH));
+        S->SetAlignment(FVector2D::ZeroVector);
+    }
+
+    // 標題
+    UTextBlock* TitleLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    TitleLbl->SetText(FText::FromString(TEXT("物品欄  [I 關閉]")));
+    {
+        FSlateFontInfo F = TitleLbl->GetFont();
+        F.Size = 12;
+        TitleLbl->SetFont(F);
+    }
+    TitleLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.80f, 0.80f, 0.95f)));
+    Panel->AddChild(TitleLbl);
+    if (UCanvasPanelSlot* TS = Cast<UCanvasPanelSlot>(TitleLbl->Slot))
+    {
+        TS->SetPosition(FVector2D(PadX, PadY));
+        TS->SetSize(FVector2D(InnerW, 16.f));
+    }
+
+    // 熱鍵欄標籤
+    UTextBlock* HotLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    HotLbl->SetText(FText::FromString(TEXT("─ 熱鍵欄 ─")));
+    {
+        FSlateFontInfo F = HotLbl->GetFont();
+        F.Size = 10;
+        HotLbl->SetFont(F);
+    }
+    HotLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.60f, 0.75f, 0.60f)));
+    Panel->AddChild(HotLbl);
+    if (UCanvasPanelSlot* LS = Cast<UCanvasPanelSlot>(HotLbl->Slot))
+        LS->SetPosition(FVector2D(PadX, PadY + 20.f));
+
+    // 背包標籤
+    UTextBlock* BagLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    BagLbl->SetText(FText::FromString(TEXT("─ 背包 ─")));
+    {
+        FSlateFontInfo F = BagLbl->GetFont();
+        F.Size = 10;
+        BagLbl->SetFont(F);
+    }
+    BagLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.60f, 0.60f, 0.75f)));
+    Panel->AddChild(BagLbl);
+    if (UCanvasPanelSlot* LS = Cast<UCanvasPanelSlot>(BagLbl->Slot))
+        LS->SetPosition(FVector2D(PadX, BagLblY));
+
+    // 30 個格子
+    SlotBorders.Reserve(TotalSlots);
+    IconBorders.Reserve(TotalSlots);
+    CountLabels.Reserve(TotalSlots);
+
+    CachedSlots.SetNum(TotalSlots);
+
+    for (int32 i = 0; i < TotalSlots; ++i)
+    {
+        int32 Row = i / Cols;
+        int32 Col = i % Cols;
+
+        float X = PadX + Col * (SlotW + GapX);
+        float Y = RowY[Row];
+
+        UBorder* Slot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+        Slot->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+        Slot->SetPadding(FMargin(0.f));
+        Panel->AddChild(Slot);
+        if (UCanvasPanelSlot* SS = Cast<UCanvasPanelSlot>(Slot->Slot))
+            SS->SetOffsets(FMargin(X, Y, SlotW, SlotH));
+
+        UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+        Icon->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
+        Icon->SetPadding(FMargin(0.f));
+        Slot->AddChild(Icon);
+        if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
+            IS->SetOffsets(FMargin(5.f, 5.f, 28.f, 28.f));
+
+        UTextBlock* Cnt = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+        {
+            FSlateFontInfo F = Cnt->GetFont();
+            F.Size = 9;
+            Cnt->SetFont(F);
+        }
+        Cnt->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
+        Cnt->SetJustification(ETextJustify::Right);
+        Slot->AddChild(Cnt);
+        if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(Cnt->Slot))
+            CS->SetOffsets(FMargin(18.f, 26.f, 18.f, 12.f));
+
+        SlotBorders.Add(Slot);
+        IconBorders.Add(Icon);
+        CountLabels.Add(Cnt);
+    }
+
+    // 拖曳浮動圖示
+    DragFloatIcon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DragIcon"));
+    DragFloatIcon->SetBrushColor(FLinearColor(0.85f, 0.75f, 0.15f, 0.7f));
+    DragFloatIcon->SetPadding(FMargin(0.f));
+    DragFloatIcon->SetVisibility(ESlateVisibility::Hidden);
+    Root->AddChild(DragFloatIcon);
+    if (UCanvasPanelSlot* DS = Cast<UCanvasPanelSlot>(DragFloatIcon->Slot))
+        DS->SetSize(FVector2D(30.f, 30.f));
+
+    // Tooltip
+    TooltipPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Tooltip"));
+    TooltipPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f));
+    TooltipPanel->SetPadding(FMargin(8.f, 4.f));
+    TooltipPanel->SetVisibility(ESlateVisibility::Hidden);
+    TooltipPanel->SetRenderTransformPivot(FVector2D::ZeroVector);
+    Root->AddChild(TooltipPanel);
+
+    TooltipText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    {
+        FSlateFontInfo F = TooltipText->GetFont();
+        F.Size = 12;
+        TooltipText->SetFont(F);
+    }
+    TooltipText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.92f, 0.75f)));
+    TooltipPanel->AddChild(TooltipText);
+}
+
+// ── 每幀更新（拖曳圖示跟隨滑鼠）───────────────────────────────────────────
+
+void UInventoryWidget::NativeTick(const FGeometry& Geo, float Delta)
+{
+    Super::NativeTick(Geo, Delta);
+
+    if (DragSrcSlot >= 0 && DragFloatIcon)
+    {
+        APlayerController* PC = GetOwningPlayer();
+        if (PC)
+        {
+            float MX, MY;
+            PC->GetMousePosition(MX, MY);
+            if (UCanvasPanelSlot* DS = Cast<UCanvasPanelSlot>(DragFloatIcon->Slot))
+                DS->SetPosition(FVector2D(MX - 15.f, MY - 15.f));
+        }
+    }
+}
+
+// ── 滑鼠事件（拖曳起點 + 終點）────────────────────────────────────────────
+
+FReply UInventoryWidget::NativeOnMouseButtonDown(const FGeometry& Geo, const FPointerEvent& Ev)
+{
+    if (Ev.GetEffectingButton() == EKeys::LeftMouseButton)
+    {
+        int32 Src = GetSlotUnderMouse();
+        if (Src >= 0)
+        {
+            DragSrcSlot = Src;
+            if (DragFloatIcon)
+            {
+                const FItemStack& Stack = CachedSlots[Src];
+                if (!Stack.IsEmpty())
+                {
+                    DragFloatIcon->SetBrushColor(GetItemColor(Stack.ItemId));
+                    DragFloatIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
+                }
+            }
+            return FReply::Handled();
+        }
+    }
+    return Super::NativeOnMouseButtonDown(Geo, Ev);
+}
+
+FReply UInventoryWidget::NativeOnMouseButtonUp(const FGeometry& Geo, const FPointerEvent& Ev)
+{
+    if (Ev.GetEffectingButton() == EKeys::LeftMouseButton && DragSrcSlot >= 0)
+    {
+        if (DragFloatIcon) DragFloatIcon->SetVisibility(ESlateVisibility::Hidden);
+
+        int32 Dst = GetSlotUnderMouse();
+        if (Dst >= 0 && Dst != DragSrcSlot)
+            OnSlotSwapRequested.ExecuteIfBound(DragSrcSlot, Dst);
+        else if (Dst == DragSrcSlot && !CachedSlots[DragSrcSlot].IsEmpty())
+            OnSlotEquipRequested.ExecuteIfBound(DragSrcSlot);
+
+        DragSrcSlot = -1;
+        return FReply::Handled();
+    }
+    return Super::NativeOnMouseButtonUp(Geo, Ev);
+}
+
+// ── 資料刷新 ────────────────────────────────────────────────────────────────
+
+void UInventoryWidget::Refresh(const UInventoryComponent* Inv)
+{
+    if (!Inv) return;
+    CachedActiveIdx = Inv->ActiveHotbarIndex;
+    for (int32 i = 0; i < TotalSlots && i < Inv->Slots.Num(); ++i)
+    {
+        CachedSlots[i] = Inv->Slots[i];
+        RefreshSlot(i);
+    }
+}
+
+void UInventoryWidget::RefreshSlot(int32 Idx)
+{
+    if (!SlotBorders.IsValidIndex(Idx)) return;
+
+    bool bActive = (Idx < HotbarSlots && Idx == CachedActiveIdx);
+    FLinearColor BorderCol = bActive
+        ? FLinearColor(0.95f, 0.80f, 0.20f)
+        : FLinearColor(0.30f, 0.30f, 0.40f);
+    SlotBorders[Idx]->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+
+    const FItemStack& Stack = CachedSlots[Idx];
+    if (Stack.IsEmpty())
+    {
+        IconBorders[Idx]->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
+        CountLabels[Idx]->SetText(FText::GetEmpty());
+    }
+    else
+    {
+        IconBorders[Idx]->SetBrushColor(GetItemColor(Stack.ItemId));
+        CountLabels[Idx]->SetText(Stack.Count > 1
+            ? FText::FromString(FString::Printf(TEXT("×%d"), Stack.Count))
+            : FText::GetEmpty());
+    }
+}
+
+int32 UInventoryWidget::GetSlotUnderMouse() const
+{
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC) return -1;
+    float MX, MY;
+    PC->GetMousePosition(MX, MY);
+    FVector2D MousePos(MX, MY);
+
+    for (int32 i = 0; i < SlotBorders.Num(); ++i)
+    {
+        if (!SlotBorders[i]) continue;
+        FGeometry Geo = SlotBorders[i]->GetCachedGeometry();
+        FVector2D Local = Geo.AbsoluteToLocal(MousePos);
+        FVector2D Size  = Geo.GetLocalSize();
+        if (Local.X >= 0 && Local.Y >= 0 && Local.X < Size.X && Local.Y < Size.Y)
+            return i;
+    }
+    return -1;
+}
+
+void UInventoryWidget::ShowFloatTooltip(const FString& Text, FVector2D ScreenPos)
+{
+    if (!TooltipPanel || !TooltipText) return;
+    TooltipText->SetText(FText::FromString(Text));
+    TooltipPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (UCanvasPanelSlot* TS = Cast<UCanvasPanelSlot>(TooltipPanel->Slot))
+        TS->SetPosition(ScreenPos + FVector2D(14.f, -20.f));
+}
+
+void UInventoryWidget::HideFloatTooltip()
+{
+    if (TooltipPanel) TooltipPanel->SetVisibility(ESlateVisibility::Hidden);
+}
