@@ -28,8 +28,15 @@ private:
     void OnHotbar3();
     void OnHotbar4();
     void OnHotbar5();
-    // 技能編輯器 (E)
+    // 技能編輯器 (E) — 切換遊戲內積木 overlay
     void OnOpenEditor();
+
+#if WITH_EDITOR
+    // 積木編輯器 Slate overlay（遊戲畫面疊層，不是 UE Editor Tab）
+    TSharedPtr<SWidget> BlockEditorOverlay;
+    bool bBlockEditorOpen = false;
+    void ToggleBlockEditorOverlay();
+#endif
     // 面板開關
     void OnOpenSettings();     // B
     void OnOpenShapeMenu();    // N

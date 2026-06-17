@@ -5,7 +5,12 @@
 #include "UInventoryComponent.h"
 #include "GameFramework/Pawn.h"
 #if WITH_EDITOR
-#include "Framework/Docking/TabManager.h"
+#include "UBlockEdGraph.h"
+#include "UBlockEdGraphSchema.h"
+#include "SBlockEditorWidget.h"
+#include "Engine/GameViewportClient.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SBorder.h"
 #endif
 
 void ASkillCreatorPlayerController::BeginPlay()
@@ -73,14 +78,64 @@ void ASkillCreatorPlayerController::OnHotbar3() { SetActiveSpellSlot(2); }
 void ASkillCreatorPlayerController::OnHotbar4() { SetActiveSpellSlot(3); }
 void ASkillCreatorPlayerController::OnHotbar5() { SetActiveSpellSlot(4); }
 
-// ── 技能編輯器 ───────────────────────────────────────────────────────────
+// ── 技能編輯器 overlay ────────────────────────────────────────────────────
 
 void ASkillCreatorPlayerController::OnOpenEditor()
 {
 #if WITH_EDITOR
-    FGlobalTabmanager::Get()->TryInvokeTab(FTabId(TEXT("BlockSpellEditor")));
+    ToggleBlockEditorOverlay();
 #endif
 }
+
+#if WITH_EDITOR
+void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
+{
+    if (!GEngine || !GEngine->GameViewport) return;
+
+    if (!BlockEditorOverlay.IsValid())
+    {
+        // 第一次開啟：建立 Graph + Widget，加入 viewport overlay
+        UBlockEdGraph* Graph = NewObject<UBlockEdGraph>(GetTransientPackage());
+        Graph->Schema = UBlockEdGraphSchema::StaticClass();
+
+        BlockEditorOverlay =
+            SNew(SBox)
+            .HAlign(HAlign_Fill)
+            .VAlign(VAlign_Fill)
+            [
+                SNew(SBorder)
+                .BorderBackgroundColor(FLinearColor(0.02f, 0.02f, 0.05f, 0.96f))
+                .Padding(FMargin(0.f))
+                [
+                    SNew(SBlockEditorWidget)
+                    .GraphToEdit(Graph)
+                ]
+            ];
+
+        GEngine->GameViewport->AddViewportWidgetContent(
+            BlockEditorOverlay.ToSharedRef(), 20);
+        bBlockEditorOpen = true;
+    }
+    else
+    {
+        bBlockEditorOpen = !bBlockEditorOpen;
+        BlockEditorOverlay->SetVisibility(
+            bBlockEditorOpen ? EVisibility::Visible : EVisibility::Hidden);
+    }
+
+    // 開啟時釋放滑鼠給 Slate；關閉時還給遊戲
+    if (bBlockEditorOpen)
+    {
+        SetShowMouseCursor(true);
+        SetInputMode(FInputModeUIOnly());
+    }
+    else
+    {
+        SetShowMouseCursor(false);
+        SetInputMode(FInputModeGameAndUI());
+    }
+}
+#endif
 
 // ── HUD 面板開關（每個都取 HUD 並呼叫對應 Toggle）───────────────────────
 

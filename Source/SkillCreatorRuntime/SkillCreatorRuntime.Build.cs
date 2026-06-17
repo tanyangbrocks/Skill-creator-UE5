@@ -12,5 +12,11 @@ public class SkillCreatorRuntime : ModuleRules
             "Json", "JsonUtilities",
             "UMG", "SlateCore", "Slate"
         });
+
+        // 積木編輯器 overlay（僅 Editor Build 使用）
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(new string[] { "SkillCreatorUI", "GraphEditor" });
+        }
     }
 }
