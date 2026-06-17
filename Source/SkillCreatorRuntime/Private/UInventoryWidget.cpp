@@ -130,17 +130,17 @@ void UInventoryWidget::NativeConstruct()
         float X = PadX + Col * (SlotW + GapX);
         float Y = RowY[Row];
 
-        UBorder* Slot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Slot->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
-        Slot->SetPadding(FMargin(0.f));
-        Panel->AddChild(Slot);
-        if (UCanvasPanelSlot* SS = Cast<UCanvasPanelSlot>(Slot->Slot))
+        UBorder* SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+        SlotBorder->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+        SlotBorder->SetPadding(FMargin(0.f));
+        Panel->AddChild(SlotBorder);
+        if (UCanvasPanelSlot* SS = Cast<UCanvasPanelSlot>(SlotBorder->Slot))
             SS->SetOffsets(FMargin(X, Y, SlotW, SlotH));
 
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Icon->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
         Icon->SetPadding(FMargin(0.f));
-        Slot->AddChild(Icon);
+        SlotBorder->AddChild(Icon);
         if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
             IS->SetOffsets(FMargin(5.f, 5.f, 28.f, 28.f));
 
@@ -152,11 +152,11 @@ void UInventoryWidget::NativeConstruct()
         }
         Cnt->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
         Cnt->SetJustification(ETextJustify::Right);
-        Slot->AddChild(Cnt);
+        SlotBorder->AddChild(Cnt);
         if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(Cnt->Slot))
             CS->SetOffsets(FMargin(18.f, 26.f, 18.f, 12.f));
 
-        SlotBorders.Add(Slot);
+        SlotBorders.Add(SlotBorder);
         IconBorders.Add(Icon);
         CountLabels.Add(Cnt);
     }

@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "EquipmentSlotType.h"
+#include "ItemId.h"
 #include "UEquipmentWidget.generated.h"
 
 class UBorder;

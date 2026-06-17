@@ -57,16 +57,9 @@ void USpellGroupWidget::NativeConstruct()
         VS->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
     }
 
-    static void (USpellGroupWidget::*Handlers[MaxGroups])() = {
-        &USpellGroupWidget::OnGroup0Clicked, &USpellGroupWidget::OnGroup1Clicked,
-        &USpellGroupWidget::OnGroup2Clicked, &USpellGroupWidget::OnGroup3Clicked,
-        &USpellGroupWidget::OnGroup4Clicked,
-    };
-
     for (int32 i = 0; i < MaxGroups; ++i)
     {
         UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-        Btn->OnClicked.AddDynamic(this, Handlers[i]);
 
         UTextBlock* BtnTxt = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
         BtnTxt->SetText(FText::FromString(FString::Printf(TEXT("技能組 %d"), i + 1)));
@@ -86,6 +79,12 @@ void USpellGroupWidget::NativeConstruct()
         GroupButtons[i]     = Btn;
         GroupButtonTexts[i] = BtnTxt;
     }
+
+    GroupButtons[0]->OnClicked.AddDynamic(this, &USpellGroupWidget::OnGroup0Clicked);
+    GroupButtons[1]->OnClicked.AddDynamic(this, &USpellGroupWidget::OnGroup1Clicked);
+    GroupButtons[2]->OnClicked.AddDynamic(this, &USpellGroupWidget::OnGroup2Clicked);
+    GroupButtons[3]->OnClicked.AddDynamic(this, &USpellGroupWidget::OnGroup3Clicked);
+    GroupButtons[4]->OnClicked.AddDynamic(this, &USpellGroupWidget::OnGroup4Clicked);
 
     RefreshButtonHighlight();
 }

@@ -33,7 +33,14 @@ void UPlayerHUDWidget::Pin(UWidget* W, FVector2D Pos, FVector2D Size,
 // Anchor bottom-left shorthand (all survival / level elements)
 static void PinBL(UWidget* W, FVector2D Pos, FVector2D Size)
 {
-    UPlayerHUDWidget::Pin(W, Pos, Size, FAnchors(0.f, 1.f, 0.f, 1.f));
+    if (!W) return;
+    if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(W->Slot))
+    {
+        S->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+        S->SetPosition(Pos);
+        S->SetSize(Size);
+        S->SetAlignment(FVector2D::ZeroVector);
+    }
 }
 
 // ── Colour tables (match Godot Main.cs) ───────────────────────────────────
@@ -248,18 +255,18 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         float X = StartX + i * (SlotW + Gap);
 
         // 外框
-        UBorder* Slot = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Slot->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
-        Slot->SetPadding(FMargin(0.f));
-        Root->AddChild(Slot);
-        PinBL(Slot, { X, StartY }, { SlotW, SlotH });
-        ItemSlotBorders.Add(Slot);
+        UBorder* HotbarBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+        HotbarBorder->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+        HotbarBorder->SetPadding(FMargin(0.f));
+        Root->AddChild(HotbarBorder);
+        PinBL(HotbarBorder, { X, StartY }, { SlotW, SlotH });
+        ItemSlotBorders.Add(HotbarBorder);
 
         // 物品色塊圖示（左上）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Icon->SetBrushColor(FLinearColor(0.18f, 0.18f, 0.22f));
         Icon->SetPadding(FMargin(0.f));
-        Slot->AddChild(Icon);
+        HotbarBorder->AddChild(Icon);
         if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
             IS->SetOffsets(FMargin(6.f, 6.f, 36.f, 28.f));
         ItemIconBorders.Add(Icon);
@@ -271,7 +278,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         }
         Cnt->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
         Cnt->SetJustification(ETextJustify::Right);
-        Slot->AddChild(Cnt);
+        HotbarBorder->AddChild(Cnt);
         if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(Cnt->Slot))
             CS->SetOffsets(FMargin(28.f, 34.f, 18.f, 12.f));
         ItemCountLabels.Add(Cnt);
@@ -283,7 +290,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         }
         Key->SetText(FText::FromString(i == 9 ? TEXT("0") : FString::Printf(TEXT("%d"), i + 1)));
         Key->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.60f)));
-        Slot->AddChild(Key);
+        HotbarBorder->AddChild(Key);
         if (UCanvasPanelSlot* KS = Cast<UCanvasPanelSlot>(Key->Slot))
             KS->SetOffsets(FMargin(3.f, 2.f, 14.f, 12.f));
         ItemKeyLabels.Add(Key);

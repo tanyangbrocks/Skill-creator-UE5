@@ -64,12 +64,6 @@ void UEquipmentWidget::NativeConstruct()
         TS->SetOffsets(FMargin(PadX, PadY, PanelW - PadX * 2.f, TitleH));
 
     static const TCHAR* TypeNames[] = { TEXT("武器"), TEXT("防具"), TEXT("飾品") };
-    static void (UEquipmentWidget::*Handlers[3])() = {
-        &UEquipmentWidget::OnSlot0Clicked,
-        &UEquipmentWidget::OnSlot1Clicked,
-        &UEquipmentWidget::OnSlot2Clicked,
-    };
-
     for (int32 i = 0; i < 3; ++i)
     {
         float RowY = PadY + TitleH + i * RowH;
@@ -89,7 +83,9 @@ void UEquipmentWidget::NativeConstruct()
 
         // 裝備圖示槽（可點擊以卸下）
         UButton* SlotBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-        SlotBtn->OnClicked.AddDynamic(this, Handlers[i]);
+        if      (i == 0) SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot0Clicked);
+        else if (i == 1) SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot1Clicked);
+        else             SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot2Clicked);
         Panel->AddChild(SlotBtn);
         if (UCanvasPanelSlot* BS = Cast<UCanvasPanelSlot>(SlotBtn->Slot))
             BS->SetOffsets(FMargin(PadX + TypeW + MidGap, RowY, IconS, IconS));

@@ -146,7 +146,7 @@ void ASkillCreatorHUD::BeginPlay()
             {
                 ASkillCreatorCharacter* Char = GetOwningPlayerController()
                     ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
-                if (Char && Char->InventoryComp && Char->EquipComp)
+                if (Char && Char->InventoryComp && Char->EquipmentComp)
                 {
                     Char->EquipmentComp->TryEquip(Char->InventoryComp, Idx);
                     InventoryPanel->Refresh(Char->InventoryComp);
@@ -164,7 +164,7 @@ void ASkillCreatorHUD::BeginPlay()
             {
                 ASkillCreatorCharacter* Char = GetOwningPlayerController()
                     ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
-                if (Char && Char->EquipComp && Char->InventoryComp)
+                if (Char && Char->EquipmentComp && Char->InventoryComp)
                 {
                     Char->EquipmentComp->TryUnequip(Char->InventoryComp, Slot);
                     EquipmentPanel->Refresh(Char->EquipmentComp);

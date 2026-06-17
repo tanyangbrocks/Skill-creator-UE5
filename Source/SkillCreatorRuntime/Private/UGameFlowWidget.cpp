@@ -2,6 +2,7 @@
 #include "FlowSaveSystem.h"
 #include "WorldSaveData.h"
 #include "UGameSessionSubsystem.h"
+#include "ASkillCreatorGameMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/VerticalBox.h"
@@ -138,10 +139,19 @@ void UGameFlowWidget::OnWorldListRefreshed_Implementation(const TArray<FWorldSav
 
 void UGameFlowWidget::OnEnterGame_Implementation(const FWorldSaveInfo& SelectedWorld)
 {
-    // 預設：更新狀態文字。Blueprint 子類可 override 以執行 OpenLevel。
     if (StatusText)
         StatusText->SetText(FText::FromString(
             FString::Printf(TEXT("進入世界：%s ..."), *SelectedWorld.Name)));
+
+    // 單一地圖（MainMap）兼當選單與遊戲關卡，不需要 OpenLevel 換關卡；
+    // EnterWorld() 已經把選好的 FWorldSaveData 寫進 UGameSessionSubsystem，這裡直接讀出來交給 GameMode。
+    UGameInstance* GI = UGameplayStatics::GetGameInstance(this);
+    UGameSessionSubsystem* Sub = GI ? GI->GetSubsystem<UGameSessionSubsystem>() : nullptr;
+    if (Sub && Sub->HasPendingWorld())
+    {
+        if (ASkillCreatorGameMode* GM = Cast<ASkillCreatorGameMode>(UGameplayStatics::GetGameMode(this)))
+            GM->StartGameplayWithWorld(Sub->GetPendingWorld());
+    }
 }
 
 // ── 按鈕回呼 ─────────────────────────────────────────────────────────────

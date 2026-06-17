@@ -83,12 +83,6 @@ void UShapeMenuWidget::NativeConstruct()
         EPlacementShape::Flat,
     };
 
-    static void (UShapeMenuWidget::*Handlers[ShapeCount])() = {
-        &UShapeMenuWidget::OnShape0Clicked, &UShapeMenuWidget::OnShape1Clicked,
-        &UShapeMenuWidget::OnShape2Clicked, &UShapeMenuWidget::OnShape3Clicked,
-        &UShapeMenuWidget::OnShape4Clicked,
-    };
-
     UGridPanel* Grid = WidgetTree->ConstructWidget<UGridPanel>(UGridPanel::StaticClass());
     if (UVerticalBoxSlot* VS = VBox->AddChildToVerticalBox(Grid))
         VS->SetHorizontalAlignment(HAlign_Fill);
@@ -96,7 +90,6 @@ void UShapeMenuWidget::NativeConstruct()
     for (int32 i = 0; i < ShapeCount; ++i)
     {
         UButton* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-        Btn->OnClicked.AddDynamic(this, Handlers[i]);
 
         UTextBlock* BtnTxt = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
         BtnTxt->SetText(FText::FromString(ShapeName(Shapes[i])));
@@ -117,6 +110,12 @@ void UShapeMenuWidget::NativeConstruct()
         ShapeButtons[i]     = Btn;
         ShapeButtonTexts[i] = BtnTxt;
     }
+
+    ShapeButtons[0]->OnClicked.AddDynamic(this, &UShapeMenuWidget::OnShape0Clicked);
+    ShapeButtons[1]->OnClicked.AddDynamic(this, &UShapeMenuWidget::OnShape1Clicked);
+    ShapeButtons[2]->OnClicked.AddDynamic(this, &UShapeMenuWidget::OnShape2Clicked);
+    ShapeButtons[3]->OnClicked.AddDynamic(this, &UShapeMenuWidget::OnShape3Clicked);
+    ShapeButtons[4]->OnClicked.AddDynamic(this, &UShapeMenuWidget::OnShape4Clicked);
 
     // 目前形狀顯示
     CurrentShapeLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());

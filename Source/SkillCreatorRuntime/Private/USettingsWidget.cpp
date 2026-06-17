@@ -70,7 +70,6 @@ void USettingsWidget::NativeConstruct()
     PinToCenter(Panel, FVector2D(160.f, 120.f));
 
     UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-    VBox->AddThemeOverride(TEXT("Separation"), 14);
     Panel->AddChild(VBox);
 
     // 標題
@@ -85,11 +84,6 @@ void USettingsWidget::NativeConstruct()
         VS->SetHorizontalAlignment(HAlign_Fill);
 
     HoldCheck = WidgetTree->ConstructWidget<UCheckBox>(UCheckBox::StaticClass(), TEXT("HoldCheck"));
-    {
-        FSlateFontInfo F = HoldCheck->WidgetStyle.UncheckedImage.GetResourceName() == NAME_None
-            ? FSlateFontInfo() : FSlateFontInfo();
-        (void)F;
-    }
     HoldCheck->OnCheckStateChanged.AddDynamic(this, &USettingsWidget::OnHoldToggled);
     HoldRow->AddChildToHorizontalBox(HoldCheck);
 
