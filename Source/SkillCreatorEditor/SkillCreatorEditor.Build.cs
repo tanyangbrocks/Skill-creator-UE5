@@ -8,7 +8,7 @@ public class SkillCreatorEditor : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "UnrealEd",
             "Slate", "SlateCore", "GraphEditor",
-            "SkillCreatorCore", "SkillCreatorRuntime"
+            "SkillCreatorCore", "SkillCreatorRuntime", "SkillCreatorUI"
         });
     }
 }
