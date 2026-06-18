@@ -4,6 +4,7 @@
 #include "MaterialRegistry.h"
 #include "ItemDrop.h"
 #include "WorldScale.h"
+#include "AVoxelWorldActor.h"
 #include "Engine/World.h"
 
 ADroppedItemActor* UDroppedItemManager::SpawnDrop(EItemId ItemId, int32 Count, FGridPos WorldPos)
@@ -11,12 +12,10 @@ ADroppedItemActor* UDroppedItemManager::SpawnDrop(EItemId ItemId, int32 Count, F
     UWorld* W = GetWorld();
     if (!W || ItemId == EItemId::None || Count <= 0) return nullptr;
 
-    constexpr float TileSize = WorldScale::TileSizeCm;
-    const FVector Location(
-        WorldPos.X * TileSize,
-        WorldPos.Z * TileSize,
-        -WorldPos.Y * TileSize + TileSize * 0.5f
-    );
+    int32 WorldH = WorldScale::DefaultWorldHeight;
+    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(W))
+        WorldH = VW->WorldHeight;
+    const FVector Location = WorldScale::TileToWorld(WorldPos, WorldH);
 
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;

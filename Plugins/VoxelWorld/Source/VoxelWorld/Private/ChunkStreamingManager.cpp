@@ -59,4 +59,15 @@ void FChunkStreamingManager::SaveAndEvict(FTileWorld3D& World,
     // reloaded from disk next time they enter the streaming radius.
     for (const FIntVector& CC : Evicted)
         DiskAttempted.Remove(CC);
+
+    // 清除 DiskAttempted 中超出 KeepRadius 的殭屍條目
+    // （非同步生成從未完成的 chunk 永遠不在 Active，EvictFarChunks 不會處理它們）
+    TArray<FIntVector> Stale;
+    for (const FIntVector& CC : DiskAttempted)
+        if (FMath::Abs(CC.X - CX) > KeepRadius ||
+            FMath::Abs(CC.Y - CY) > KeepRadius ||
+            FMath::Abs(CC.Z - CZ) > KeepRadius)
+            Stale.Add(CC);
+    for (const FIntVector& CC : Stale)
+        DiskAttempted.Remove(CC);
 }

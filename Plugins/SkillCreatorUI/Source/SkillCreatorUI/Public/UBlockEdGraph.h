@@ -25,7 +25,9 @@ public:
 
 private:
     // Recursively convert one graph node and its connected children.
-    TUniquePtr<FBlockNode> NodeToBlock(UBlockEdGraphNode* GraphNode) const;
+    // Visited set prevents infinite recursion on cycles (schema should block them, but be safe).
+    TUniquePtr<FBlockNode> NodeToBlock(UBlockEdGraphNode* GraphNode,
+                                        TSet<UBlockEdGraphNode*>& Visited) const;
 
     // Recursively place block list, returning the next available Y position.
     float PlaceBlockList(const TArray<TUniquePtr<FBlockNode>>& Blocks,

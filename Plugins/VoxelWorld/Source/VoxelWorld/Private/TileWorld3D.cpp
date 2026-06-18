@@ -280,6 +280,11 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
         }
     }
 
+    // 套用 CA 元素反應（延遲寫入，避免 sweep 中途修改鄰格）
+    for (const FCaReactionWrite& W : CaReactionQueue)
+        SetTile(W.X, W.Y, W.Z, W.Mat);
+    CaReactionQueue.Empty();
+
     // 跨 chunk 髒通知延遲刷新
     FlushNeighborDirty();
 }
@@ -431,8 +436,8 @@ void FTileWorld3D::UpdateStatic(int32 x, int32 y, int32 z)
     WriteCell(x, y, z, Cell);
     TryIgniteAround(x, y, z, 0.05f);
 
-    // 在上方空氣格生成火焰
-    if (GetCell(x, y-1, z).MaterialID == 0)
+    // 在上方空氣格生成火焰（Y=0 是頂層天空，y-1 會越界）
+    if (y > 0 && GetCell(x, y-1, z).MaterialID == 0)
         SetFire(x, y-1, z);
 }
 
@@ -491,7 +496,7 @@ void FTileWorld3D::Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Cha
         if (GetTile(wx, wy, wz) != EMaterialType::Air)
         {
             DestroyTile(wx, wy, wz, EDestroyReason::Explosion);
-            if (Rng.FRand() < 0.3f)
+            if (Rng.FRand() < 0.3f && wy > 0)
                 SetFire(wx, wy-1, wz);
         }
     }
@@ -591,8 +596,8 @@ void FTileWorld3D::CheckElementalCaReactions(int32 x, int32 y, int32 z)
             NMat == EMaterialType::Dirt &&
             Rng.GetFraction() < 0.005f)
         {
-            SetTile(nx, ny, nz, EMaterialType::Sand);
-            MarkUpdated(nx, ny, nz);
+            // 延遲寫入：在 CA sweep 結束後才套用，避免中途修改鄰格（CA 一致性）
+            CaReactionQueue.Add({nx, ny, nz, EMaterialType::Sand});
         }
 
         // Lava + Water（NativeElement）鄰格 → Stone + Steam（快速 3%）
@@ -600,10 +605,9 @@ void FTileWorld3D::CheckElementalCaReactions(int32 x, int32 y, int32 z)
             NData.NativeElement == ESkillElementType::Water &&
             Rng.GetFraction() < 0.03f)
         {
-            SetTile(x,  y,  z,  EMaterialType::Stone);
-            SetTile(nx, ny, nz, EMaterialType::Steam);
-            MarkUpdated(nx, ny, nz);
-            return;  // 當前格已從 Lava 變 Stone，不需再繼續掃鄰格
+            CaReactionQueue.Add({x,  y,  z,  EMaterialType::Stone});
+            CaReactionQueue.Add({nx, ny, nz, EMaterialType::Steam});
+            return;
         }
     }
 }

@@ -80,6 +80,8 @@ bool UNPCBrainSubsystem::PollServerTick(float /*DeltaTime*/)
 	Req->SetTimeout(1.0f);
 
 	// BindWeakLambda: lambda won't fire if this UObject is GC'd
+	// 不在 lambda 中直接移除 TickerHandle（可能此時 Deinitialize 已 Reset），
+	// 改為只設 bServerReady，下一個 PollServerTick 偵測後自行 return false 移除
 	Req->OnProcessRequestComplete().BindWeakLambda(this,
 		[this](FHttpRequestPtr, FHttpResponsePtr Resp, bool bOK)
 		{
@@ -87,8 +89,6 @@ bool UNPCBrainSubsystem::PollServerTick(float /*DeltaTime*/)
 			if (bOK && Resp && Resp->GetResponseCode() == 200)
 			{
 				bServerReady = true;
-				FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
-				TickerHandle.Reset();
 				UE_LOG(LogTemp, Log, TEXT("NPCBrain: Server ready — LLM inference available"));
 				OnServerReady.Broadcast();
 			}

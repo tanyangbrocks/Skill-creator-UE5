@@ -24,15 +24,19 @@ TArray<TUniquePtr<FBlockNode>> UBlockEdGraph::ToBlockNodes() const
 
     TArray<TUniquePtr<FBlockNode>> Result;
     Result.Reserve(RootNodes.Num());
+    TSet<UBlockEdGraphNode*> Visited;
     for (UBlockEdGraphNode* Root : RootNodes)
-        if (TUniquePtr<FBlockNode> B = NodeToBlock(Root))
+        if (TUniquePtr<FBlockNode> B = NodeToBlock(Root, Visited))
             Result.Add(MoveTemp(B));
     return Result;
 }
 
-TUniquePtr<FBlockNode> UBlockEdGraph::NodeToBlock(UBlockEdGraphNode* GN) const
+TUniquePtr<FBlockNode> UBlockEdGraph::NodeToBlock(UBlockEdGraphNode* GN,
+                                                    TSet<UBlockEdGraphNode*>& Visited) const
 {
     if (!GN) return nullptr;
+    if (Visited.Contains(GN)) return nullptr;  // 循環保護
+    Visited.Add(GN);
 
     auto Block = MakeUnique<FBlockNode>();
     Block->Type   = GN->BlockType;
@@ -52,7 +56,7 @@ TUniquePtr<FBlockNode> UBlockEdGraph::NodeToBlock(UBlockEdGraphNode* GN) const
             return A.NodePosY < B.NodePosY;
         });
         for (UBlockEdGraphNode* Child : Children)
-            if (TUniquePtr<FBlockNode> CB = NodeToBlock(Child))
+            if (TUniquePtr<FBlockNode> CB = NodeToBlock(Child, Visited))
                 OutBranch.Add(MoveTemp(CB));
     };
 

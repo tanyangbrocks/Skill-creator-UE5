@@ -92,10 +92,13 @@ public:
 private:
     FCaGpuSimulator             GpuSim;
 
+    struct FCaReactionWrite { int32 X, Y, Z; EMaterialType Mat; };
+
     TMap<FIntVector, FChunk3D*> Chunks;
     TSet<FIntVector>                        DirtyChunks;
     TSet<FIntVector>                        PendingNeighborDirty;
     TSet<FIntVector>                        OccupiedCells;
+    TArray<FCaReactionWrite>                CaReactionQueue;
     FRandomStream                            Rng;
     int32                                   Frame = 0;
 

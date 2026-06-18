@@ -46,6 +46,9 @@ void FSpellRunner::Tick(float DeltaTime)
 void FSpellRunner::Advance(FActiveEntry& Entry, float DeltaTime)
 {
     FExecutionContext& Ctx = *Entry.Ctx;
+    // 在 ActiveContexts.Add() 可能重新分配陣列之前先快照 ComboDepth
+    // 以免 Entry 引用在 Add() 後懸空，後續迭代存取 Entry.ComboDepth 是 UB
+    const int32 ComboDepth = Entry.ComboDepth;
     float StepDelta = DeltaTime;
 
     for (int32 Safety = 0; !Ctx.IsFinished() && Safety < FSafetyGuard::MaxStepsPerCast; ++Safety)
@@ -73,14 +76,14 @@ void FSpellRunner::Advance(FActiveEntry& Entry, float DeltaTime)
         {
             FName NextSpell = Ctx.PendingInvokeSpell;
             Ctx.PendingInvokeSpell = NAME_None;
-            if (OnBuildComboContext && Entry.ComboDepth < FSafetyGuard::MaxComboDepth)
+            if (OnBuildComboContext && ComboDepth < FSafetyGuard::MaxComboDepth)
             {
                 auto ComboCtx = OnBuildComboContext(NextSpell);
                 if (ComboCtx)
                 {
                     FActiveEntry ComboEntry;
                     ComboEntry.Ctx        = MoveTemp(ComboCtx);
-                    ComboEntry.ComboDepth = Entry.ComboDepth + 1;
+                    ComboEntry.ComboDepth = ComboDepth + 1;
                     ActiveContexts.Add(MoveTemp(ComboEntry));
                 }
             }

@@ -210,7 +210,7 @@ bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
         ++ExecutionsThisTick;
 
         if (Ctx.IsFinished())                             break;
-        if (Ctx.State == EExecutionState::Waiting)        break;
+        if (Ctx.State != EExecutionState::Running)        break;
         if (!Ctx.PendingInvokeSpell.IsNone() ||
             !Ctx.PendingInvokeTotem.IsNone() ||
             Ctx.PendingEntityDamageId >= 0   ||
@@ -721,7 +721,7 @@ void FExecutionLoop::Execute(const FInstruction& Instr, FExecutionContext& Ctx)
         {
             const FTaskCounterArgs* A = Instr.Payload.GetPtr<FTaskCounterArgs>();
             if (!A) { ++Ctx.PC; break; }
-            float Threshold = A->Value.Val;
+            float Threshold = ResolveNum(A->Value, Ctx);
             FName ReachedKey = FName(*(A->CounterName.ToString() +
                 TEXT("_") + FString::SanitizeFloat(Threshold)));
             float Cur = 0.f;

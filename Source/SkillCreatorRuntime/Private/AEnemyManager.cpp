@@ -55,7 +55,7 @@ void AEnemyManager::Tick(float DeltaTime)
                 bool bDynamic = (E->Category == ESpawnCategory::Common || E->Category == ESpawnCategory::Area);
                 if (bDynamic)
                 {
-                    DynamicActiveCount--;
+                    DynamicActiveCount = FMath::Max(0, DynamicActiveCount - 1);
                     E->Destroy();
                     Enemies.RemoveAt(i);
                 }
