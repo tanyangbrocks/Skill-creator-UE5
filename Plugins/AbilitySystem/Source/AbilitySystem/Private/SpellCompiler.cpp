@@ -261,15 +261,7 @@ void FSpellCompiler::EmitBlock(const FBlockNode& Block,
         case EBlockType::Totem:
         {
             FInvokeTotemArgs A;
-            if (!ReadArgs(Block, A))
-            {
-                // 從 Block.Params["totemId"] 取 FName，查 Tsm 取 SlotRef
-                const FInstancedStruct* IdIS = Block.Params.Find(TEXT("totemId"));
-                if (!IdIS) break;
-                if (const FName* TotemId = IdIS->GetPtr<FName>())
-                    if (const FName* SR = Tsm.Find(*TotemId))
-                        A.SlotRef = *SR;
-            }
+            ReadArgs(Block, A);
             if (!A.SlotRef.IsNone())
                 Code.Add(MakeI(EOpCode::InvokeTotem, A));
             break;

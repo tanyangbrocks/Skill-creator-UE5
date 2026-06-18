@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Containers/Ticker.h"
 #include "NPCBrainTypes.h"
 #include "LlamaServerProcess.h"
 #include "LlamaInferenceClient.h"
@@ -42,7 +43,7 @@ private:
 
 	bool           bServerReady     = false;
 	double         ReadyPollEndTime = 0.0;
-	FDelegateHandle TickerHandle;
+	FTSTicker::FDelegateHandle TickerHandle;
 
 	bool PollServerTick(float DeltaTime);
 };

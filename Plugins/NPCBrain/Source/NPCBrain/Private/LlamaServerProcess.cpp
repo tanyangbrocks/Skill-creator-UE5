@@ -70,5 +70,6 @@ void FLlamaServerProcess::Shutdown()
 
 bool FLlamaServerProcess::IsRunning() const
 {
-	return ProcessHandle.IsValid() && FPlatformProcess::IsProcRunning(ProcessHandle);
+	FProcHandle Handle = ProcessHandle;
+	return Handle.IsValid() && FPlatformProcess::IsProcRunning(Handle);
 }
