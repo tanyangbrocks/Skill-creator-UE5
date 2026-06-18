@@ -260,14 +260,15 @@ void FSpellCompiler::EmitBlock(const FBlockNode& Block,
         // ── 圖騰積木（查 Tsm 轉 SlotRef）─────────────────────────
         case EBlockType::Totem:
         {
-            // Block.Params["args"].SlotRef or look up via totemId from Tsm
             FInvokeTotemArgs A;
             if (!ReadArgs(Block, A))
             {
-                // 從 Block.Params["totemId"] + Tsm 推導 SlotRef
-                const FInstancedStruct* IdIS = Block.Params.Find("totemId");
-                // 若找不到直接跳過
+                // 從 Block.Params["totemId"] 取 FName，查 Tsm 取 SlotRef
+                const FInstancedStruct* IdIS = Block.Params.Find(TEXT("totemId"));
                 if (!IdIS) break;
+                if (const FName* TotemId = IdIS->GetPtr<FName>())
+                    if (const FName* SR = Tsm.Find(*TotemId))
+                        A.SlotRef = *SR;
             }
             if (!A.SlotRef.IsNone())
                 Code.Add(MakeI(EOpCode::InvokeTotem, A));

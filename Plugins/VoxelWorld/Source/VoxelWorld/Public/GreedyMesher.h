@@ -14,7 +14,7 @@ public:
     // MegaChunkCoord in mega-chunk space.
     // World tile range = [Coord * 64, (Coord+1) * 64) per axis.
     // Returns a FRealtimeMeshStreamSet with Position / Tangents / TexCoords /
-    // Color (R=MaterialID) / Triangles / PolyGroups(all 0) streams.
+    // Color (R=MaterialID) / Triangles / PolyGroups(每面 = MaterialID) streams.
     // Empty StreamSet if the whole region is air.
     static RealtimeMesh::FRealtimeMeshStreamSet Build(
         const FTileWorld3D& World,

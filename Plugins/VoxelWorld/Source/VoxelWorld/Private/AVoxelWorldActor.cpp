@@ -142,7 +142,9 @@ void AVoxelWorldActor::Tick(float DeltaTime)
 
     // ── M-7: stream (disk-load or generate) + CA sim ──────────
     Streaming.Tick(TileWorld, PCX, PCY, PCZ, /*StreamRadius=*/2, /*CARadius=*/2);
-    Streaming.SaveAndEvict(TileWorld, PCX, PCY, PCZ, /*KeepRadius=*/4);
+    // 每 128 幀執行一次（每幀跑 EvictFarChunks O(N) 太浪費；128 幀≈2s@60fps）
+    if ((GFrameCounter & 0x7F) == 0)
+        Streaming.SaveAndEvict(TileWorld, PCX, PCY, PCZ, /*KeepRadius=*/4);
 
     // ── M-6: rebuild dirty mega-chunks ─────────────────────────
     if (!RMCMesh) return;

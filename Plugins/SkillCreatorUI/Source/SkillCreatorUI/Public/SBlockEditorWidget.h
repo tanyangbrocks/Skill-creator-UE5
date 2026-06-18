@@ -5,6 +5,7 @@
 
 class UBlockEdGraph;
 class SGraphEditor;
+class SBox;
 
 // Slate widget hosting the SGraphEditor for the spell block system.
 // Usage:
@@ -34,9 +35,11 @@ public:
 private:
     TStrongObjectPtr<UBlockEdGraph> Graph;
     TSharedPtr<SGraphEditor> GraphEditor;
+    TSharedPtr<SBox>         GraphEditorContainer;
 
     void HandleGraphChanged(const struct FEdGraphEditAction&);
     void BindGraphChangedHandler();
+    void RebuildGraphEditor();
 
     FDelegateHandle GraphChangedHandle;
 };

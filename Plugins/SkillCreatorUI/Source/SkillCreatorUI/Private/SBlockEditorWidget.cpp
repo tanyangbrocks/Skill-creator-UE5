@@ -4,8 +4,8 @@
 #include "GraphEditor.h"
 #include "EdGraph/EdGraph.h"
 #include "Widgets/Layout/SBorder.h"
-#include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Text/STextBlock.h"
 
 void SBlockEditorWidget::HandleGraphChanged(const FEdGraphEditAction&)
 {
@@ -49,12 +49,15 @@ void SBlockEditorWidget::Construct(const FArguments& InArgs)
             + SVerticalBox::Slot()
             .FillHeight(1.f)
             [
-                SAssignNew(GraphEditor, SGraphEditor)
-                .AdditionalCommands(TSharedPtr<FUICommandList>())
-                .GraphToEdit(Graph.Get())
-                .GraphEvents(GraphEvents)
-                .IsEditable(true)
-                .ShowGraphStateOverlay(false)
+                SAssignNew(GraphEditorContainer, SBox)
+                [
+                    SAssignNew(GraphEditor, SGraphEditor)
+                    .AdditionalCommands(TSharedPtr<FUICommandList>())
+                    .GraphToEdit(Graph.Get())
+                    .GraphEvents(GraphEvents)
+                    .IsEditable(true)
+                    .ShowGraphStateOverlay(false)
+                ]
             ]
         ]
     ];
@@ -66,6 +69,21 @@ TArray<TUniquePtr<FBlockNode>> SBlockEditorWidget::GetBlockNodes() const
     return Graph->ToBlockNodes();
 }
 
+void SBlockEditorWidget::RebuildGraphEditor()
+{
+    if (!GraphEditorContainer.IsValid()) return;
+    SGraphEditor::FGraphEditorEvents GraphEvents;
+    TSharedRef<SGraphEditor> NewEditor =
+        SNew(SGraphEditor)
+        .AdditionalCommands(TSharedPtr<FUICommandList>())
+        .GraphToEdit(Graph.Get())
+        .GraphEvents(GraphEvents)
+        .IsEditable(true)
+        .ShowGraphStateOverlay(false);
+    GraphEditor = NewEditor;
+    GraphEditorContainer->SetContent(NewEditor);
+}
+
 void SBlockEditorWidget::SwitchEditorGroup(int32 /*GroupIndex*/, UBlockEdGraph* NewGraph)
 {
     Graph = TStrongObjectPtr<UBlockEdGraph>(NewGraph);
@@ -73,10 +91,6 @@ void SBlockEditorWidget::SwitchEditorGroup(int32 /*GroupIndex*/, UBlockEdGraph* 
         Graph->Schema = UBlockEdGraphSchema::StaticClass();
 
     BindGraphChangedHandler();
-
-    if (GraphEditor.IsValid())
-        GraphEditor->SetViewLocation(FVector2f::ZeroVector, 1.f);
-
-    // SGraphEditor 不支援 SetGraph()；持有者收到 OnChanged 後決定是否重建 widget。
+    RebuildGraphEditor();
     OnChanged.Broadcast();
 }
