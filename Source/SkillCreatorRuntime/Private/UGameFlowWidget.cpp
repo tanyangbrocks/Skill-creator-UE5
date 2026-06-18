@@ -5,6 +5,9 @@
 #include "ASkillCreatorGameMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/SizeBox.h"
+#include "Components/Border.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBox.h"
@@ -29,8 +32,26 @@ static FWorldSaveInfo ToInfo(const FWorldSaveData& D)
 
 void UGameFlowWidget::BuildLayout()
 {
+    // 根節點需要明確、非零的 desired size，否則 VerticalBox 裡的 Fill-size
+    // 子項（ScrollBox）無「可填滿的空間」可參照，整個選單可能變成不可見、不可
+    // 點擊。原本用 CanvasPanel + 100% stretch anchors 包一層，懷疑是 CanvasPanel
+    // 唯一子項為 stretch anchor 時其 desired size 算成 0x0、進而拖累整條鏈，
+    // 但因背景測試視窗的 Slate 量測本身不可靠，未能 100% 釐清根因。改用 SizeBox
+    // + 顯式 WidthOverride/HeightOverride：desired size 直接等於覆寫值，沒有
+    // 任何依賴子項或 anchor 解析的模糊空間，是更穩妥的寫法。
+    const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(this);
+
+    USizeBox* RootSize = WidgetTree->ConstructWidget<USizeBox>();
+    RootSize->SetWidthOverride(ViewportSize.X);
+    RootSize->SetHeightOverride(ViewportSize.Y);
+    WidgetTree->RootWidget = RootSize;
+
+    UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
+    Background->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.65f));
+    RootSize->SetContent(Background);
+
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
-    WidgetTree->RootWidget = Root;
+    Background->SetContent(Root);
 
     // 標題
     UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>();

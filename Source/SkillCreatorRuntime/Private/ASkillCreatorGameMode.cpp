@@ -27,11 +27,13 @@ void ASkillCreatorGameMode::BeginPlay()
     if (Session && Session->HasPendingWorld())
     {
         // 已經透過 UGameFlowWidget 選好世界（玩家死亡重生 / PIE 重跑等情況也會在這裡直接開局）
+        UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: pending world found, starting gameplay directly"));
         StartGameplayWithWorld(Session->GetPendingWorld());
         return;
     }
 
     // 還沒選世界：顯示 UGameFlowWidget，暫停一般 gameplay，等玩家選/建世界
+    UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: no pending world — showing GameFlowWidget"));
     APlayerController* PC = GetWorld()->GetFirstPlayerController();
     if (PC)
     {
@@ -39,12 +41,24 @@ void ASkillCreatorGameMode::BeginPlay()
         if (GameFlowWidget)
         {
             GameFlowWidget->AddToViewport(100);
+            // 確保 viewport slot 真的撐滿整個畫面（不依賴 AddToViewport 的隱含預設行為）。
+            GameFlowWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+            GameFlowWidget->SetAlignmentInViewport(FVector2D(0.f, 0.f));
             FInputModeUIOnly InputMode;
             InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
             PC->SetInputMode(InputMode);
             PC->SetShowMouseCursor(true);
             PC->SetPause(true);
+            UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: GameFlowWidget created, added to viewport, game paused"));
         }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("SkillCreatorGameMode: CreateWidget<UGameFlowWidget> FAILED"));
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("SkillCreatorGameMode: GetFirstPlayerController() returned null, cannot show GameFlowWidget"));
     }
 }
 
