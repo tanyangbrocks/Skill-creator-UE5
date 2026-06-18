@@ -290,6 +290,8 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
 
 bool FTileWorld3D::TryMove(int32 fx, int32 fy, int32 fz, int32 tx, int32 ty, int32 tz)
 {
+    // 垂直軸永遠需要邊界保護（Width=0 無限世界時跳過水平 InBounds，但 Y 仍有上限）
+    if (ty < 0 || (Height > 0 && ty >= Height)) return false;
     if (Width > 0 && !InBounds(tx, ty, tz)) return false;
 
     // CA 不主動建立新 chunk（目標 chunk 不存在 = 牆壁）

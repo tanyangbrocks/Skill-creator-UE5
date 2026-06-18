@@ -48,7 +48,7 @@ void FSpellRunner::Advance(FActiveEntry& Entry, float DeltaTime)
     FExecutionContext& Ctx = *Entry.Ctx;
     float StepDelta = DeltaTime;
 
-    for (int32 Safety = 0; !Ctx.IsFinished() && Safety < FExecutionLoop::MaxStepsPerCast; ++Safety)
+    for (int32 Safety = 0; !Ctx.IsFinished() && Safety < FSafetyGuard::MaxStepsPerCast; ++Safety)
     {
         Loop->Step(Ctx, StepDelta);
         StepDelta = 0.f;

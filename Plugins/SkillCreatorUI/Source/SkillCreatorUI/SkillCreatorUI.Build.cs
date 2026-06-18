@@ -6,10 +6,13 @@ public class SkillCreatorUI : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] {
-            "Core", "CoreUObject", "Engine", "UnrealEd",
+            "Core", "CoreUObject", "Engine",
             "Slate", "SlateCore", "GraphEditor", "EditorStyle",
             "StructUtils", "ToolMenus",
             "SkillCreatorCore", "AbilitySystem"
+        });
+        PrivateDependencyModuleNames.AddRange(new string[] {
+            "UnrealEd"
         });
     }
 }

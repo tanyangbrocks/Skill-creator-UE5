@@ -1,6 +1,8 @@
 #include "AEnemyManager.h"
 #include "UCombatStateSubsystem.h"
 #include "UDroppedItemManager.h"
+#include "AVoxelWorldActor.h"
+#include "WorldScale.h"
 #include "Kismet/GameplayStatics.h"
 
 AEnemyManager::AEnemyManager()
@@ -10,7 +12,10 @@ AEnemyManager::AEnemyManager()
 
 AEnemy* AEnemyManager::Spawn(FGridPos Pos, EEnemyType Type, float MaxHp, ESpawnCategory Cat)
 {
-    FVector WorldLoc(Pos.X, Pos.Y, Pos.Z);
+    int32 WorldH = WorldScale::DefaultWorldHeight;
+    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
+        WorldH = VW->WorldHeight;
+    FVector WorldLoc = WorldScale::TileToWorld(Pos, WorldH);
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 

@@ -8,6 +8,8 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 
 // ── 顏色查詢（和 Godot GetItemIconColor 對應）──────────────────────────────
 
@@ -60,7 +62,7 @@ void UInventoryWidget::NativeConstruct()
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;
 
-    // 面板（螢幕中央偏左，靠近螢幕左側 1/4 處）
+    // 面板背景（UBorder 提供底色；其唯一子節點 Content 負責版面定位）
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InvPanel"));
     Panel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.10f, 0.92f));
     Panel->SetPadding(FMargin(0.f));
@@ -73,6 +75,10 @@ void UInventoryWidget::NativeConstruct()
         S->SetAlignment(FVector2D::ZeroVector);
     }
 
+    // UBorder 只能有一個子節點；內層 UCanvasPanel 承載所有可定位子元素
+    UCanvasPanel* Content = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("InvContent"));
+    Panel->AddChild(Content);
+
     // 標題
     UTextBlock* TitleLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     TitleLbl->SetText(FText::FromString(TEXT("物品欄  [I 關閉]")));
@@ -82,7 +88,7 @@ void UInventoryWidget::NativeConstruct()
         TitleLbl->SetFont(F);
     }
     TitleLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.80f, 0.80f, 0.95f)));
-    Panel->AddChild(TitleLbl);
+    Content->AddChild(TitleLbl);
     if (UCanvasPanelSlot* TS = Cast<UCanvasPanelSlot>(TitleLbl->Slot))
     {
         TS->SetPosition(FVector2D(PadX, PadY));
@@ -98,7 +104,7 @@ void UInventoryWidget::NativeConstruct()
         HotLbl->SetFont(F);
     }
     HotLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.60f, 0.75f, 0.60f)));
-    Panel->AddChild(HotLbl);
+    Content->AddChild(HotLbl);
     if (UCanvasPanelSlot* LS = Cast<UCanvasPanelSlot>(HotLbl->Slot))
         LS->SetPosition(FVector2D(PadX, PadY + 20.f));
 
@@ -111,7 +117,7 @@ void UInventoryWidget::NativeConstruct()
         BagLbl->SetFont(F);
     }
     BagLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.60f, 0.60f, 0.75f)));
-    Panel->AddChild(BagLbl);
+    Content->AddChild(BagLbl);
     if (UCanvasPanelSlot* LS = Cast<UCanvasPanelSlot>(BagLbl->Slot))
         LS->SetPosition(FVector2D(PadX, BagLblY));
 
@@ -130,20 +136,31 @@ void UInventoryWidget::NativeConstruct()
         float X = PadX + Col * (SlotW + GapX);
         float Y = RowY[Row];
 
+        // 格子背景（UBorder 提供底色，加入 Content 取得正確的 UCanvasPanelSlot）
         UBorder* SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         SlotBorder->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
         SlotBorder->SetPadding(FMargin(0.f));
-        Panel->AddChild(SlotBorder);
+        Content->AddChild(SlotBorder);
         if (UCanvasPanelSlot* SS = Cast<UCanvasPanelSlot>(SlotBorder->Slot))
             SS->SetOffsets(FMargin(X, Y, SlotW, SlotH));
 
+        // UBorder 只能有一個子節點；UOverlay 承載圖示 + 計數標籤兩層
+        UOverlay* SlotOvl = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass());
+        SlotBorder->AddChild(SlotOvl);
+
+        // 圖示（四周 5px 內縮填滿）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Icon->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
         Icon->SetPadding(FMargin(0.f));
-        SlotBorder->AddChild(Icon);
-        if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
-            IS->SetOffsets(FMargin(5.f, 5.f, 28.f, 28.f));
+        SlotOvl->AddChild(Icon);
+        if (UOverlaySlot* IS = Cast<UOverlaySlot>(Icon->Slot))
+        {
+            IS->SetPadding(FMargin(5.f));
+            IS->SetHorizontalAlignment(HAlign_Fill);
+            IS->SetVerticalAlignment(VAlign_Fill);
+        }
 
+        // 計數標籤（對齊右下角）
         UTextBlock* Cnt = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
         {
             FSlateFontInfo F = Cnt->GetFont();
@@ -152,9 +169,13 @@ void UInventoryWidget::NativeConstruct()
         }
         Cnt->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
         Cnt->SetJustification(ETextJustify::Right);
-        SlotBorder->AddChild(Cnt);
-        if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(Cnt->Slot))
-            CS->SetOffsets(FMargin(18.f, 26.f, 18.f, 12.f));
+        SlotOvl->AddChild(Cnt);
+        if (UOverlaySlot* CS = Cast<UOverlaySlot>(Cnt->Slot))
+        {
+            CS->SetPadding(FMargin(0.f, 0.f, 2.f, 1.f));
+            CS->SetHorizontalAlignment(HAlign_Right);
+            CS->SetVerticalAlignment(VAlign_Bottom);
+        }
 
         SlotBorders.Add(SlotBorder);
         IconBorders.Add(Icon);
@@ -271,7 +292,7 @@ void UInventoryWidget::RefreshSlot(int32 Idx)
     FLinearColor BorderCol = bActive
         ? FLinearColor(0.95f, 0.80f, 0.20f)
         : FLinearColor(0.30f, 0.30f, 0.40f);
-    SlotBorders[Idx]->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+    SlotBorders[Idx]->SetBrushColor(BorderCol);
 
     const FItemStack& Stack = CachedSlots[Idx];
     if (Stack.IsEmpty())

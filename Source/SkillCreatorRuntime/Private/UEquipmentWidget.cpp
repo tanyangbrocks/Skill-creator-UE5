@@ -8,6 +8,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/BorderSlot.h"
 
 FLinearColor UEquipmentWidget::GetItemColor(EItemId Id) const
 {
@@ -37,7 +38,7 @@ void UEquipmentWidget::NativeConstruct()
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;
 
-    // 面板（螢幕右上角）
+    // 面板背景（UBorder 提供底色；其唯一子節點 Content 負責版面定位）
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("EquipPanel"));
     Panel->SetBrushColor(FLinearColor(0.05f, 0.08f, 0.10f, 0.92f));
     Panel->SetPadding(FMargin(0.f));
@@ -50,6 +51,10 @@ void UEquipmentWidget::NativeConstruct()
         S->SetAlignment(FVector2D::ZeroVector);
     }
 
+    // UBorder 只能有一個子節點；內層 UCanvasPanel 承載所有可定位子元素
+    UCanvasPanel* Content = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("EquipContent"));
+    Panel->AddChild(Content);
+
     // 標題
     UTextBlock* TitleLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     TitleLbl->SetText(FText::FromString(TEXT("裝備欄  [X 關閉]")));
@@ -59,7 +64,7 @@ void UEquipmentWidget::NativeConstruct()
         TitleLbl->SetFont(F);
     }
     TitleLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.90f, 0.75f)));
-    Panel->AddChild(TitleLbl);
+    Content->AddChild(TitleLbl);
     if (UCanvasPanelSlot* TS = Cast<UCanvasPanelSlot>(TitleLbl->Slot))
         TS->SetOffsets(FMargin(PadX, PadY, PanelW - PadX * 2.f, TitleH));
 
@@ -77,7 +82,7 @@ void UEquipmentWidget::NativeConstruct()
             TypeLbl->SetFont(F);
         }
         TypeLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.60f, 0.70f, 0.65f)));
-        Panel->AddChild(TypeLbl);
+        Content->AddChild(TypeLbl);
         if (UCanvasPanelSlot* LS = Cast<UCanvasPanelSlot>(TypeLbl->Slot))
             LS->SetOffsets(FMargin(PadX, RowY + 11.f, TypeW, 16.f));
 
@@ -86,7 +91,7 @@ void UEquipmentWidget::NativeConstruct()
         if      (i == 0) SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot0Clicked);
         else if (i == 1) SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot1Clicked);
         else             SlotBtn->OnClicked.AddDynamic(this, &UEquipmentWidget::OnSlot2Clicked);
-        Panel->AddChild(SlotBtn);
+        Content->AddChild(SlotBtn);
         if (UCanvasPanelSlot* BS = Cast<UCanvasPanelSlot>(SlotBtn->Slot))
             BS->SetOffsets(FMargin(PadX + TypeW + MidGap, RowY, IconS, IconS));
 
@@ -96,12 +101,17 @@ void UEquipmentWidget::NativeConstruct()
         SlotBtn->AddChild(SlotBg);
         SlotBorders[i] = SlotBg;
 
+        // Icon 是 SlotBg（UBorder）的唯一子節點，透過 UBorderSlot 設定內縮
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Icon->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.10f));
         Icon->SetPadding(FMargin(0.f));
         SlotBg->AddChild(Icon);
-        if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
-            IS->SetOffsets(FMargin(4.f, 4.f, 30.f, 30.f));
+        if (UBorderSlot* IS = Cast<UBorderSlot>(Icon->Slot))
+        {
+            IS->SetPadding(FMargin(4.f));
+            IS->SetHorizontalAlignment(HAlign_Fill);
+            IS->SetVerticalAlignment(VAlign_Fill);
+        }
         IconBorders[i] = Icon;
 
         // 裝備名稱標籤
@@ -113,7 +123,7 @@ void UEquipmentWidget::NativeConstruct()
             NameLbl->SetFont(F);
         }
         NameLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.78f, 0.82f)));
-        Panel->AddChild(NameLbl);
+        Content->AddChild(NameLbl);
         if (UCanvasPanelSlot* NS = Cast<UCanvasPanelSlot>(NameLbl->Slot))
             NS->SetOffsets(FMargin(PadX + TypeW + MidGap + IconS + MidGap, RowY + 10.f, NameW, 20.f));
         NameLabels[i] = NameLbl;

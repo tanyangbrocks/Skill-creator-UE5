@@ -2,6 +2,7 @@
 #include "AEnemyManager.h"
 #include "AEnemy.h"
 #include "AVoxelWorldActor.h"
+#include "WorldScale.h"
 #include "MaterialType.h"
 #include "EngineUtils.h"
 #include "Math/UnrealMathUtility.h"
@@ -39,7 +40,8 @@ void AMobSpawnController::Tick(float DeltaTime)
     if (!PC || !PC->GetPawn()) return;
 
     FVector PawnLoc = PC->GetPawn()->GetActorLocation();
-    FGridPos PlayerPos(FMath::RoundToInt(PawnLoc.X), FMath::RoundToInt(PawnLoc.Y), FMath::RoundToInt(PawnLoc.Z));
+    const int32 WorldH = CachedVoxelWorld ? CachedVoxelWorld->WorldHeight : WorldScale::DefaultWorldHeight;
+    FGridPos PlayerPos = WorldScale::WorldToTile(PawnLoc, WorldH);
 
     HandleDespawns(PlayerPos, DeltaTime);
 

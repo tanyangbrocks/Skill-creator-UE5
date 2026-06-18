@@ -62,6 +62,7 @@ void FSurfaceWaterPool::PlaceInWorld(FTileWorld3D& World,
             const int32 wx = P.CX + dx;
             const int32 wz = P.CZ + dz;
 
+            // 碗形填水：從地表 (SurfaceY) 往下 (Y 增大) 替換成 Water
             for (int32 dy = 0; dy < Depth; ++dy)
             {
                 const int32 wy = P.SurfaceY + dy;
@@ -69,13 +70,10 @@ void FSurfaceWaterPool::PlaceInWorld(FTileWorld3D& World,
                 World.SetTile(wx, wy, wz, EMaterialType::Water);
             }
 
-            // 雕刻碗邊以下的地形（用 Air + 底部 Dirt）
-            for (int32 dy = -(Depth); dy < 0; ++dy)
-            {
-                const int32 wy = P.SurfaceY + dy;
-                if (!World.InBounds(wx, wy, wz)) continue;
-                World.SetTile(wx, wy, wz, dy == -Depth ? EMaterialType::Dirt : EMaterialType::Air);
-            }
+            // 碗底設為 Dirt（Water 層正下方的一格）
+            const int32 BottomY = P.SurfaceY + Depth;
+            if (World.InBounds(wx, BottomY, wz))
+                World.SetTile(wx, BottomY, wz, EMaterialType::Dirt);
         }
     }
 }

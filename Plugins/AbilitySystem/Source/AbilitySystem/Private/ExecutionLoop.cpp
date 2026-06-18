@@ -161,7 +161,10 @@ bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
         else if (Ctx.PlayerStatsQuery)
             bMet = Ctx.PlayerStatsQuery(Key) < Ctx.WaitingConditionThreshold;
         else
-            bMet = true;  // 無代理（測試路徑）→ 直接通過
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[SpellRunner] WaitCondition: PlayerStatsQuery 未注入，條件 '%s' 永遠不成立"), *Key.ToString());
+            bMet = false;  // 無代理時條件不成立，防止靜默跳過
+        }
 
         if (!bMet) return true;
         Ctx.WaitingConditionKey = NAME_None;
