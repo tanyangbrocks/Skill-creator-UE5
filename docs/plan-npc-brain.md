@@ -23,10 +23,10 @@
 
 | 里程碑 | 名稱 | 狀態 |
 |--------|------|------|
-| M-NPC-0 | llama-server 推理基礎架構 | ✅ 程式完成，待 build 驗證 |
-| M-NPC-1 | 身分與個性系統 | ⏳ |
-| M-NPC-2 | 記憶系統 | ⏳ |
-| M-NPC-3 | 世界感知 | ⏳ |
+| M-NPC-0 | llama-server 推理基礎架構 | ✅ build 驗證通過（2026-06-19），llama-server.exe + Phi-3 模型已部署 |
+| M-NPC-1 | 身分與個性系統 | ✅ |
+| M-NPC-2 | 記憶系統 | ✅ |
+| M-NPC-3 | 世界感知 | ✅（`IWorldInterface` 接通為待辦，見下方說明）|
 | M-NPC-4 | Prompt 組裝 + 回應解析 | ⏳ |
 | M-NPC-5 | 玩家對話介面 | ⏳ |
 | M-NPC-6 | 行動系統 | ⏳ |
@@ -91,7 +91,7 @@
 
 ---
 
-## M-NPC-1：身分與個性系統 ⏳
+## M-NPC-1：身分與個性系統 ✅
 
 **目標**：每個 NPC 有一份完整的靜態身分，序列化存檔，遊戲啟動時不重新生成。
 
@@ -102,9 +102,20 @@
 - 世界觀 system prompt 注入點（從 `docs/plan-worldlore-integration.md` 取材）
 - 生成後身分鎖定，不受 runtime 推理覆寫
 
+### 完成內容（2026-06-19）
+
+| 檔案 | 說明 |
+|------|------|
+| `Public/NPCIdentity.h/.cpp` | `FNPCIdentity` USTRUCT + `Save()/Load()`（`FJsonObjectConverter`，路徑 `{ProjectSavedDir}/NPCBrain/Identities/{NPCId}.json`，與 `FCharacterSaveData` 同慣例）|
+| `Public/UNPCIdentityGeneratorSubsystem.h/.cpp` | `UWorldSubsystem`；`LoadOrGenerate(NPCId, OnReady)`：磁碟已有存檔 → 直接讀回（身分鎖定，永不重新生成）；否則呼叫 `UNPCBrainSubsystem::SendMessages` 帶 worldview system prompt，解析 LLM 回應 JSON 存檔 |
+| `NPCBrainSettings.h/.cpp` | 新增 `WorldviewSystemPrompt`（config，注入點），預設值取材自 `docs/plan-worldlore-integration.md`（蒼究世界觀/境界體系），深度整合留給 W 系列 |
+
+**已驗證**：JSON 存讀往返自動化測試（`NPCBrain.Identity.SaveLoadRoundTrip`）。
+**未驗證（需實際 Play）**：LLM 生成路徑（要求 llama-server 真正回傳合法 JSON）。
+
 ---
 
-## M-NPC-2：記憶系統 ⏳
+## M-NPC-2：記憶系統 ✅
 
 **目標**：NPC 記得發生過的事，但 context window 不會爆。
 
@@ -115,9 +126,20 @@
 - **重要事件**：`bPermanent = true` 標記，永遠保留（不被壓縮淘汰）
 - `FNPCMemoryEvent`：`Timestamp / Category(Observe/Speak/Receive/World) / Content`
 
+### 完成內容（2026-06-19）
+
+| 檔案 | 說明 |
+|------|------|
+| `Public/NPCMemoryTypes.h` | `ENPCMemoryCategory`（Observe/Speak/Receive/World）+ `FNPCMemoryEvent`（Timestamp/Category/Content/bPermanent）|
+| `Public/UNPCMemoryComponent.h/.cpp` | `UActorComponent`；`AddMemoryEvent()` 依 `bPermanent` 分流：永久事件進 `PermanentMemory`（永不淘汰），其餘進 `ShortTermMemory`（cap=20，滿了觸發 `UNPCBrainSubsystem::SendMessages` 壓縮成摘要併入 `LongTermSummary`，並清空緩衝區）；壓縮失敗時把該批事件退回緩衝區重試，不丟資料 |
+
+**設計偏差**：計畫原文寫 `TCircularBuffer<FNPCMemoryEvent>`，實作改用 `TArray` + FIFO。20 筆上限下兩者效能差異可忽略，`TCircularBuffer` 的固定 2 的次方容量與索引迴繞管理在此沒有實際好處，改用更直觀的寫法。
+**已驗證**：永久事件不被淘汰、未達上限不觸發壓縮、達上限觸發壓縮並清空緩衝區（無 `UNPCBrainSubsystem` 時走 fallback 路徑，串接原始事件文字，不丟資料）。
+**未驗證（需實際 Play）**：真正呼叫 LLM 產生的摘要品質。
+
 ---
 
-## M-NPC-3：世界感知 ⏳
+## M-NPC-3：世界感知 ✅
 
 **目標**：NPC 能察覺周遭世界的變化並轉成自然語言。
 
@@ -128,6 +150,19 @@
 - `FWorldSnapshot`：將感知到的事件轉成一段描述文字（e.g. "附近 5 格有火焰蔓延"）
 - `PerceptionRadius` 可按生物種類設定（野獸感知半徑 vs 人類）
 - 感知事件自動寫入短期記憶
+
+### 完成內容（2026-06-19）
+
+| 檔案 | 說明 |
+|------|------|
+| `Public/WorldSnapshot.h/.cpp` | `FWorldSnapshot`（`NearbyCreatureIds` + `HazardMaterials`，純資料，無 `UWorld` 依賴）+ `FNPCPerceptionLogic`（`IsHazardMaterial` / `DescribeChanges`，純邏輯，可離線單元測試）|
+| `Public/UNPCPerceptionComponent.h/.cpp` | `UActorComponent`；`TickPerception(DeltaTime, OwnerPos)` 由擁有者手動呼叫（沿用 SpellRunner 手動累加器慣例，非引擎 `TickComponent`）；每 `PerceptionIntervalSeconds` 掃描一次半徑內生物（`IWorldInterface::GetEntitiesNear`）與危險材質（熔岩/火焰/蒸氣，Chebyshev 距離），與上次快照差異化後寫入同 Actor 上的 `UNPCMemoryComponent`（World 分類）|
+| `NPCBrain.Build.cs` | 新增 `SkillCreatorCore` 依賴（取得 `FGridPos`/`EMaterialType`/`ICreature`/`IWorldInterface`，刻意不依賴 `SkillCreatorRuntime`/`VoxelWorld`，保持 NPCBrain 與具體 Actor 型別解耦）|
+
+**架構決策**：未直接耦合 `AEnemy`/`AEnemyManager`/`TileWorld3D`，改用專案既有但目前**零實作**的 `IWorldInterface`（`SkillCreatorCore/Public/IWorldInterface.h`，原為 SpellCaster 設計但從未接通）作為依賴注入點。`UNPCPerceptionComponent::SetWorldInterface()` 在沒人呼叫前是安全的 no-op。
+**⚠️ 待辦（非本次範圍）**：要讓感知系統真正運作，需要某處實作 `IWorldInterface`（橋接 `AVoxelWorldActor` + `AEnemyManager`）並呼叫 `SetWorldInterface()` + 每幀呼叫 `TickPerception()`。這是既有的架構缺口，不是這次新增的技術債——建議在 M-NPC-5/6（真正接遊戲玩法）時一併處理。
+**已驗證**：`FNPCPerceptionLogic::DescribeChanges` 的生物進出/危險材質出現消退判斷、`IsHazardMaterial` 分類正確性。
+**未驗證（需 `IWorldInterface` 接通後才能測）**：`UNPCPerceptionComponent` 實際掃描真實世界的行為。
 
 ---
 

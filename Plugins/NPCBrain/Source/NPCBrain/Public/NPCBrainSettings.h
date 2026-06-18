@@ -38,6 +38,13 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Server")
 	bool bAutoLaunchServer = true;
 
+	// System prompt injection point for NPC identity generation (M-NPC-1).
+	// Lightweight default referencing the 蒼究 worldview — see
+	// docs/plan-worldlore-integration.md for the full lore; deeper integration
+	// is W-series scope, out of scope here.
+	UPROPERTY(config, EditAnywhere, Category = "Worldview", meta = (MultiLine = true))
+	FString WorldviewSystemPrompt;
+
 	static const UNPCBrainSettings* Get()
 	{
 		return GetDefault<UNPCBrainSettings>();

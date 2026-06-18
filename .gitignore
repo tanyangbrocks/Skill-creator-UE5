@@ -46,3 +46,7 @@ desktop.ini
 
 # Third-party binary plugins (too large for git; download separately)
 Plugins/RealtimeMeshComponent-master/
+
+# NPCBrain local LLM runtime — llama-server.exe + GGUF model (multi-GB, machine-specific
+# download per docs/plan-npc-brain.md 步驟 A/B). Never commit; not portable, not source.
+Tools/

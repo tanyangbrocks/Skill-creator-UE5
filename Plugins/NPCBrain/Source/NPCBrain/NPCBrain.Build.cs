@@ -12,6 +12,10 @@ public class NPCBrain : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"DeveloperSettings",
+			// FGridPos / EMaterialType / ICreature / IWorldInterface — zero gameplay
+			// dependencies, lets perception (M-NPC-3) stay decoupled from
+			// SkillCreatorRuntime/VoxelWorld concrete actor types.
+			"SkillCreatorCore",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
