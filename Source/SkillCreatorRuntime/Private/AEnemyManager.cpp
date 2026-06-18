@@ -1,7 +1,9 @@
 #include "AEnemyManager.h"
+#include "ASpellProjectile.h"
 #include "UCombatStateSubsystem.h"
 #include "UDroppedItemManager.h"
 #include "AVoxelWorldActor.h"
+#include "MaterialRegistry.h"
 #include "WorldScale.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -38,6 +40,10 @@ void AEnemyManager::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
+    // 清理失效的敵人投射物指針
+    EnemyProjectiles.RemoveAll(
+        [](const TObjectPtr<ASpellProjectile>& P) { return !IsValid(P); });
+
     for (int32 i = Enemies.Num() - 1; i >= 0; --i)
     {
         AEnemy* E = Enemies[i];
@@ -50,7 +56,19 @@ void AEnemyManager::Tick(float DeltaTime)
                     Sub->OnEnemyKilled();
 
                 if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
-                    DropMgr->SpawnDrop(EItemId::FragmentStone, 1, E->GridPosition);
+                {
+                    // 依腳下方塊決定掉落物；無法取得世界時 fallback 到碎石
+                    EItemId DropItem = EItemId::FragmentStone;
+                    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
+                        if (FTileWorld3D* TW = VW->GetTileWorld())
+                        {
+                            EItemId Frag = FMaterialRegistry::GetFragmentItem(
+                                static_cast<EMaterialType>(
+                                    TW->GetTile(E->GridPosition.X, E->GridPosition.Y, E->GridPosition.Z)));
+                            if (Frag != EItemId::None) DropItem = Frag;
+                        }
+                    DropMgr->SpawnDrop(DropItem, 1, E->GridPosition);
+                }
 
                 bool bDynamic = (E->Category == ESpawnCategory::Common || E->Category == ESpawnCategory::Area);
                 if (bDynamic)

@@ -126,7 +126,7 @@ public:
     void GainXp(float Amount);
 
     UFUNCTION(BlueprintCallable, Category="Combat")
-    bool IsAliveChar() const { return CurrentHp > 0.f; }
+    bool IsAliveChar() const { return IsAlive(); }
 
     // 重新尋找並綁定 AVoxelWorldActor / AEnemyManager（GameMode 在 GameFlow 選好世界、
     // 延後生成 AVoxelWorldActor 之後呼叫；BeginPlay 當下世界可能還不存在）

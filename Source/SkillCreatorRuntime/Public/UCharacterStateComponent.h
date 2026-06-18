@@ -68,6 +68,7 @@ public:
     static constexpr float MaxMood               = 100.f;
     static constexpr float MoodInsanityThreshold = 10.f;
     static constexpr float MoodDefault           = 70.f;
+    static constexpr float MoodRecoveryRate      = 1.f;   // 每秒回歸 MoodDefault 的速率
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="State|Mood")
     float Mood = MoodDefault;

@@ -52,6 +52,7 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
     Set(MakeMat(EItemId::OreCoal,         INVTEXT("煤炭")));
     Set(MakeMat(EItemId::OreCopperRaw,    INVTEXT("生銅礦")));
     Set(MakeMat(EItemId::OreIronRaw,      INVTEXT("生鐵礦")));
+    Set(MakeMat(EItemId::OreGoldRaw,      INVTEXT("生金礦")));
     Set(MakeMat(EItemId::OreMagicCrystal, INVTEXT("魔晶石")));
 
     // 材質碎片

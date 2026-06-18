@@ -212,11 +212,13 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 FEntitySnapshot ASkillCreatorCharacter::TakeSnapshot() const
 {
     FEntitySnapshot Snap;
-    Snap.EntityId  = FEntitySnapshot::PlayerEntityId;
-    Snap.Position  = GetPosition();
-    Snap.Hp        = CurrentHp;
-    Snap.Mp        = CurrentMp;
-    Snap.bWasAlive = IsAlive();
+    Snap.EntityId      = FEntitySnapshot::PlayerEntityId;
+    Snap.Position      = GetPosition();
+    Snap.Hp            = CurrentHp;
+    Snap.Mp            = CurrentMp;
+    Snap.bWasAlive     = IsAlive();
+    Snap.bHasCharStats = true;
+    Snap.CharStats     = Stats;
     return Snap;
 }
 
@@ -224,6 +226,8 @@ void ASkillCreatorCharacter::RestoreFromSnapshot(const FEntitySnapshot& Snap)
 {
     CurrentHp = Snap.Hp;
     CurrentMp = Snap.Mp;
+    if (Snap.bHasCharStats)
+        Stats = Snap.CharStats;
     if (ActiveManaSlots.Num() > 0)
         ActiveManaSlots[0].Current = CurrentMp;
     OnHpChanged.Broadcast(CurrentHp);

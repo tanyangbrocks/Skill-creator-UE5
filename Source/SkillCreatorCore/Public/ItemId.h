@@ -29,6 +29,7 @@ enum class EItemId : uint8
     OreCoal,
     OreCopperRaw,
     OreIronRaw,
+    OreGoldRaw,
     OreMagicCrystal,
 
     // ── 材質碎片（不可放置，合成原料）────────────────────────────

@@ -57,7 +57,13 @@ void USpellCaster::BeginPlay()
     };
 
     Runner.OnInvokeTotem = [](FExecutionContext&, FName) {};  // fallback; InvokeTotemFn on Ctx takes priority
-    Runner.OnBuildComboContext = [](FName) -> TUniquePtr<FExecutionContext> { return nullptr; };
+    // InvokeSpell 連段：需從玩家 SpellGroup 查找對應 Spell 並編譯新 Context（W-6 後實作）
+    Runner.OnBuildComboContext = [](FName SpellName) -> TUniquePtr<FExecutionContext>
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SpellCaster] OnBuildComboContext not implemented — InvokeSpell '%s' skipped"),
+               *SpellName.ToString());
+        return nullptr;
+    };
 }
 
 ASkillCreatorCharacter* USpellCaster::GetOwnerCharacter() const
@@ -733,10 +739,10 @@ void USpellCaster::ExecuteDisplacement(const FString& ActionId, const FSpellSlot
     }
 }
 
-void USpellCaster::ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW)
+void USpellCaster::ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* /*VW*/)
 {
-    // W-11: 召喚實體工廠系統完成後實作
-    UE_LOG(LogTemp, Warning, TEXT("[SpellCaster] ExecuteSummon stub: %s"), *Slot.TotemId.ToString());
+    // 刻意延遲至 W-11（召喚實體工廠）；目前 Summon 容器類型技能靜默略過。
+    UE_LOG(LogTemp, Verbose, TEXT("[SpellCaster] ExecuteSummon deferred (W-11): %s"), *Slot.TotemId.ToString());
 }
 
 void USpellCaster::ExecuteDomain(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW)

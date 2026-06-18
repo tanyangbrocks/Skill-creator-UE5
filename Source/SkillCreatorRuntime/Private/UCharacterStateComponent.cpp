@@ -23,7 +23,9 @@ float UCharacterStateComponent::TickState(float DeltaTime, bool bInCombat)
 
     // ── 心情值緩慢回歸中值 ─────────────────────────────────────────
     if (Mood < MoodDefault)
-        ModifyMood(1.f * DeltaTime);
+        ModifyMood(MoodRecoveryRate * DeltaTime);
+    else if (Mood > MoodDefault)
+        ModifyMood(-MoodRecoveryRate * DeltaTime);
 
     // ── 體溫：向 AmbientTemperature 漂移 ──────────────────────────
     {

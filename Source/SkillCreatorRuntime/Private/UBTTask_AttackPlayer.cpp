@@ -31,7 +31,7 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
     int32 Range = Enemy->GetAttackRange();
     FGridPos EPos = Enemy->GetPosition();
     FGridPos PPos = Player->GetPosition();
-    int32 Dist = EPos.ManhattanDistance(PPos);
+    int32 Dist = EPos.ChebyshevDistance(PPos);  // 棋盤格距離：對角線算 1 格，與 Manhattan 不同
 
     if (Dist > Range) return EBTNodeResult::Failed;
 

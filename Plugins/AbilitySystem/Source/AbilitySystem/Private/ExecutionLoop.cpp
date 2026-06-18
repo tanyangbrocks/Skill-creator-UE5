@@ -202,7 +202,7 @@ bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
     // 主執行迴圈
     while (Ctx.State == EExecutionState::Running && Ctx.PC < Ctx.Code.Num())
     {
-        if (ExecutionsThisTick >= MaxExecutionsPerTick) return false;
+        if (ExecutionsThisTick >= MaxOpcodeDispatchPerStep) return false;
 
         if (FExecutionContext::bTraceMode)
             UE_LOG(LogTemp, Log, TEXT("[VM] %s"), *FormatTraceParams(Ctx.PC, Ctx.Code[Ctx.PC]));
@@ -336,7 +336,7 @@ void FExecutionLoop::Execute(const FInstruction& Instr, FExecutionContext& Ctx)
             if (!A) { ++Ctx.PC; break; }
             int32  WhilePc = Ctx.PC;
             int32& Iters   = Ctx.WhileIterCounters.FindOrAdd(WhilePc);
-            if (++Iters > MaxWhileIterations)
+            if (++Iters > MaxWhileLoopIterations)
             {
                 Ctx.WhileIterCounters.Remove(WhilePc);
                 Ctx.State = EExecutionState::Fizzled;

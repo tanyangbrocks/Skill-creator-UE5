@@ -16,7 +16,6 @@
 void ASkillCreatorPlayerController::BeginPlay()
 {
     Super::BeginPlay();
-    // TODO M-5: AddMappingContext(DefaultMappingContext, 0)
 }
 
 void ASkillCreatorPlayerController::SetupInputComponent()
@@ -184,9 +183,9 @@ void ASkillCreatorPlayerController::OnEquipItem()
     Char->EquipmentComp->TryEquip(Char->InventoryComp, ActiveIdx);
 }
 
-// ── Tab：X-ray 切換（顯示牆後敵人，待 M-8 攝影機） ─────────────────────
+// ── Tab：X-ray 切換（顯示牆後敵人）─────────────────────────────────────
+// GPU Compute 渲染模式（M-10+），目前無實作。
 
 void ASkillCreatorPlayerController::OnToggleXray()
 {
-    // TODO M-8: 通知 VoxelWorldActor 切換 X-ray 渲染模式
 }

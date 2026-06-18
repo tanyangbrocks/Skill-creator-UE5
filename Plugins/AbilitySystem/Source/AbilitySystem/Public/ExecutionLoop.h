@@ -11,9 +11,9 @@
 class FExecutionLoop
 {
 public:
-    static constexpr int32 MaxExecutionsPerTick = 2000;
-    static constexpr int32 MaxWhileIterations   = 1000;
-    static constexpr int32 MaxStepsPerCast      = 512;
+    // FExecutionLoop 內部預算（注意：FSafetyGuard 有同名但不同層次的常數；此處為單步 Execute 範圍限制）
+    static constexpr int32 MaxOpcodeDispatchPerStep = 2000;  // 單步 Execute() 最大 opcode 分派數
+    static constexpr int32 MaxWhileLoopIterations   = 1000;  // RepeatWhile 最大迭代數（同 FSafetyGuard::MaxWhileIterations 但獨立計數）
 
     void ResetTick() { ExecutionsThisTick = 0; }
 

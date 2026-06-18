@@ -73,27 +73,27 @@ struct FCharacterStats
     float TripleHitRate = 0.f;
 
     // ── 社會 / 外貌（stub，無 NPC 系統時不生效）──────────────────
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Social")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Social")
     float Appearance   = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Social")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Social")
     float Temperament  = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Social")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Social")
     float TrustLevel   = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Social")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Social")
     float AffinityScore = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Social")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Social")
     float Luck         = 0.f;
 
     // ── 生產 / 探索（stub）──────────────────────────────────────
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Exploration")
     float Deliciousness  = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Exploration")
     float Fragrance      = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Exploration")
     float MaterialRarity = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Exploration")
     float Insight        = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exploration")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Exploration")
     float Stealth        = 0.f;
 
     // ── 元素親和力 / 輸出 / 抗性（對應 Godot CharacterStats.cs）────
@@ -119,13 +119,13 @@ struct FCharacterStats
     void SetElemResistance(ESkillElementType E, float V) { ElemResistance[E] = V; }
 
     // ── 經驗加成（stub）──────────────────────────────────────────
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Experience")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Experience")
     float SkillExpBonus      = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Experience")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Experience")
     float LevelExpBonus      = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Experience")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Experience")
     float NonCombatExpBonus  = 0.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Experience")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats|Stub|Experience")
     float DispatchEfficiency = 1.f;
 
     // ── 天賦點（W-10，初始皆 50）──────────────────────────────────

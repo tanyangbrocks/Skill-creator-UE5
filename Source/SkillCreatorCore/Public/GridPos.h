@@ -27,6 +27,12 @@ struct FGridPos
         return FMath::Abs(X - O.X) + FMath::Abs(Y - O.Y) + FMath::Abs(Z - O.Z);
     }
 
+    // Chebyshev（棋盤格）距離：適用於 tile-based 攻擊範圍判斷（對角線視為 1 格）
+    int32 ChebyshevDistance(const FGridPos& O) const
+    {
+        return FMath::Max3(FMath::Abs(X - O.X), FMath::Abs(Y - O.Y), FMath::Abs(Z - O.Z));
+    }
+
     FString ToString() const { return FString::Printf(TEXT("(%d,%d,%d)"), X, Y, Z); }
 };
 

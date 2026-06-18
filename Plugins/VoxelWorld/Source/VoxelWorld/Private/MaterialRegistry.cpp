@@ -32,7 +32,7 @@ static const FMaterialData GMatData[] =
     // ID  9 — Ore_Iron
     { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw     },
     // ID 10 — Ore_Gold
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::None           },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::OreGoldRaw     },
     // ID 11 — Fire
     { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 150, I::None           },
     // ID 12 — Steam
@@ -147,6 +147,9 @@ TArray<FItemDrop> FMaterialRegistry::GetDefaultDrops(EMaterialType Mat)
         break;
     case EMaterialType::Ore_Copper:
         Out.Add(FItemDrop(EItemId::OreCopperRaw, 1, 3));
+        break;
+    case EMaterialType::Ore_Gold:
+        Out.Add(FItemDrop(EItemId::OreGoldRaw, 1, 3));
         break;
     case EMaterialType::Ore_MagicCrystal:
         Out.Add(FItemDrop(EItemId::OreMagicCrystal, 1, 2));
