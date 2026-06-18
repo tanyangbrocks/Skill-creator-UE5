@@ -8,11 +8,15 @@
 // Serialized with FJsonObjectConverter — only UPROPERTY fields survive.
 // FBlockNode tree (block AST) is deferred to M-9 (Slate editor).
 // FSpellArray::ContainerEffect (TSharedPtr, non-UPROPERTY) is also skipped.
+//
+// 角色獨立於世界存在（對應 Godot 全域 _chars 清單，可任意搭配世界進場）：
+// 存檔位置 {ProjectSavedDir}/Characters/{Id}.json，不綁定任何特定世界資料夾。
 USTRUCT()
 struct SKILLCREATORRUNTIME_API FCharacterSaveData
 {
     GENERATED_BODY()
 
+    UPROPERTY() FString    Id;
     UPROPERTY() FString    CharacterName;
     UPROPERTY() FIntVector TilePosition  = FIntVector(0, 0, 0);
     UPROPERTY() float      CurrentHp     = 100.f;
@@ -36,9 +40,9 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     // Each FSpellArray is serialized by its UPROPERTY fields (Name, Slots, etc.).
     UPROPERTY() TArray<FSpellArray> SpellBook;
 
-    // {WorldDir}/character.json
-    static FString FilePath(const FString& WorldDir);
+    // {ProjectSavedDir}/Characters/{Id}.json
+    static FString FilePath(const FString& InId);
 
-    bool        Save(const FString& WorldDir) const;
-    static bool Load(const FString& WorldDir, FCharacterSaveData& Out);
+    bool        Save() const;
+    static bool Load(const FString& InId, FCharacterSaveData& Out);
 };

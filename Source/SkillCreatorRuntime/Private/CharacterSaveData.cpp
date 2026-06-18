@@ -3,25 +3,27 @@
 #include "Misc/FileHelper.h"
 #include "JsonObjectConverter.h"
 
-FString FCharacterSaveData::FilePath(const FString& WorldDir)
+FString FCharacterSaveData::FilePath(const FString& InId)
 {
-    return WorldDir / TEXT("character.json");
+    return FPaths::ProjectSavedDir() / TEXT("Characters") / (InId + TEXT(".json"));
 }
 
-bool FCharacterSaveData::Save(const FString& WorldDir) const
+bool FCharacterSaveData::Save() const
 {
     FString Json;
     if (!FJsonObjectConverter::UStructToJsonObjectString(*this, Json, 0, 0, 0, nullptr, true))
         return false;
 
-    IFileManager::Get().MakeDirectory(*WorldDir, true);
-    return FFileHelper::SaveStringToFile(Json, *FilePath(WorldDir),
+    const FString Path = FilePath(Id);
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+    return FFileHelper::SaveStringToFile(Json, *Path,
                                          FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
-bool FCharacterSaveData::Load(const FString& WorldDir, FCharacterSaveData& Out)
+bool FCharacterSaveData::Load(const FString& InId, FCharacterSaveData& Out)
 {
     FString Json;
-    if (!FFileHelper::LoadFileToString(Json, *FilePath(WorldDir))) return false;
+    if (!FFileHelper::LoadFileToString(Json, *FilePath(InId))) return false;
+    Out.Id = InId;
     return FJsonObjectConverter::JsonObjectStringToUStruct(Json, &Out, 0, 0);
 }

@@ -21,6 +21,7 @@ class UInventoryComponent;
 class UEquipmentComponent;
 class AVoxelWorldActor;
 class AEnemyManager;
+struct FCharacterSaveData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
@@ -132,6 +133,12 @@ public:
     // 延後生成 AVoxelWorldActor 之後呼叫；BeginPlay 當下世界可能還不存在）
     UFUNCTION(BlueprintCallable, Category="World")
     void RebindWorldSystems();
+
+    // 套用玩家在 UGameFlowWidget 選定角色的存檔進度，取代 BeginPlay 當下
+    // 灌入的預設數值（GameMode::StartGameplayWithWorld 選好角色後呼叫）。
+    // 非 UFUNCTION：FCharacterSaveData 未標記 BlueprintType，且目前只有
+    // C++ 呼叫端，不需要 Blueprint 曝露。
+    void ApplyCharacterSaveData(const FCharacterSaveData& Data);
 
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return -1; }

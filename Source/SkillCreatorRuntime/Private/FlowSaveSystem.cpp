@@ -16,26 +16,19 @@ FString FFlowSaveSystem::MetaPath(const FString& WorldDir)
     return WorldDir / TEXT("world.meta");
 }
 
-bool FFlowSaveSystem::SaveAll(FTileWorld3D& World, const FWorldSaveData& WorldMeta,
-                               const FCharacterSaveData& CharData)
+bool FFlowSaveSystem::SaveAll(FTileWorld3D& World, const FWorldSaveData& WorldMeta)
 {
     const FString& Dir = WorldMeta.WorldDir;
     if (Dir.IsEmpty()) return false;
 
     World.SaveDirtyChunks(Dir);
     WorldMeta.SaveMeta(MetaPath(Dir));
-    CharData.Save(Dir);
     return true;
 }
 
 bool FFlowSaveSystem::LoadWorldMeta(const FString& WorldDir, FWorldSaveData& Out)
 {
     return FWorldSaveData::LoadMeta(MetaPath(WorldDir), Out);
-}
-
-bool FFlowSaveSystem::LoadCharacter(const FString& WorldDir, FCharacterSaveData& Out)
-{
-    return FCharacterSaveData::Load(WorldDir, Out);
 }
 
 void FFlowSaveSystem::ListAllWorlds(TArray<FWorldSaveData>& Out)
@@ -75,4 +68,46 @@ bool FFlowSaveSystem::DeleteWorld(const FString& WorldId)
     const FString Dir = WorldRoot(WorldId);
     if (!IFileManager::Get().DirectoryExists(*Dir)) return false;
     return IFileManager::Get().DeleteDirectory(*Dir, false, true);
+}
+
+void FFlowSaveSystem::ListAllCharacters(TArray<FCharacterSaveData>& Out)
+{
+    const FString CharactersRoot = FPaths::ProjectSavedDir() / TEXT("Characters");
+    IFileManager::Get().IterateDirectory(*CharactersRoot,
+        [&](const TCHAR* Path, bool bIsDirectory) -> bool
+        {
+            if (!bIsDirectory && FPaths::GetExtension(Path) == TEXT("json"))
+            {
+                const FString Id = FPaths::GetBaseFilename(Path);
+                FCharacterSaveData Data;
+                if (LoadCharacter(Id, Data))
+                    Out.Add(Data);
+            }
+            return true;
+        });
+}
+
+bool FFlowSaveSystem::CreateNewCharacter(const FString& Name, FCharacterSaveData& OutData)
+{
+    OutData = FCharacterSaveData();
+    OutData.Id            = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+    OutData.CharacterName = Name;
+    return OutData.Save();
+}
+
+bool FFlowSaveSystem::LoadCharacter(const FString& CharacterId, FCharacterSaveData& Out)
+{
+    return FCharacterSaveData::Load(CharacterId, Out);
+}
+
+bool FFlowSaveSystem::SaveCharacter(const FCharacterSaveData& Character)
+{
+    return Character.Save();
+}
+
+bool FFlowSaveSystem::DeleteCharacter(const FString& CharacterId)
+{
+    const FString Path = FCharacterSaveData::FilePath(CharacterId);
+    if (!IFileManager::Get().FileExists(*Path)) return false;
+    return IFileManager::Get().Delete(*Path);
 }

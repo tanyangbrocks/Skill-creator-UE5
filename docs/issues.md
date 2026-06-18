@@ -259,14 +259,16 @@
 | TotemData.cs | Id / DisplayName / Type / BaseAbilityPointCost / RequiredPlayerLevel | **已實作** | `SpellArray.h` FTotemData | 完整 FTotemData struct（前 session）|
 | TotemType.cs | Area / Technique / Projectile / Passive / Morph / Displacement / Summon / Domain / Custom | **已實作** | `SpellArray.h` ETotemType | ETotemType 9 值（前 session）|
 | EngraveData.cs | EngraveId / Points | 已實作 | `SpellArray.h` FEngraveData | 精簡版 |
-| EngraveData.cs | DisplayName / Color / ScalingType / ScalingCoefficient / BaseEffect / IsGlobal / BaseCost / RequiredPlayerLevel / Element / Category / Trigger / IsRestriction / TotalAbilityPointCost / CalculateEffect() | **已實作** | `SpellArray.h` FEngraveData | 完整欄位（前 session）|
+| EngraveData.cs | Color / Category / Trigger / Scaling / Effect / CalculateEffect() | **已實作** | `SpellArray.h` FEngraveData | 精簡版（Id + Points + 上述欄位）|
+| EngraveData.cs | DisplayName / IsGlobal / BaseCost / RequiredPlayerLevel / Element（自己的欄位）/ IsRestriction / TotalAbilityPointCost | **完全缺失** | — | 2026-06-19 稽核：先前標記已實作但 FEngraveData 實際沒有這些欄位（DisplayName/RequiredPlayerLevel 存在於不相關的 FTotemData，疑似比對時誤認）；待 W-6 完整屬性 |
 | EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **已實作** | `SpellArray.h` | EEngraveColor / EEngraveCategory / EEngraveTrigger / EScalingType（前 session）|
 | AbilityActivationType.cs | Instant / Declare / Sustained / None | 已實作 | `ManaType.h` EAbilityActivationType | 完整對應 |
 | ContainerType.cs | DirectCast / Projectile | 已實作 | `SpellArray.h` EContainerType | 完整對應 |
 | ContainerType.cs | Contact | **完全缺失** | SpellArray.h 已移除 | Godot 保留供舊檔相容 |
 | ContainerType.cs | SummonMinion / SummonTurret / SummonGuardian | **stub** | EContainerType::Summon | 合併為單一 Summon（AI 未實作）|
 | ElementType.cs | 全部 12 個值（None / Metal / Wood / Water / Fire / Earth / Ice / Wind / Light / Dark / Thunder / Poison）| 已實作 | `ElementType.h` ESkillElementType | 改名（EElementType 被 SlateCore 佔用）2026-06-16 |
-| SaveSystem.cs | 全部（Opts / DtoLoadout / SaveGroupToString / LoadGroupFromString / Save / Load / ToDto / BlockToDto / FromDto 等 14 個方法 + 6 個 DTO 類別）| **已實作** | `SpellSaveSystem.h/.cpp` | SaveGroupToString / LoadGroupFromString（本 session）|
+| SaveSystem.cs | SaveGroupToString / LoadGroupFromString | **已實作** | `SpellSaveSystem.h/.cpp` | 2 個方法 |
+| SaveSystem.cs | Opts / DtoLoadout / Save / Load / ToDto / BlockToDto / FromDto 等其餘 ~12 個方法 + 6 個 DTO 類別 | **完全缺失** | — | 2026-06-19 稽核：先前整行標記已實作，但 `SpellSaveSystem.h` 只有 2 個方法；該檔案自己 §3 架構摘要其實已承認「序列化系統...完全缺失」，與本行矛盾，現已修正一致 |
 
 ### 架構差異摘要
 
@@ -365,7 +367,8 @@
 | CombatState.cs | OnHit / OnSpellCast / OnPlayerDealtDamage / OnPlayerTookDamage / OnEnemyKilled / Advance / Reset / EnterCombat / ExitCombat | 已實作 | `UCombatStateSubsystem.h/.cpp` | 完整對應 |
 | ICreature.cs | Id / Position / Hp / MaxHp / IsAlive | **stub** | `ICreature.h` L12-16 | 改為方法形式（GetCreatureId() 等）|
 | ICreature.cs | Aura 屬性 | **N/A（架構決策）** | — | ICreature 位於 SkillCreatorCore（no-UObject），UElementalAuraComponent 在 SkillCreatorRuntime，加入 ICreature 會造成循環模組依賴；改由 AEnemy / ASkillCreatorCharacter 直接暴露 AuraComp |
-| IWorldInterface.cs | 全部（GetEntityAt / GetMaterialAt / GetEntitiesNear / GetEntityProperty / DestroyTile / ApplyForce / SpawnEffect / SetEntityProperty / CreateEntity / OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction）| **已實作** | `IWorldInterface.h` | 完整純虛擬介面（前 session）|
+| IWorldInterface.cs | GetEntityAt / GetMaterialAt / GetEntitiesNear / DestroyTile / ApplyForce / SpawnEffect / OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction | **已實作（介面定義）** | `IWorldInterface.h` | 純虛擬介面已定義 10 項；⚠️ 截至 2026-06-19，**全專案零實作**（沒有任何類別繼承並實作此介面），NPCBrain M-NPC-3 感知系統已依賴此介面但同樣等待接通 |
+| IWorldInterface.cs | GetEntityProperty / SetEntityProperty / CreateEntity | **完全缺失** | — | 2026-06-19 稽核：先前標記已實作，但這 3 項在介面定義中不存在，全專案 grep 無結果 |
 | GridPos.cs | X / Y / Z / 建構子 / operator+ / operator- / ToString() | 已實作 | `GridPos.h` L12-30 | 完整對應 |
 | GridPos.cs | DistanceTo() | **stub** | `GridPos.h` L25-28 | Godot 歐幾里德距 → UE5 曼哈頓距離 |
 | GridPos3D.cs | 全部（X / Y / Z / operator+ / operator- / DistanceTo / MoveX / MoveY / MoveZ / ToWorldPos / ToString / Neighbors6）| **完全缺失** | — | UE5 統一用 FGridPos；Neighbors6 改為行內邏輯 |
@@ -541,7 +544,9 @@
 | EnemyProjectile.cs | Constructor / Init() / Update()→Tick() / AdvanceOneTile() / FindEnemyAt() | 已實作 | `ASpellProjectile.cpp` | 完整對應 |
 | EnemyProjectile.cs | IsAlive flag | **已實作** | `ASpellProjectile.h` | `bool IsAlive() const { return IsValid(this); }`（2026-06-17 Batch 2）|
 | MobSpawnController.cs | 全部（MinSpawnDist / MaxSpawnDist / DespawnHardDist / MaxCommonActive / BaseInterval / SpawnRateMultiplier / EnsureChunkAt / GetTerrainY / Update / HandleDespawns / PickEntry / TryFindSpawnPos / HorizDist）| **已實作** | `AMobSpawnController.h/.cpp` | 完整實作（M-5）|
-| CameraController.cs | 全部（CameraMode enum / ThirdPerson / FirstPerson / Isometric / SideScroll2D / TpsArmLength / _Process / ProjectScreenToWorld / CycleMode 等）| **已實作** | `SkillCameraTypes.h` ECameraMode | ThirdPerson / FirstPerson / Isometric / SideScroll2D 完整對應；UE5 用 APlayerController + SpringArm 實作 |
+| CameraController.cs | CameraMode enum / ThirdPerson / FirstPerson / Isometric / SideScroll2D | **已實作** | `SkillCameraTypes.h` ECameraMode | 4 種模式列舉 + FCameraModeParams |
+| CameraController.cs | CycleMode（對應邏輯） | **已實作** | `ASkillCreatorCharacter.cpp` `CycleCameraMode()` | 2026-06-19 稽核更正關鍵檔案：邏輯實際在 Character 端，不在 `SkillCameraTypes.h`（該檔案只有列舉/struct，無方法）|
+| CameraController.cs | ProjectScreenToWorld | **完全缺失** | — | 2026-06-19 稽核：先前標記已實作，全專案 grep 無滑鼠→世界座標反投影實作；Isometric/SideScroll2D 模式缺少原版依賴的這項功能 |
 
 ### 架構差異摘要
 
@@ -622,10 +627,13 @@
 | FlowSaveSystem.cs | FlowSaveSystem（MakeWorldDir()→WorldRoot()）| 已實作 | `FFlowSaveSystem` | UE5 版本簡化，無名稱版本化 |
 | FlowSaveSystem.cs | SavePath | **stub** | — | 無實作，需改用 ProjectSavedDir() |
 | FlowSaveSystem.cs | Dto 私有內嵌類 | **stub** | — | 使用 FJson 序列化，未建立對應 DTO |
-| FlowSaveSystem.cs | Load() / Save() / SaveCharacter() / SaveWorld() / DeleteWorld() / DeleteCharacter() | **已實作** | `FlowSaveSystem.h/.cpp` | SaveAll / LoadWorldMeta / LoadCharacter / ListAllWorlds / CreateNewWorld / DeleteWorld 均實作（S-2）|
+| FlowSaveSystem.cs | 世界存讀（SaveAll / LoadWorldMeta / ListAllWorlds / CreateNewWorld / DeleteWorld） | **已實作** | `FlowSaveSystem.h/.cpp` | （S-2）|
+| FlowSaveSystem.cs | 角色存讀（獨立於世界的全域清單：ListAllCharacters / CreateNewCharacter / LoadCharacter / SaveCharacter / DeleteCharacter） | **已實作** | `FlowSaveSystem.h/.cpp` `CharacterSaveData.h/.cpp` | 2026-06-19：先前角色資料綁定 WorldDir（1 世界 1 角色），且這幾個具名方法實際不存在（稽核發現）；現已重構為獨立角色存檔（`{ProjectSavedDir}/Characters/{Id}.json`），對應 Godot 角色與世界自由搭配；`GameFlowSaveTests.cpp` T01/T02 自動化測試覆蓋 |
 | WorldSaveData.cs | WorldSaveData（Id / Name / Seed / WorldDir / PlayerSpawn→FIntVector / bIsFirstEnter）| 已實作 | `FWorldSaveData` | USTRUCT；SpawnX/Y/Z 合併為 FIntVector |
 | WorldSaveData.cs | LastPlayed | **已實作** | `WorldSaveData.h/.cpp` | `FDateTime LastPlayed`；SaveMeta 以 ISO 8601 格式寫入；LoadMeta 以 FDateTime::ParseIso8601 解析（2026-06-17 Batch 2）|
-| GameFlowUI.cs | 整個 GameFlowUI（角色選擇 / 角色創建 / 世界選擇 / 世界創建 / 確認對話框 / RebuildCharList / MakeCharCard / RebuildWorldList / MakeWorldCard 等所有 UI 方法）| **已實作** | `UGameFlowWidget.h/.cpp` | BuildLayout() + OnWorldListRefreshed_Implementation + OnEnterGame_Implementation；BlueprintNativeEvent（UI-1, 2026-06-16）|
+| GameFlowUI.cs | 世界選擇 / 世界創建 / RebuildWorldList / MakeWorldCard | **已實作** | `UGameFlowWidget.h/.cpp` | BuildLayout() + OnWorldListRefreshed_Implementation + OnEnterGame_Implementation；BlueprintNativeEvent（UI-1, 2026-06-16）|
+| GameFlowUI.cs | 角色選擇 / 角色創建 / RebuildCharList / MakeCharCard | **已實作** | `UGameFlowWidget.h/.cpp` `CharacterSaveData.h/.cpp` `FlowSaveSystem.h/.cpp` | 2026-06-16 UI-1 當時誤將整條「角色+世界」項目一併標記已實作，實際只做了世界那一半；2026-06-19 補完角色選擇/建立畫面 + 獨立角色存檔（不綁定 WorldDir，可任意搭配世界），GameMode 改為角色+世界都選定才開局 |
+| GameFlowUI.cs | 確認對話框（刪除前彈窗確認） | **完全缺失** | — | 2026-06-19：角色/世界刪除目前直接執行，無確認彈窗；Godot 原版用 `ShowConfirm()` 攔截，UE5 尚未補上 |
 | ISnapshottable.cs | interface ISnapshottable（TakeSnapshot() / RestoreFromSnapshot()）| **已實作** | `ISnapshottable.h` | 純虛函數介面（S-3, 2026-06-16）|
 | AuraSnapshot.cs | AuraSnapshot record（Auras / Effects）+ AuraEntryData + AuraEffectData | **已實作** | `SnapshotTypes.h` FAuraSnapshot | FAuraEntryData + FAuraEffectData + FAuraSnapshot（S-3）|
 | CharStateSnapshot.cs | CharStateSnapshot record（Stamina / MentalEnergy / Mood / BodyTemperature / Thirst / Hunger / Oxygen / From()）| **已實作** | `SnapshotTypes.h` FCharStateSnapshot | Stamina/MentalEnergy/Mood/BodyTemp/Thirst/Hunger/Oxygen 完整對應（S-3）|
@@ -677,7 +685,8 @@
 | InputBindings.cs | GetKeys() / Rebind() / ResetToDefault() / SaveToFile() / LoadFromFile() | **已實作** | `UInputSettingsWidget.h/.cpp` | GetCurrentBindings / RemapAction / SaveBindings / LoadAndApplyBindings / ResetToDefaults（UI-2, 2026-06-16）|
 | PlayerController.cs | IElementalTarget 實作 | **stub** | `ASkillCreatorCharacter.h` | 介面存在但方法可能不完整 |
 | PlayerController.cs | Aura / Stats / State / Position / Facing / Inventory / Equipment / Level / Xp / TierName / ActiveManaSlots / Mp / MaxMp | 已實作 | `ASkillCreatorCharacter.h` | 完整對應 |
-| PlayerController.cs | TakeDamage() / UpdateEnvironment() / Tick() / TryMove() / TryMoveDir() / TryMoveDepth() / ApplyPhysics() / IsOnGround() / StartJump() / Respawn() / TickMining() / GainXp() | 已實作 | `ASkillCreatorCharacter.cpp` | 完整對應 |
+| PlayerController.cs | TakeDamage() / Tick() / GainXp() | **已實作** | `ASkillCreatorCharacter.cpp` | 3 個方法確認存在 |
+| PlayerController.cs | UpdateEnvironment() / TryMove() / TryMoveDir() / TryMoveDepth() / ApplyPhysics() / IsOnGround() / StartJump() / Respawn() / TickMining() | **架構替代** | — | 2026-06-19 稽核：先前標記已實作但這 9 個具名方法不存在；移動/物理改委派給 UE5 內建 `ACharacter`/`UCharacterMovementComponent`（合理的架構替代，非缺失），但本行先前的措辭暗示 1:1 方法對應，與實際不符 |
 | PlayerController.cs | SetCastCooldown() | **stub** | `ASkillCreatorCharacter::SetCastCooldown()` | 呼叫點可能不完整 |
 | PlayerController.cs | Snapshot 系統（TakeSnapshot() / RestoreFromSnapshot()）| **stub** | `ASkillCreatorCharacter` 對應方法 | S-7 詳細需驗證 |
 | AbilityEditorUI.cs | SpellGroup / Loadout（當前組）| **stub** | `UBlockEdGraphNode.h` 或對應資料結構 | 技能 Loadout 不完整 |

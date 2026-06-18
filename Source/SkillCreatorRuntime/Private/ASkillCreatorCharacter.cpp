@@ -15,6 +15,7 @@
 #include "GridPos.h"
 #include "UDroppedItemManager.h"
 #include "WorldScale.h"
+#include "CharacterSaveData.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -117,6 +118,30 @@ void ASkillCreatorCharacter::RebindWorldSystems()
             DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
         };
     }
+}
+
+void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Data)
+{
+    Level     = Data.Level;
+    Xp        = Data.Xp;
+    CurrentHp = Data.CurrentHp;
+    CurrentMp = Data.CurrentMp;
+
+    if (InventoryComp)
+        InventoryComp->Slots = Data.InventorySlots;
+
+    if (StateComp)
+    {
+        StateComp->Stamina      = Data.Stamina;
+        StateComp->MentalEnergy = Data.MentalEnergy;
+        StateComp->Mood         = Data.Mood;
+    }
+
+    for (const TPair<FName, float>& Pair : Data.ManaCurrents)
+        if (FManaSlot* Slot = GetManaSlot(Pair.Key))
+            Slot->Current = Pair.Value;
+
+    OnHpChanged.Broadcast(CurrentHp);
 }
 
 void ASkillCreatorCharacter::Tick(float DeltaTime)

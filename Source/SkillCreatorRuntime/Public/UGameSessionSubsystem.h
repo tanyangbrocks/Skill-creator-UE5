@@ -13,14 +13,19 @@ class SKILLCREATORRUNTIME_API UGameSessionSubsystem : public UGameInstanceSubsys
     GENERATED_BODY()
 public:
     // ── GameFlowUI 側寫入 ─────────────────────────────────────────────────
-    void SetPendingWorld(const FWorldSaveData& World) { PendingWorld = World; bHasPending = true; }
-    void ClearPending()                               { bHasPending = false; }
+    void SetPendingWorld(const FWorldSaveData& World) { PendingWorld = World; bHasPendingWorld = true; }
+    void SetPendingCharacter(const FCharacterSaveData& Character) { PendingCharacter = Character; bHasPendingCharacter = true; }
+    void ClearPending() { bHasPendingWorld = false; bHasPendingCharacter = false; }
 
     // ── GameMode 側讀取 ──────────────────────────────────────────────────
-    bool           HasPendingWorld()  const { return bHasPending;   }
-    FWorldSaveData GetPendingWorld()  const { return PendingWorld;  }
+    bool               HasPendingWorld()     const { return bHasPendingWorld;     }
+    FWorldSaveData     GetPendingWorld()     const { return PendingWorld;         }
+    bool               HasPendingCharacter() const { return bHasPendingCharacter; }
+    FCharacterSaveData GetPendingCharacter() const { return PendingCharacter;     }
 
 private:
-    FWorldSaveData PendingWorld;
-    bool           bHasPending = false;
+    FWorldSaveData     PendingWorld;
+    bool               bHasPendingWorld = false;
+    FCharacterSaveData PendingCharacter;
+    bool               bHasPendingCharacter = false;
 };

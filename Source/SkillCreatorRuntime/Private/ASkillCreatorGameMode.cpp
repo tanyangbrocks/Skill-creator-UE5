@@ -24,16 +24,16 @@ void ASkillCreatorGameMode::BeginPlay()
     UGameSessionSubsystem* Session = GetGameInstance()
         ? GetGameInstance()->GetSubsystem<UGameSessionSubsystem>() : nullptr;
 
-    if (Session && Session->HasPendingWorld())
+    if (Session && Session->HasPendingWorld() && Session->HasPendingCharacter())
     {
-        // 已經透過 UGameFlowWidget 選好世界（玩家死亡重生 / PIE 重跑等情況也會在這裡直接開局）
-        UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: pending world found, starting gameplay directly"));
-        StartGameplayWithWorld(Session->GetPendingWorld());
+        // 已經透過 UGameFlowWidget 選好角色+世界（玩家死亡重生 / PIE 重跑等情況也會在這裡直接開局）
+        UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: pending world+character found, starting gameplay directly"));
+        StartGameplayWithWorld(Session->GetPendingWorld(), Session->GetPendingCharacter());
         return;
     }
 
-    // 還沒選世界：顯示 UGameFlowWidget，暫停一般 gameplay，等玩家選/建世界
-    UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: no pending world — showing GameFlowWidget"));
+    // 還沒選角色/世界：顯示 UGameFlowWidget，暫停一般 gameplay，等玩家選/建角色、選/建世界
+    UE_LOG(LogTemp, Log, TEXT("SkillCreatorGameMode: no pending world/character — showing GameFlowWidget"));
     APlayerController* PC = GetWorld()->GetFirstPlayerController();
     if (PC)
     {
@@ -62,7 +62,7 @@ void ASkillCreatorGameMode::BeginPlay()
     }
 }
 
-void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World)
+void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, const FCharacterSaveData& Character)
 {
     if (GameFlowWidget)
     {
@@ -80,10 +80,14 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World)
     SpawnWorldAndMobs(World.Seed);
 
     // 角色在 BeginPlay 當下（選世界之前）就已經 spawn 了，
-    // 那時 AVoxelWorldActor 還不存在，CachedVoxelWorld 會是 null，必須在這裡補一次重新綁定
+    // 那時 AVoxelWorldActor 還不存在，CachedVoxelWorld 會是 null，必須在這裡補一次重新綁定，
+    // 同時套用玩家選定角色的存檔進度（取代 BeginPlay 當下灌入的預設值）
     if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
         if (ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn()))
+        {
             Char->RebindWorldSystems();
+            Char->ApplyCharacterSaveData(Character);
+        }
 }
 
 void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed)
