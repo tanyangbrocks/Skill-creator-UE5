@@ -1,9 +1,13 @@
 ﻿# UE5 已完成里程碑（歸檔）
 
-> 歸檔時間：2026-06-17（超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+> 最後歸檔：2026-06-18（超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
 
 | 功能 | 關鍵檔案 | 摘要 |
 |------|---------|------|
+| 素材登記表 AR-A+AR-B（TileMaterialRegistry） | `VoxelWorld/Public/TileMaterialRegistry.h/.cpp` `GreedyMesher.cpp` `AVoxelWorldActor.h/.cpp` | AR-A：UTileMaterialRegistry : UDataAsset，Entries[] 直接以 EMaterialType uint8 為 index，O(1) 查表，Validate() 跳過 Air；AR-B：GreedyMesher PolyGroup 改為 MaterialID，AVoxelWorldActor BeginPlay 設定 Count 個 slot，無 Registry 或 slot null 時 fallback 到 VoxelMaterial；⚠️ 使用者需在 Editor 手動建立 DA_TileMaterialRegistry.uasset（路徑 /Game/Data/）並填入材質 |
+| M-NPC-0 NPCBrain Plugin 骨架 | `Plugins/NPCBrain/NPCBrain.uplugin` `NPCBrain.Build.cs` `NPCBrainTypes.h` `NPCBrainSettings.h` `LlamaServerProcess.h/.cpp` `LlamaInferenceClient.h/.cpp` `UNPCBrainSubsystem.h/.cpp` `Config/DefaultNPCBrain.ini` | llama-server HTTP 橋接架構：UWorldSubsystem 管理子程序生命週期，FTSTicker 每 0.5s 輪詢 /health，BindWeakLambda 防 GC crash，LlamaInferenceClient 送 OpenAI-compatible POST 並 lambda capture move-only TDelegate；待使用者下載 llama-server.exe + GGUF 模型後 build 驗證 |
+| Runtime Crash 全修（Delegate + GameMode） | `ASkillCreatorGameMode.cpp` `UShapeMenuWidget.cpp` `UEquipmentWidget.h/.cpp` `USpellGroupWidget.cpp` | 修正 4 個 Play 即 crash 問題：① AddDynamic macro 字串化 array element 導致 Delegate assert；② SetWidgetToFocus 對不可聚焦 Widget 觸發 cascade；③ UEquipmentWidget.h 缺 #include "ItemId.h" |
+| E 鍵積木編輯器 Tab 登錄 | `SkillCreatorEditorModule.cpp` `SkillCreatorEditor.Build.cs` | FSkillCreatorEditorModule：StartupModule 呼叫 RegisterNomadTabSpawner("BlockSpellEditor")，建立 UBlockEdGraph+UBlockEdGraphSchema 並掛入 SBlockEditorWidget；ShutdownModule 反登錄；E 鍵按下即可開啟積木技能編輯器 Tab |
 | S-1 CharacterSaveData 補完 | `CharacterSaveData.h` | 新增 Level(int32) / Xp(float) / InventorySlots(TArray<FItemStack>) / ActiveHotbar(int32) / ManaCurrents(TMap<FName,float>)，對應 UInventoryComponent.Slots 型別 |
 | UI-5 SpellDescriptionGenerator | `SpellDescriptionGenerator.h/.cpp` | FSpellDescriptionGenerator 純 C++ 工具：GenerateStructured（插槽/刻印/容器效果逐行結構化）/ GenerateProse（自然語言技能描述散文）；11 元素、11 EngraveColor、ContainerType 中文映射 |
 | UI-2 InputSettingsWidget + UI-3 SpellListWidget | `UInputSettingsWidget.h/.cpp` `USpellListWidget.h/.cpp` | UInputSettingsWidget：GetCurrentBindings / RemapAction（修改 IMC + 重套 Sub）/ SaveBindings（GConfig→PlayerInputBindings.ini）/ LoadAndApplyBindings / ResetToDefaults；USpellListWidget：RefreshSpellList（從 SpellGroups 讀取）/ SetActiveGroup / OnSpellListRefreshed / OnSlotHovered；FKeyBindingEntry + FSpellSlotDisplayInfo USTRUCT |
