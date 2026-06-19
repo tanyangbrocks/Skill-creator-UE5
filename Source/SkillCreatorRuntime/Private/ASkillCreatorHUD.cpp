@@ -10,6 +10,8 @@
 #include "UStatsWidget.h"
 #include "UInventoryWidget.h"
 #include "UEquipmentWidget.h"
+#include "UInputSettingsWidget.h"
+#include "USpellListWidget.h"
 #include "ItemRegistry.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -55,11 +57,13 @@ void ASkillCreatorHUD::ToggleSettings()
     TogglePanel(SettingsPanel);
 }
 
-void ASkillCreatorHUD::ToggleShapeMenu()   { TogglePanel(ShapeMenuPanel);  }
-void ASkillCreatorHUD::ToggleSpellGroup()  { TogglePanel(SpellGroupPanel); }
-void ASkillCreatorHUD::ToggleStats()       { TogglePanel(StatsPanel);      }
-void ASkillCreatorHUD::ToggleInventory()   { TogglePanel(InventoryPanel);  }
-void ASkillCreatorHUD::ToggleEquipment()   { TogglePanel(EquipmentPanel);  }
+void ASkillCreatorHUD::ToggleShapeMenu()       { TogglePanel(ShapeMenuPanel);      }
+void ASkillCreatorHUD::ToggleSpellGroup()      { TogglePanel(SpellGroupPanel);     }
+void ASkillCreatorHUD::ToggleStats()           { TogglePanel(StatsPanel);          }
+void ASkillCreatorHUD::ToggleInventory()       { TogglePanel(InventoryPanel);      }
+void ASkillCreatorHUD::ToggleEquipment()       { TogglePanel(EquipmentPanel);      }
+void ASkillCreatorHUD::ToggleInputSettings()   { TogglePanel(InputSettingsPanel);  }
+void ASkillCreatorHUD::ToggleSpellList()       { TogglePanel(SpellListPanel);      }
 
 // ── BeginPlay：建立所有 widget + 綁定 delegate ───────────────────────────
 
@@ -172,6 +176,12 @@ void ASkillCreatorHUD::BeginPlay()
                 }
             });
     }
+
+    // InputSettings（按鍵重綁面板）
+    InputSettingsPanel = CreatePanel<UInputSettingsWidget>();
+
+    // SpellList（法術清單面板）
+    SpellListPanel = CreatePanel<USpellListWidget>();
 }
 
 // ── DrawHUD：每幀餵資料 ───────────────────────────────────────────────────
@@ -255,4 +265,7 @@ void ASkillCreatorHUD::DrawHUD()
 
     if (EquipmentPanel && EquipmentPanel->GetVisibility() == ESlateVisibility::Visible)
         EquipmentPanel->Refresh(Char->EquipmentComp);
+
+    if (SpellListPanel && SpellListPanel->GetVisibility() == ESlateVisibility::Visible)
+        SpellListPanel->RefreshSpellList();
 }

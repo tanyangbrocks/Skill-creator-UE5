@@ -10,6 +10,8 @@
 #include "UGameSessionSubsystem.h"
 #include "UGameFlowWidget.h"
 #include "Blueprint/UserWidget.h"
+#include "FlowSaveSystem.h"
+#include "TimerManager.h"
 
 ASkillCreatorGameMode::ASkillCreatorGameMode()
 {
@@ -78,6 +80,10 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
         PC->SetPause(false);
     }
 
+    CurrentWorldSave     = World;
+    CurrentCharacterSave = Character;
+    bGameplayStarted     = true;
+
     SpawnWorldAndMobs(World.Seed);
 
     // 角色在 BeginPlay 當下（選世界之前）就已經 spawn 了，
@@ -88,7 +94,42 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
         {
             Char->RebindWorldSystems();
             Char->ApplyCharacterSaveData(Character);
+
+            Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::PerformSave);
         }
+
+    // 每 30 秒自動存檔
+    GetWorldTimerManager().SetTimer(
+        PeriodicSaveHandle,
+        this,
+        &ASkillCreatorGameMode::PerformSave,
+        30.f,
+        /*bLoop=*/true);
+}
+
+void ASkillCreatorGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(PeriodicSaveHandle);
+
+    if (bGameplayStarted)
+        PerformSave();
+
+    Super::EndPlay(EndPlayReason);
+}
+
+void ASkillCreatorGameMode::PerformSave()
+{
+    if (!bGameplayStarted) return;
+
+    // 更新角色執行期狀態進存檔結構
+    if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+        if (ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn()))
+            Char->FillSaveData(CurrentCharacterSave);
+
+    FFlowSaveSystem::SaveCharacter(CurrentCharacterSave);
+
+    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
+        FFlowSaveSystem::SaveAll(*VW->GetTileWorld(), CurrentWorldSave);
 }
 
 void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed)

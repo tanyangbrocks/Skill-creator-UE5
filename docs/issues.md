@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-17（Batch 2 大規模補完：FCharStatsSnapshot / LastPlayed / FragmentItem / SplitAt+AppendBlocks / AEnemy 全補 / AEnemyManager EnemyProjectiles+SetSpawner / ASpellProjectile.IsAlive / TileWorld3D.HeightEstimator+MarkNeighborsCaDirty+FlushNeighborDirty / AVoxelWorldActor.ShowHighlight+HideHighlight / SBlockEditorWidget.OnChanged+SwitchEditorGroup / UFloatingDamageWidget + AFloatingDamageActor）  
+**最後更新**：2026-06-19（Round 1 稽核修復 + 文件訂正：存檔系統接通遊玩 / 3 個 UI Widget 接進 HUD / 自動裝備 / 敵人環境傷害 / 遠程投射物 / 採掘高亮；修正 4 個反向錯誤：FormatTraceParams / MeleeRange / EContainerType::Contact / CharacterState.TickState 均已實作非缺失）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -18,11 +18,11 @@
 | 5 | Character / Combat / Interfaces | 738 | **~100%** | — |
 | 6 | Voxel World Core | 2,967 | **~90%** | GPU CA（M-10，長期） |
 | 7 | Rendering / Materials / Sky | 2,112 | **~92%** | PlacedObjectRegistry/SurfaceWaterPool/MaterialData 全部完成；R-6e 拉伸系統未來擴充 |
-| 8 | Enemy AI | 971 | **~100%** | — （CameraController 前 session 完成） |
+| 8 | Enemy AI | 971 | **~100%** | — （CameraController + 遠程投射物 + 環境傷害 2026-06-19 補完）|
 | 9 | Items / Equipment / Inventory | 444 | **~100%** | — （DroppedItem 完成） |
-| 10 | GameFlow / Snapshot / Save | 1,030 | **~97%** | WBP_GameFlow .uasset 待建（C++ 後端完整） |
-| 11 | UI / Main / Input | 7,053 | **~88%** | WBP_InputSettings / WBP_SpellList .uasset 待建；自由畫布 M-9 後期優化 |
-| — | **合計（估算）** | **20,188** | **~97%** | 僅剩 WBP .uasset 手動建立 + GPU CA（M-10 長期）+ W-7+ 世界觀 |
+| 10 | GameFlow / Snapshot / Save | 1,030 | **~99%** | WBP_GameFlow .uasset 待建（存檔觸發 + C++ 後端全部完整）|
+| 11 | UI / Main / Input | 7,053 | **~92%** | WBP_InputSettings / WBP_SpellList .uasset 待建；InputSettings+SpellList+FloatingDamage 已接通 HUD |
+| — | **合計（估算）** | **20,188** | **~98%** | 僅剩 WBP .uasset 手動建立 + GPU CA（M-10 長期）+ W-7+ 世界觀 |
 
 ---
 
@@ -74,6 +74,13 @@
 | UI-2 UInputSettingsWidget：RemapAction / SaveBindings / LoadAndApplyBindings / ResetToDefaults | UInputSettingsWidget.h/.cpp | 2026-06-16 |
 | UI-3 USpellListWidget：RefreshSpellList / SetActiveGroup / FSpellSlotDisplayInfo USTRUCT | USpellListWidget.h/.cpp | 2026-06-16 |
 | ASkillCreatorCharacter.DefaultIMC UPROPERTY + GetDefaultMappingContext() | ASkillCreatorCharacter.h/.cpp | 2026-06-16 |
+| 存檔系統接通遊玩：GameMode 30s 定期存檔 + EndPlay 退出存檔 + OnCharacterDied 死亡存檔 + FillSaveData() | ASkillCreatorGameMode.cpp / ASkillCreatorCharacter.cpp | 2026-06-19 |
+| UInputSettingsWidget + USpellListWidget 接進 ASkillCreatorHUD（I / L 快捷鍵） | ASkillCreatorHUD.h/.cpp / ASkillCreatorPlayerController.cpp | 2026-06-19 |
+| AFloatingDamageActor::Spawn() 接入 TakeDirectDamage（玩家 + 敵人） | ASkillCreatorCharacter.cpp / AEnemy.cpp | 2026-06-19 |
+| 自動裝備：撿物入背包時若對應裝備槽空閒則自動穿戴 | ASkillCreatorCharacter.cpp | 2026-06-19 |
+| 敵人環境傷害：站在 Fire/Lava tile 每幀扣血 | AEnemyManager.cpp | 2026-06-19 |
+| 遠程敵人發射投射物：UBTTask_AttackPlayer Ranged 分支改為 Spawn ASpellProjectile | UBTTask_AttackPlayer.cpp | 2026-06-19 |
+| 採掘高亮：Tick 每幀視線 Raycast + AVoxelWorldActor::ShowHighlight/HideHighlight | ASkillCreatorCharacter.cpp | 2026-06-19 |
 
 ---
 
@@ -134,7 +141,7 @@
 | ExecutionLoop.cs | 全部等待狀態處理（Wait / SleepFrames / OnReceive / WaitCondition / RisingEdge / FallingEdge）| 已實作 | `ExecutionLoop.cpp` L92-113 | 完整對應 |
 | ExecutionLoop.cs | 全部 55 個 opcode dispatch case | 已實作 | `ExecutionLoop.cpp` | case EOpCode::* 完整對應 |
 | ExecutionLoop.cs | EvalCondition / EvalCompare / ResolveNum / SetEntityVars / GetVec / SetVec / VecKey | 已實作 | `ExecutionLoop.h` L28-38；cpp | 完整對應 |
-| ExecutionLoop.cs | FormatTraceParams | **完全缺失** | 無對應 | Debug 輸出格式化；由遊戲層負責 |
+| ExecutionLoop.cs | FormatTraceParams | **已實作** | `ExecutionLoop.cpp` L86-88 | 先前稽核誤標為缺失；FExecutionLoop::FormatTraceParams() 已實作並在 Trace 模式呼叫 |
 | SpellCompiler.cs | Compile() / EmitList() / EmitBlock() | 已實作 | `SpellCompiler.h` L20-31 | 完整對應 |
 | SpellCompiler.cs | 全部 BlockType 編譯 case（~60 種）| 已實作 | `SpellCompiler.cpp` L80+ | 含 RepeatN / ForEach / Vec 系列等 |
 | SpellCompiler.cs | ReadCond / ReadArgs<T> / MakeI<T> / MakeJump / PatchJump / PatchJumpIf / PatchWhile / PatchEdge / PatchCounter / PatchForEach | 已實作 | `SpellCompiler.h` L38-53；cpp L6-50 | 完整對應 |
@@ -169,7 +176,7 @@
 
 | Godot 檔案 | 項目名稱 | UE5 狀態 | UE5 對應位置 | 備註 |
 |-----------|---------|---------|------------|------|
-| SpellCaster.cs | MeleeRange 常數 | **完全缺失** | — | 近戰範圍由 Contact 容器判斷邏輯引出 |
+| SpellCaster.cs | MeleeRange 常數 | **已實作** | `USpellCaster.h` L59 | `static constexpr int32 MeleeRange = 3`；先前稽核誤標缺失 |
 | SpellCaster.cs | _pendingProjectiles / TakePendingProjectiles() | **完全缺失** | — | UE5 改用 AActor Spawn |
 | SpellCaster.cs | SpellCastResult（Ok / Projectile / Failed）| **stub** | `USpellCaster.cpp` L82-114 | 簡化為 bool TryCast() |
 | SpellCaster.cs | TryCast() 主方法（冷卻 / MP 扣除 / OnSpellCast）| 已實作 | `USpellCaster.cpp` L66-238 | 完整對應 |
@@ -264,7 +271,7 @@
 | EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **已實作** | `SpellArray.h` | EEngraveColor / EEngraveCategory / EEngraveTrigger / EScalingType（前 session）|
 | AbilityActivationType.cs | Instant / Declare / Sustained / None | 已實作 | `ManaType.h` EAbilityActivationType | 完整對應 |
 | ContainerType.cs | DirectCast / Projectile | 已實作 | `SpellArray.h` EContainerType | 完整對應 |
-| ContainerType.cs | Contact | **完全缺失** | SpellArray.h 已移除 | Godot 保留供舊檔相容 |
+| ContainerType.cs | Contact | **已實作** | `SpellArray.h` L14 | EContainerType::Contact 存在；先前稽核誤標已移除 |
 | ContainerType.cs | SummonMinion / SummonTurret / SummonGuardian | **stub** | EContainerType::Summon | 合併為單一 Summon（AI 未實作）|
 | ElementType.cs | 全部 12 個值（None / Metal / Wood / Water / Fire / Earth / Ice / Wind / Light / Dark / Thunder / Poison）| 已實作 | `ElementType.h` ESkillElementType | 改名（EElementType 被 SlateCore 佔用）2026-06-16 |
 | SaveSystem.cs | SaveGroupToString / LoadGroupFromString | **已實作** | `SpellSaveSystem.h/.cpp` | 2 個方法 |
@@ -362,7 +369,7 @@
 | CharacterState.cs | 飢餓系統（MaxHunger / HungerDrainPerSec / Hunger / IsHungry / IsStarving 等 9 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
 | CharacterState.cs | 氧氣系統（MaxOxygen / OxygenDrainPerSec / Oxygen / IsSuffocating 等 9 個）| **已實作** | `UCharacterStateComponent.h` | 完整對應（前 session）|
 | CharacterState.cs | TakeSnapshot() / RestoreFromSnapshot() | **完全缺失** | — | S-6 快照 API；M-9 待實作 |
-| CharacterState.cs | Tick(float, bool) | **stub** | `UCharacterStateComponent.cpp` L8-26 | 邏輯不完整（M-7 標記）|
+| CharacterState.cs | Tick(float, bool) | **已實作** | `UCharacterStateComponent.cpp` L8-62 | TickState()：Stamina/MentalEnergy/Mood/BodyTemp/Thirst/Hunger/Oxygen 全部完整；先前標為 stub 但邏輯早已完成 |
 | CombatState.cs | OutOfCombatTimeout / InCombat / BattleId / CastCount / DamageDealt / KillCount / TookDamageThisFrame | 已實作 | `UCombatStateSubsystem.h` L18-39 | static constexpr + UPROPERTY 完整對應 |
 | CombatState.cs | OnHit / OnSpellCast / OnPlayerDealtDamage / OnPlayerTookDamage / OnEnemyKilled / Advance / Reset / EnterCombat / ExitCombat | 已實作 | `UCombatStateSubsystem.h/.cpp` | 完整對應 |
 | ICreature.cs | Id / Position / Hp / MaxHp / IsAlive | **stub** | `ICreature.h` L12-16 | 改為方法形式（GetCreatureId() 等）|

@@ -114,4 +114,15 @@ private:
     UFUNCTION() void OnWorldDeleteClicked();
     UFUNCTION() void OnWorldRefreshClicked();
     UFUNCTION() void OnWorldBackClicked();
+
+    // ── 確認刪除彈窗 ────────────────────────────────────────────────
+    UPROPERTY() TObjectPtr<UWidget>    ConfirmOverlay  = nullptr;
+    UPROPERTY() TObjectPtr<UTextBlock> ConfirmMsgText  = nullptr;
+    FString PendingDeleteId;
+    bool    bPendingDeleteIsChar = false;
+
+    void ShowConfirmDelete(const FString& Id, bool bIsChar);
+
+    UFUNCTION() void OnConfirmDeleteYes();
+    UFUNCTION() void OnConfirmDeleteNo();
 };

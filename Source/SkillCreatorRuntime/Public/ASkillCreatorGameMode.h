@@ -22,6 +22,7 @@ class SKILLCREATORRUNTIME_API ASkillCreatorGameMode : public AGameModeBase
 public:
     ASkillCreatorGameMode();
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     // UGameFlowWidget 選好角色+世界後呼叫，正式進入遊戲（同一張地圖，不換關卡）
     void StartGameplayWithWorld(const FWorldSaveData& World, const FCharacterSaveData& Character);
@@ -29,6 +30,18 @@ public:
 private:
     UPROPERTY()
     TObjectPtr<UGameFlowWidget> GameFlowWidget;
+
+    // 遊玩中的當前角色與世界存檔 metadata（Id/Name/WorldDir/Seed 等）
+    FWorldSaveData     CurrentWorldSave;
+    FCharacterSaveData CurrentCharacterSave;
+    bool               bGameplayStarted = false;
+
+    FTimerHandle PeriodicSaveHandle;
+
+    // 把目前遊戲狀態寫回磁碟（角色進度 + 世界 dirty chunks）
+    // UFUNCTION 供 OnCharacterDied（DYNAMIC_MULTICAST）AddDynamic 綁定
+    UFUNCTION()
+    void PerformSave();
 
     void SpawnWorldAndMobs(int32 WorldSeed);
 };

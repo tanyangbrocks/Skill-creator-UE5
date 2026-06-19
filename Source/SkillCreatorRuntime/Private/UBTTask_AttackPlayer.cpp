@@ -3,7 +3,11 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "AIController.h"
 #include "AEnemy.h"
+#include "AEnemyManager.h"
+#include "ASpellProjectile.h"
+#include "AVoxelWorldActor.h"
 #include "ASkillCreatorCharacter.h"
+#include "EngineUtils.h"
 
 UBTTask_AttackPlayer::UBTTask_AttackPlayer()
 {
@@ -35,6 +39,38 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
 
     if (Dist > Range) return EBTNodeResult::Failed;
 
-    Player->TakeDirectDamage(Enemy->GetAttackDamage());
+    if (Enemy->Type == EEnemyType::Ranged)
+    {
+        // Ranged：生成朝向玩家的投射物
+        UWorld* W = OwnerComp.GetWorld();
+        AEnemyManager* EnemyMgr = nullptr;
+        for (TActorIterator<AEnemyManager> It(W); It; ++It) { EnemyMgr = *It; break; }
+        AVoxelWorldActor* VoxelWorld = AVoxelWorldActor::FindInWorld(W);
+
+        if (EnemyMgr && VoxelWorld)
+        {
+            FVector Dir = FVector(PPos.X - EPos.X, PPos.Y - EPos.Y, PPos.Z - EPos.Z);
+            if (!Dir.IsNearlyZero())
+                Dir.Normalize();
+            else
+                Dir = FVector(1.f, 0.f, 0.f);
+
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            ASpellProjectile* Proj = W->SpawnActor<ASpellProjectile>(
+                ASpellProjectile::StaticClass(),
+                Enemy->GetActorLocation(), FRotator::ZeroRotator, Params);
+            if (Proj)
+            {
+                Proj->BaseDamage = AEnemyManager::BoltDamage;
+                Proj->Init(EPos, Dir, EnemyMgr, VoxelWorld);
+                EnemyMgr->EnemyProjectiles.Add(Proj);
+            }
+        }
+    }
+    else
+    {
+        Player->TakeDirectDamage(Enemy->GetAttackDamage());
+    }
     return EBTNodeResult::Succeeded;
 }

@@ -38,12 +38,14 @@ private:
     void ToggleBlockEditorOverlay();
 #endif
     // 面板開關
-    void OnOpenSettings();     // B
-    void OnOpenShapeMenu();    // N
-    void OnSpellGroupSwitch(); // V
-    void OnOpenInventory();    // Z
-    void OnOpenEquipment();    // X
-    void OnOpenStats();        // C
-    void OnEquipItem();        // Q — 裝備/使用熱鍵格
-    void OnToggleXray();       // Tab — X-ray 視野切換
+    void OnOpenSettings();       // B
+    void OnOpenShapeMenu();      // N
+    void OnSpellGroupSwitch();   // V
+    void OnOpenInventory();      // Z
+    void OnOpenEquipment();      // X
+    void OnOpenStats();          // C
+    void OnOpenInputSettings();  // I
+    void OnOpenSpellList();      // L
+    void OnEquipItem();          // Q — 裝備/使用熱鍵格
+    void OnToggleXray();         // Tab — X-ray 視野切換
 };

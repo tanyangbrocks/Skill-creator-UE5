@@ -81,6 +81,42 @@ void UGameFlowWidget::BuildLayout()
     }
 
     ShowScreen(CharScreen);
+
+    // ── 確認彈窗（疊在最上層，預設隱藏）────────────────────────────
+    UBorder* ConfirmBg = WidgetTree->ConstructWidget<UBorder>();
+    ConfirmBg->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.08f, 0.95f));
+
+    UVerticalBox* ConfirmBox = WidgetTree->ConstructWidget<UVerticalBox>();
+    ConfirmBg->SetContent(ConfirmBox);
+
+    ConfirmMsgText = WidgetTree->ConstructWidget<UTextBlock>();
+    ConfirmMsgText->SetText(FText::FromString(TEXT("確定要刪除？")));
+    ConfirmBox->AddChildToVerticalBox(ConfirmMsgText);
+
+    UHorizontalBox* ConfirmBtns = WidgetTree->ConstructWidget<UHorizontalBox>();
+    ConfirmBox->AddChildToVerticalBox(ConfirmBtns);
+
+    UButton* YesBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* YesTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    YesTxt->SetText(FText::FromString(TEXT("確認刪除")));
+    YesBtn->AddChild(YesTxt);
+    YesBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnConfirmDeleteYes);
+    ConfirmBtns->AddChildToHorizontalBox(YesBtn);
+
+    UButton* NoBtn = WidgetTree->ConstructWidget<UButton>();
+    UTextBlock* NoTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    NoTxt->SetText(FText::FromString(TEXT("取消")));
+    NoBtn->AddChild(NoTxt);
+    NoBtn->OnClicked.AddDynamic(this, &UGameFlowWidget::OnConfirmDeleteNo);
+    ConfirmBtns->AddChildToHorizontalBox(NoBtn);
+
+    ConfirmOverlay = ConfirmBg;
+    if (UOverlaySlot* ConfirmSlot = ScreenStack->AddChildToOverlay(ConfirmOverlay))
+    {
+        ConfirmSlot->SetHorizontalAlignment(HAlign_Center);
+        ConfirmSlot->SetVerticalAlignment(VAlign_Center);
+    }
+    ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 UWidget* UGameFlowWidget::BuildCharScreen()
@@ -359,10 +395,7 @@ void UGameFlowWidget::OnCharDeleteClicked()
         if (StatusText) StatusText->SetText(FText::FromString(TEXT("錯誤：請輸入 Character ID")));
         return;
     }
-    const bool bOk = RemoveCharacter(Id);
-    if (StatusText)
-        StatusText->SetText(FText::FromString(
-            bOk ? FString::Printf(TEXT("已刪除 ID: %s"), *Id) : TEXT("刪除失敗（ID 不存在？）")));
+    ShowConfirmDelete(Id, /*bIsChar=*/true);
 }
 
 void UGameFlowWidget::OnCharRefreshClicked()
@@ -409,10 +442,46 @@ void UGameFlowWidget::OnWorldDeleteClicked()
         if (StatusText) StatusText->SetText(FText::FromString(TEXT("錯誤：請輸入 World ID")));
         return;
     }
-    const bool bOk = RemoveWorld(Id);
+    ShowConfirmDelete(Id, /*bIsChar=*/false);
+}
+
+void UGameFlowWidget::ShowConfirmDelete(const FString& Id, bool bIsChar)
+{
+    PendingDeleteId      = Id;
+    bPendingDeleteIsChar = bIsChar;
+    if (ConfirmMsgText)
+    {
+        FString TypeName = bIsChar ? TEXT("角色") : TEXT("世界");
+        ConfirmMsgText->SetText(FText::FromString(
+            FString::Printf(TEXT("確定要刪除%s 「%s」？此操作不可逆。"), *TypeName, *Id)));
+    }
+    if (ConfirmOverlay)
+        ConfirmOverlay->SetVisibility(ESlateVisibility::Visible);
+}
+
+void UGameFlowWidget::OnConfirmDeleteYes()
+{
+    if (ConfirmOverlay)
+        ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
+
+    bool bOk = false;
+    if (bPendingDeleteIsChar)
+        bOk = RemoveCharacter(PendingDeleteId);
+    else
+        bOk = RemoveWorld(PendingDeleteId);
+
     if (StatusText)
         StatusText->SetText(FText::FromString(
-            bOk ? FString::Printf(TEXT("已刪除 ID: %s"), *Id) : TEXT("刪除失敗（ID 不存在？）")));
+            bOk ? FString::Printf(TEXT("已刪除 ID: %s"), *PendingDeleteId)
+                : TEXT("刪除失敗（ID 不存在？）")));
+    PendingDeleteId.Empty();
+}
+
+void UGameFlowWidget::OnConfirmDeleteNo()
+{
+    if (ConfirmOverlay)
+        ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    PendingDeleteId.Empty();
 }
 
 void UGameFlowWidget::OnWorldRefreshClicked()

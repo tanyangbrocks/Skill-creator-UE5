@@ -14,8 +14,13 @@
 #include "AEnemy.h"
 #include "GridPos.h"
 #include "UDroppedItemManager.h"
+#include "UEquipmentComponent.h"
+#include "ItemRegistry.h"
+#include "ItemData.h"
+#include "EquipmentSlotType.h"
 #include "WorldScale.h"
 #include "CharacterSaveData.h"
+#include "AFloatingDamageActor.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -120,6 +125,31 @@ void ASkillCreatorCharacter::RebindWorldSystems()
     }
 }
 
+void ASkillCreatorCharacter::FillSaveData(FCharacterSaveData& OutData) const
+{
+    OutData.Level    = Level;
+    OutData.Xp       = Xp;
+    OutData.CurrentHp = CurrentHp;
+    OutData.CurrentMp = CurrentMp;
+
+    FGridPos Pos = GetPosition();
+    OutData.TilePosition = FIntVector(Pos.X, Pos.Y, Pos.Z);
+
+    if (InventoryComp)
+        OutData.InventorySlots = InventoryComp->Slots;
+
+    if (StateComp)
+    {
+        OutData.Stamina      = StateComp->Stamina;
+        OutData.MentalEnergy = StateComp->MentalEnergy;
+        OutData.Mood         = StateComp->Mood;
+    }
+
+    OutData.ManaCurrents.Empty();
+    for (const FManaSlot& Slot : ActiveManaSlots)
+        OutData.ManaCurrents.Add(Slot.ManaTypeKey, Slot.Current);
+}
+
 void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Data)
 {
     Level     = Data.Level;
@@ -183,13 +213,43 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
 
     ApplyEnvironmentalDamage(DeltaTime);
 
-    // 自動拾取玩家周圍掉落物
+    // 自動拾取玩家周圍掉落物，並在裝備槽空閒時自動穿戴
     if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
     {
         TArray<FItemStack> Picked = DropMgr->TryPickupAll(this);
         for (const FItemStack& S : Picked)
-            if (InventoryComp && S.ItemId != EItemId::None)
-                InventoryComp->TryAdd(S.ItemId, S.Count);
+        {
+            if (!InventoryComp || S.ItemId == EItemId::None) continue;
+            int32 SlotIdx = InventoryComp->TryAdd(S.ItemId, S.Count);
+            if (SlotIdx >= 0 && EquipmentComp)
+            {
+                const FItemData& D = FItemRegistry::Get(S.ItemId);
+                bool bFree = false;
+                if      (D.EquipSlot == EEquipmentSlotType::Weapon)    bFree = EquipmentComp->WeaponId    == EItemId::None;
+                else if (D.EquipSlot == EEquipmentSlotType::Armor)     bFree = EquipmentComp->ArmorId     == EItemId::None;
+                else if (D.EquipSlot == EEquipmentSlotType::Accessory) bFree = EquipmentComp->AccessoryId == EItemId::None;
+                if (bFree && D.EquipSlot != EEquipmentSlotType::None)
+                    EquipmentComp->TryEquip(InventoryComp, SlotIdx);
+            }
+        }
+    }
+
+    // 採掘高亮：每幀追蹤玩家視線，顯示即將被採掘的 tile
+    if (CachedVoxelWorld)
+    {
+        if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+            FVector CamLoc; FRotator CamRot;
+            PC->GetPlayerViewPoint(CamLoc, CamRot);
+            FRaycastResult3D H = TW->Raycast(
+                WorldScale::WorldToTileF(CamLoc, TW->Height),
+                WorldScale::DirToVoxel(CamRot.Vector()), 10.f);
+            if (H.bHit)
+                CachedVoxelWorld->ShowHighlight(FGridPos(H.HitCell.X, H.HitCell.Y, H.HitCell.Z));
+            else
+                CachedVoxelWorld->HideHighlight();
+        }
     }
 }
 
@@ -211,6 +271,10 @@ void ASkillCreatorCharacter::TakeDirectDamage(float Amount)
 
     CurrentHp = FMath::Max(0.f, CurrentHp - Final);
     OnHpChanged.Broadcast(CurrentHp);
+
+    if (Final > 0.f)
+        AFloatingDamageActor::Spawn(GetWorld(),
+            GetActorLocation() + FVector(0.f, 0.f, 50.f), Final);
 
     if (auto* GI = GetWorld()->GetGameInstance())
         if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())

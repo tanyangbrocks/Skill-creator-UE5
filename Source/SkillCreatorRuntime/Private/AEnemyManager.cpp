@@ -3,6 +3,8 @@
 #include "UCombatStateSubsystem.h"
 #include "UDroppedItemManager.h"
 #include "AVoxelWorldActor.h"
+#include "TileWorld3D.h"
+#include "MaterialType.h"
 #include "MaterialRegistry.h"
 #include "WorldScale.h"
 #include "Kismet/GameplayStatics.h"
@@ -50,6 +52,24 @@ void AEnemyManager::Tick(float DeltaTime)
     // 清理失效的敵人投射物指針
     EnemyProjectiles.RemoveAll(
         [](const TObjectPtr<ASpellProjectile>& P) { return !IsValid(P); });
+
+    // 環境傷害：站在 Fire/Lava tile 的敵人每幀扣血
+    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
+    {
+        if (FTileWorld3D* TW = VW->GetTileWorld())
+        {
+            for (AEnemy* E : Enemies)
+            {
+                if (!IsValid(E) || !E->IsAlive()) continue;
+                EMaterialType Mat = static_cast<EMaterialType>(
+                    TW->GetTile(E->GridPosition.X, E->GridPosition.Y, E->GridPosition.Z));
+                float Dps = 0.f;
+                if (Mat == EMaterialType::Fire) Dps = FireDps;
+                else if (Mat == EMaterialType::Lava) Dps = LavaDps;
+                if (Dps > 0.f) E->TakeDamageAmount(Dps * DeltaTime);
+            }
+        }
+    }
 
     for (int32 i = Enemies.Num() - 1; i >= 0; --i)
     {

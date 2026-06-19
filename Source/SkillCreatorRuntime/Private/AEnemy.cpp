@@ -5,6 +5,7 @@
 #include "WorldScale.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
+#include "AFloatingDamageActor.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -56,6 +57,10 @@ void AEnemy::TakeDamageAmount(float Amount)
 {
     float Modified = Amount * (1.f + AuraComp->DamageTakenBonus) * (1.f + AuraComp->DefensePenalty);
     Hp = FMath::Max(0.f, Hp - Modified);
+
+    if (Modified > 0.f)
+        AFloatingDamageActor::Spawn(GetWorld(),
+            GetActorLocation() + FVector(0.f, 0.f, 50.f), Modified);
 }
 
 void AEnemy::Respawn()

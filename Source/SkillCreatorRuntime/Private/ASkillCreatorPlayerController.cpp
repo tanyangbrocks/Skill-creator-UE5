@@ -3,6 +3,7 @@
 #include "ASkillCreatorHUD.h"
 #include "USpellCaster.h"
 #include "UInventoryComponent.h"
+#include "UEquipmentComponent.h"
 #include "GameFramework/Pawn.h"
 #if WITH_EDITOR
 #include "UBlockEdGraph.h"
@@ -41,6 +42,8 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Z,               &ASkillCreatorPlayerController::OnOpenInventory);
     Bind(EKeys::X,               &ASkillCreatorPlayerController::OnOpenEquipment);
     Bind(EKeys::C,               &ASkillCreatorPlayerController::OnOpenStats);
+    Bind(EKeys::I,               &ASkillCreatorPlayerController::OnOpenInputSettings);
+    Bind(EKeys::L,               &ASkillCreatorPlayerController::OnOpenSpellList);
     Bind(EKeys::Q,               &ASkillCreatorPlayerController::OnEquipItem);
     Bind(EKeys::Tab,             &ASkillCreatorPlayerController::OnToggleXray);
 }
@@ -166,6 +169,16 @@ void ASkillCreatorPlayerController::OnOpenEquipment()
 void ASkillCreatorPlayerController::OnOpenStats()
 {
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleStats();
+}
+
+void ASkillCreatorPlayerController::OnOpenInputSettings()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInputSettings();
+}
+
+void ASkillCreatorPlayerController::OnOpenSpellList()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSpellList();
 }
 
 // ── Q：裝備/使用熱鍵格物品 ───────────────────────────────────────────────

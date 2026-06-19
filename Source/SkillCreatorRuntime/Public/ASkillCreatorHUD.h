@@ -12,6 +12,8 @@ class USpellGroupWidget;
 class UStatsWidget;
 class UInventoryWidget;
 class UEquipmentWidget;
+class UInputSettingsWidget;
+class USpellListWidget;
 
 // 玩家 HUD 生命週期管理 + 每幀資料餵送。
 // 所有面板 widget 在 BeginPlay() 建立，預設隱藏；各 Toggle*() 切換顯示狀態。
@@ -48,6 +50,12 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
     TObjectPtr<UEquipmentWidget>  EquipmentPanel;
 
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UInputSettingsWidget> InputSettingsPanel;
+
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<USpellListWidget>  SpellListPanel;
+
     // ── 全域放置狀態（PlayerController 切換，VoxelWorld 讀取）───────
     bool bHoldToPlace    = false;
     bool bPerfectRemove  = false;
@@ -61,6 +69,8 @@ public:
     void ToggleStats();
     void ToggleInventory();
     void ToggleEquipment();
+    void ToggleInputSettings();
+    void ToggleSpellList();
 
     virtual void BeginPlay() override;
     virtual void DrawHUD() override;
