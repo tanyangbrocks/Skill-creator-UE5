@@ -144,6 +144,23 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
         UBlockEdGraph* Graph = NewObject<UBlockEdGraph>(GetTransientPackage());
         Graph->Schema = UBlockEdGraphSchema::StaticClass();
 
+        TSharedRef<SBlockEditorWidget> EdWidget = SNew(SBlockEditorWidget).GraphToEdit(Graph);
+        BlockEditorWidget = EdWidget;
+
+        // 載入目前選中槽位既有的積木樹 + 名稱（若有）
+        ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+        int32 ActiveSlot = 0;
+        if (Char && Char->SpellCasterComp)
+        {
+            ActiveSlot = Char->SpellCasterComp->SpellGroups.GetActiveLoadout().ActiveIndex;
+            const FSpellArray& Spell = Char->SpellCasterComp->SpellGroups.GetActiveLoadout().GetSlot(ActiveSlot);
+            if (Spell.Blocks && !Spell.Blocks->IsEmpty())
+                Graph->FromBlockNodes(*Spell.Blocks);
+            EdWidget->SetSpellName(Spell.Name);
+        }
+        EdWidget->SetActiveSlot(ActiveSlot);
+        EdWidget->OnSaveSpell.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorSave);
+
         BlockEditorOverlay =
             SNew(SBox)
             .HAlign(HAlign_Fill)
@@ -153,8 +170,7 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
                 .BorderBackgroundColor(FLinearColor(0.02f, 0.02f, 0.05f, 0.96f))
                 .Padding(FMargin(0.f))
                 [
-                    SNew(SBlockEditorWidget)
-                    .GraphToEdit(Graph)
+                    EdWidget
                 ]
             ];
 
@@ -179,6 +195,25 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
         SetShowMouseCursor(false);
         SetInputMode(FInputModeGameAndUI());
     }
+}
+
+void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, int32 SlotIndex)
+{
+    if (!BlockEditorWidget.IsValid()) return;
+
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char || !Char->SpellCasterComp) return;
+
+    FSpellLoadout& Loadout = Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
+    if (!Loadout.Slots.IsValidIndex(SlotIndex)) return;
+
+    TArray<TUniquePtr<FBlockNode>> Nodes = BlockEditorWidget->GetBlockNodes();
+    Loadout.Slots[SlotIndex].Name = SpellName;
+    Loadout.Slots[SlotIndex].SetBlocks(MoveTemp(Nodes));
+
+    // 寫入 in-memory SpellGroups 即可——FillSaveData() 在下一次定時/死亡/退出存檔時
+    // 會把 SpellGroups 序列化進 SpellGroupJson（見 ASkillCreatorCharacter::FillSaveData）。
+    UE_LOG(LogTemp, Log, TEXT("[儲存技能整構] 槽位 %d「%s」已寫入"), SlotIndex + 1, *SpellName);
 }
 #endif
 

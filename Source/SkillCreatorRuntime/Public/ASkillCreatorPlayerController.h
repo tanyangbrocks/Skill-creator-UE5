@@ -32,8 +32,10 @@ private:
 
 #if WITH_EDITOR
     TSharedPtr<SWidget> BlockEditorOverlay;
+    TSharedPtr<class SBlockEditorWidget> BlockEditorWidget;
     bool bBlockEditorOpen = false;
     void ToggleBlockEditorOverlay();
+    void OnBlockEditorSave(const FString& SpellName, int32 SlotIndex);
 #endif
     // 面板開關
     void OnOpenSettings();       // B

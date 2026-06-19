@@ -5,6 +5,7 @@
 #include "ExecutionLoop.h"
 #include "SpellCompiler.h"
 #include "SpellRunner.h"
+#include "FBlockNodeSaveData.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAbilityTest, Log, All);
 
@@ -397,6 +398,69 @@ bool FAbilityTest_CompilerIf::RunTest(const FString&)
 
     TestTrue(TEXT("Completed"), Ctx.State == EExecutionState::Completed);
     TestEqual(TEXT("3>1 → then → result==1"), Ctx.InstanceVars.FindRef("result"), 1.f);
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  T-Save — FBlockTreeSaveData 攤平/還原往返（積木編輯器存檔持久化用）
+//  覆蓋：If + ThenBranch + ElseBranch 巢狀結構、Params（FInstancedStruct）
+//  正確攤平成 index pool 並還原，編譯後執行結果與還原前一致。
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAbilityTest_BlockTreeSaveRoundTrip,
+    "AbilitySystem.Save.BlockTreeRoundTrip",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FAbilityTest_BlockTreeSaveRoundTrip::RunTest(const FString&)
+{
+    // 建一棵跟上面 If/Else 測試相同的樹：3 > 1 → then(result=1) / else(result=0)
+    FConditionArgs Cond;
+    Cond.Type  = EConditionType::Compare;
+    Cond.Left  = FNumRef::Lit(3.f);
+    Cond.Right = FNumRef::Lit(1.f);
+
+    TUniquePtr<FBlockNode> ThenBlock = MakeUnique<FBlockNode>();
+    ThenBlock->Type = EBlockType::SetVar;
+    {
+        FSetVarArgs A; A.VarName = "result"; A.Value.Val = 1.f;
+        ThenBlock->Params.Add("args", FInstancedStruct::Make<FSetVarArgs>(A));
+    }
+
+    TUniquePtr<FBlockNode> ElseBlock = MakeUnique<FBlockNode>();
+    ElseBlock->Type = EBlockType::SetVar;
+    {
+        FSetVarArgs A; A.VarName = "result"; A.Value.Val = 0.f;
+        ElseBlock->Params.Add("args", FInstancedStruct::Make<FSetVarArgs>(A));
+    }
+
+    TUniquePtr<FBlockNode> IfBlock = MakeUnique<FBlockNode>();
+    IfBlock->Type = EBlockType::If;
+    IfBlock->Params.Add("cond", FInstancedStruct::Make<FConditionArgs>(Cond));
+    IfBlock->ThenBranch.Add(MoveTemp(ThenBlock));
+    IfBlock->ElseBranch.Add(MoveTemp(ElseBlock));
+
+    TArray<TUniquePtr<FBlockNode>> Original;
+    Original.Add(MoveTemp(IfBlock));
+
+    // 攤平 → 還原
+    FBlockTreeSaveData Tree = FBlockTreeSaveData::FromBlocks(Original);
+    TestEqual(TEXT("攤平後 Pool 含 3 個節點（If+Then+Else）"), Tree.Pool.Num(), 3);
+    TestEqual(TEXT("Roots 只有 1 個根節點"), Tree.Roots.Num(), 1);
+
+    TArray<TUniquePtr<FBlockNode>> Restored = FBlockTreeSaveData::ToBlocks(Tree);
+    TestEqual(TEXT("還原後根節點數一致"), Restored.Num(), 1);
+    TestTrue(TEXT("根節點型別為 If"), Restored[0]->Type == EBlockType::If);
+    TestEqual(TEXT("ThenBranch 還原 1 個節點"), Restored[0]->ThenBranch.Num(), 1);
+    TestEqual(TEXT("ElseBranch 還原 1 個節點"), Restored[0]->ElseBranch.Num(), 1);
+
+    // 還原後的樹編譯+執行，結果應與原始樹一致（驗證 Params/FInstancedStruct 沒有失真）
+    TArray<FInstruction> Code = FSpellCompiler::Compile(Restored);
+    FExecutionContext Ctx(MoveTemp(Code));
+    FExecutionLoop   Loop;
+    Loop.ResetTick();
+    Loop.Step(Ctx, 0.f);
+
+    TestTrue(TEXT("還原後編譯執行 Completed"), Ctx.State == EExecutionState::Completed);
+    TestEqual(TEXT("還原後 3>1 → then → result==1"), Ctx.InstanceVars.FindRef("result"), 1.f);
     return true;
 }
 

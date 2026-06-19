@@ -189,6 +189,15 @@ private:
     void OnDebugSnapshotTake();
     void OnDebugSnapshotApply();
     void OnMine();
+    void OnPlace();
+
+    // F1/F2/F4 開發者工具（對應 Godot TogglePaint/DebugCoord/DebugSurvival）
+    bool bDebugPaintEnabled    = false;
+    bool bDebugCoordEnabled    = false;
+    bool bDebugSurvivalEnabled = false;
+    void OnDebugPaint();
+    void OnDebugCoord();
+    void OnDebugSurvival();
 
     UPROPERTY() TObjectPtr<AVoxelWorldActor>    CachedVoxelWorld;
     UPROPERTY() TObjectPtr<AEnemyManager>       CachedEnemyMgr;

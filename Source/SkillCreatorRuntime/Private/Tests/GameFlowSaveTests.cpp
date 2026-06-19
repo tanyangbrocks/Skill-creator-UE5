@@ -13,6 +13,9 @@
 #include "CharacterSaveData.h"
 #include "FlowSaveSystem.h"
 #include "HAL/FileManager.h"
+#include "SpellSaveSystem.h"
+#include "SpellGroup.h"
+#include "Instruction.h"
 
 // ══════════════════════════════════════════════════════════════════
 //  T01 — FCharacterSaveData Save/Load 往返（Id-based，不綁定任何世界）
@@ -87,6 +90,46 @@ bool FGameFlowSaveTest_CharacterRosterLifecycle::RunTest(const FString&)
 
     // 清理
     FFlowSaveSystem::DeleteCharacter(SecondChar.Id);
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  T03 — 積木編輯器「儲存技能整構」資料流：FSpellGroup（含 Blocks）
+//  → SaveGroupToString（JSON，BlocksJson 由 FBlockTreeSaveData 攤平）
+//  → LoadGroupFromString → Blocks 還原，TryCastSlot 端到端可編譯。
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGameFlowSaveTest_SpellGroupBlocksRoundTrip,
+    "SkillCreatorRuntime.GameFlow.SpellGroupBlocksRoundTrip",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FGameFlowSaveTest_SpellGroupBlocksRoundTrip::RunTest(const FString&)
+{
+    FSpellGroup Group;
+    FSpellArray& Slot0 = Group.GetActiveLoadout().Slots[0];
+    Slot0.Name = TEXT("測試火球術");
+
+    TUniquePtr<FBlockNode> SetVarBlock = MakeUnique<FBlockNode>();
+    SetVarBlock->Type = EBlockType::SetVar;
+    FSetVarArgs A; A.VarName = "dmg"; A.Value.Val = 25.f;
+    SetVarBlock->Params.Add("args", FInstancedStruct::Make<FSetVarArgs>(A));
+
+    TArray<TUniquePtr<FBlockNode>> Blocks;
+    Blocks.Add(MoveTemp(SetVarBlock));
+    Slot0.SetBlocks(MoveTemp(Blocks));
+
+    const FString Json = FSpellSaveSystem::SaveGroupToString(Group);
+    TestTrue(TEXT("BlocksJson 寫入後 SaveGroupToString 非空"), !Json.IsEmpty());
+
+    FSpellGroup Loaded;
+    TestTrue(TEXT("LoadGroupFromString 成功"), FSpellSaveSystem::LoadGroupFromString(Json, Loaded));
+
+    const FSpellArray& LoadedSlot0 = Loaded.GetActiveLoadout().Slots[0];
+    TestEqual(TEXT("技能名稱還原一致"), LoadedSlot0.Name, Slot0.Name);
+    TestTrue(TEXT("Blocks 還原非空（TryCastSlot 不會再拿到空指令陣列）"),
+        LoadedSlot0.Blocks.IsValid() && !LoadedSlot0.Blocks->IsEmpty());
+    TestTrue(TEXT("還原節點型別為 SetVar"),
+        LoadedSlot0.Blocks.IsValid() && (*LoadedSlot0.Blocks)[0]->Type == EBlockType::SetVar);
+
     return true;
 }
 

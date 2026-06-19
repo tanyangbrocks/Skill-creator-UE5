@@ -195,6 +195,9 @@ struct FSpellArray
     // 主要元素（SpellElement 即為主要元素；M-5+ 刻印元素系統完善後可從 GlobalEngravings 覆蓋）
     ESkillElementType PrimaryElement() const { return SpellElement; }
 
+    // 積木樹的 JSON 持久化字串（FSpellSaveSystem 在存讀檔時於 Blocks ↔ BlocksJson 互轉）
+    UPROPERTY() FString BlocksJson;
+
     // 積木 AST 根節點。TUniquePtr 不可 UPROPERTY，用 TSharedPtr 包裝使 FSpellArray 保持可複製
     // （複製時共享相同的積木樹；由積木編輯器儲存後呼叫 SetBlocks() 寫入）
     TSharedPtr<TArray<TUniquePtr<FBlockNode>>> Blocks;

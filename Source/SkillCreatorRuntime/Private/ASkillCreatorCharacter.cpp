@@ -21,6 +21,9 @@
 #include "WorldScale.h"
 #include "CharacterSaveData.h"
 #include "AFloatingDamageActor.h"
+#include "SpellSaveSystem.h"
+#include "ASkillCreatorHUD.h"
+#include "PlacementShape.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -148,6 +151,9 @@ void ASkillCreatorCharacter::FillSaveData(FCharacterSaveData& OutData) const
     OutData.ManaCurrents.Empty();
     for (const FManaSlot& Slot : ActiveManaSlots)
         OutData.ManaCurrents.Add(Slot.ManaTypeKey, Slot.Current);
+
+    if (SpellCasterComp)
+        OutData.SpellGroupJson = FSpellSaveSystem::SaveGroupToString(SpellCasterComp->SpellGroups);
 }
 
 void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Data)
@@ -170,6 +176,9 @@ void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Da
     for (const TPair<FName, float>& Pair : Data.ManaCurrents)
         if (FManaSlot* Slot = GetManaSlot(Pair.Key))
             Slot->Current = Pair.Value;
+
+    if (SpellCasterComp && !Data.SpellGroupJson.IsEmpty())
+        FSpellSaveSystem::LoadGroupFromString(Data.SpellGroupJson, SpellCasterComp->SpellGroups);
 
     OnHpChanged.Broadcast(CurrentHp);
 }
@@ -250,6 +259,26 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
             else
                 CachedVoxelWorld->HideHighlight();
         }
+    }
+
+    // ── F2：座標偵錯 overlay ──────────────────────────────────────────
+    if (bDebugCoordEnabled && GEngine)
+    {
+        const FGridPos TilePos  = GetPosition();
+        const FVector  WorldPos = GetActorLocation();
+        GEngine->AddOnScreenDebugMessage(9901, 0.f, FColor::Green,
+            FString::Printf(TEXT("[偵錯 F2]  格:(%d,%d,%d)  世界:(%.1f,%.1f,%.1f)"),
+                TilePos.X, TilePos.Y, TilePos.Z, WorldPos.X, WorldPos.Y, WorldPos.Z));
+    }
+
+    // ── F4：生存速率偵錯 overlay ──────────────────────────────────────
+    if (bDebugSurvivalEnabled && StateComp && GEngine)
+    {
+        GEngine->AddOnScreenDebugMessage(9902, 0.f, FColor::Orange,
+            FString::Printf(
+                TEXT("[偵錯 F4] 體力:%.1f  精力:%.1f  心情:%.1f\n  HP:%.1f/%.1f  MP:%.1f"),
+                StateComp->Stamina, StateComp->MentalEnergy, StateComp->Mood,
+                CurrentHp, Stats.MaxHpBase, CurrentMp));
     }
 }
 
@@ -398,6 +427,7 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
 
     UInputAction* IA_Jump      = MakeBool(TEXT("Jump"));
     UInputAction* IA_Mine      = MakeBool(TEXT("Mine"));
+    UInputAction* IA_Place     = MakeBool(TEXT("Place"));
     UInputAction* IA_SpellU    = MakeBool(TEXT("SpellU"));
     UInputAction* IA_SpellI    = MakeBool(TEXT("SpellI"));
     UInputAction* IA_SpellO    = MakeBool(TEXT("SpellO"));
@@ -406,6 +436,9 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     UInputAction* IA_DbgTrace  = MakeBool(TEXT("DebugTrace"));
     UInputAction* IA_SnapTake  = MakeBool(TEXT("SnapshotTake"));
     UInputAction* IA_SnapApply = MakeBool(TEXT("SnapshotApply"));
+    UInputAction* IA_DbgPaint    = MakeBool(TEXT("DbgPaint"));
+    UInputAction* IA_DbgCoord    = MakeBool(TEXT("DbgCoord"));
+    UInputAction* IA_DbgSurvival = MakeBool(TEXT("DbgSurvival"));
 
     UInputAction* IA_Move = NewObject<UInputAction>(this, TEXT("IA_Move"));
     IA_Move->ValueType = EInputActionValueType::Axis2D;
@@ -451,6 +484,7 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     // 其他按鍵
     IMC->MapKey(IA_Jump,      EKeys::SpaceBar);
     IMC->MapKey(IA_Mine,      EKeys::LeftMouseButton);
+    IMC->MapKey(IA_Place,     EKeys::RightMouseButton);
     IMC->MapKey(IA_SpellU,    EKeys::U);
     IMC->MapKey(IA_SpellI,    EKeys::I);
     IMC->MapKey(IA_SpellO,    EKeys::O);
@@ -459,6 +493,9 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     IMC->MapKey(IA_DbgTrace,  EKeys::F3);
     IMC->MapKey(IA_SnapTake,  EKeys::F5);
     IMC->MapKey(IA_SnapApply, EKeys::F6);
+    IMC->MapKey(IA_DbgPaint,    EKeys::F1);
+    IMC->MapKey(IA_DbgCoord,    EKeys::F2);
+    IMC->MapKey(IA_DbgSurvival, EKeys::F4);
 
     // ── 注冊 MappingContext ───────────────────────────────────────────────
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -468,9 +505,10 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     // ── 綁定 Actions ─────────────────────────────────────────────────────
     EIC->BindAction(IA_Move, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Move);
     EIC->BindAction(IA_Look, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Look);
-    EIC->BindAction(IA_Jump, ETriggerEvent::Started,    this, &ACharacter::Jump);
-    EIC->BindAction(IA_Jump, ETriggerEvent::Completed,  this, &ACharacter::StopJumping);
-    EIC->BindAction(IA_Mine, ETriggerEvent::Started,    this, &ASkillCreatorCharacter::OnMine);
+    EIC->BindAction(IA_Jump,  ETriggerEvent::Started,    this, &ACharacter::Jump);
+    EIC->BindAction(IA_Jump,  ETriggerEvent::Completed,  this, &ACharacter::StopJumping);
+    EIC->BindAction(IA_Mine,  ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnMine);
+    EIC->BindAction(IA_Place, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnPlace);
 
     EIC->BindAction(IA_SpellU, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
     EIC->BindAction(IA_SpellI, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
@@ -481,6 +519,9 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     EIC->BindAction(IA_DbgTrace,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugTrace);
     EIC->BindAction(IA_SnapTake,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
     EIC->BindAction(IA_SnapApply, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
+    EIC->BindAction(IA_DbgPaint,    ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugPaint);
+    EIC->BindAction(IA_DbgCoord,    ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugCoord);
+    EIC->BindAction(IA_DbgSurvival, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSurvival);
 }
 
 void ASkillCreatorCharacter::Move(const FInputActionValue& Value)
@@ -621,6 +662,32 @@ void ASkillCreatorCharacter::OnDebugSnapshotApply()
             bOk ? TEXT("[F6] 快照已還原") : TEXT("[F6] 無快照可還原"));
 }
 
+// ── F1/F2/F4 開發者工具（對應 Godot TogglePaint/DebugCoord/DebugSurvival）─────
+
+void ASkillCreatorCharacter::OnDebugPaint()
+{
+    bDebugPaintEnabled = !bDebugPaintEnabled;
+    if (GEngine)
+        GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow,
+            bDebugPaintEnabled
+                ? TEXT("[F1] 畫筆模式 ON（材質繪製尚未實作，僅狀態切換）")
+                : TEXT("[F1] 畫筆模式 OFF"));
+}
+
+void ASkillCreatorCharacter::OnDebugCoord()
+{
+    bDebugCoordEnabled = !bDebugCoordEnabled;
+    if (!bDebugCoordEnabled && GEngine)
+        GEngine->RemoveOnScreenDebugMessage(9901);
+}
+
+void ASkillCreatorCharacter::OnDebugSurvival()
+{
+    bDebugSurvivalEnabled = !bDebugSurvivalEnabled;
+    if (!bDebugSurvivalEnabled && GEngine)
+        GEngine->RemoveOnScreenDebugMessage(9902);
+}
+
 // ── Spell Input ─────────────────────────────────────────────────────────
 
 void ASkillCreatorCharacter::HandleSpellInput()
@@ -651,7 +718,7 @@ void ASkillCreatorCharacter::HandleSpellInput()
         SpellCasterComp->TryCastSlot(Slot);
 }
 
-// ── Mining ──────────────────────────────────────────────────────────────
+// ── Mining / Placement ────────────────────────────────────────────────────
 
 void ASkillCreatorCharacter::OnMine()
 {
@@ -672,10 +739,76 @@ void ASkillCreatorCharacter::OnMine()
     FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
     if (!Hit.bHit) return;
 
-    EMaterialType OldMat = TW->GetTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
+    // 讀取 HUD 的形狀設定（N 鍵 ShapeMenuWidget 設定）
+    EPlacementShape Shape = EPlacementShape::Single;
+    int32 Radius = 1;
+    if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+    {
+        Shape  = HUD->ActiveShape;
+        Radius = HUD->PlaceRadius;
+    }
 
     // DestroyTile 內部已觸發 OnTileDestroyed（掉落回呼），此處不重複派送
-    TW->DestroyTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, EDestroyReason::Mining);
+    for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
+    {
+        const int32 tx = Hit.HitCell.X + Off.X;
+        const int32 ty = Hit.HitCell.Y + Off.Y;
+        const int32 tz = Hit.HitCell.Z + Off.Z;
+        if (TW->GetTile(tx, ty, tz) != EMaterialType::Air)
+            TW->DestroyTile(tx, ty, tz, EDestroyReason::Mining);
+    }
+}
 
-    (void)OldMat; // 掉落已由 OnTileDestroyed lambda 統一處理
+void ASkillCreatorCharacter::OnPlace()
+{
+    if (!CachedVoxelWorld || !InventoryComp) return;
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return;
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    FVector CamLoc;
+    FRotator CamRot;
+    PC->GetPlayerViewPoint(CamLoc, CamRot);
+
+    const FVector TileStart = WorldScale::WorldToTileF(CamLoc, TW->Height);
+    const FVector VoxDir    = WorldScale::DirToVoxel(CamRot.Vector());
+
+    FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
+    if (!Hit.bHit) return;
+
+    // 取熱鍵格目前選中的物品
+    const int32 Idx = InventoryComp->ActiveHotbarIndex;
+    if (!InventoryComp->Slots.IsValidIndex(Idx)) return;
+    const FItemStack& Stack = InventoryComp->Slots[Idx];
+    if (Stack.IsEmpty()) return;
+
+    const FItemData& Data = FItemRegistry::Get(Stack.ItemId);
+    if (!Data.bIsPlaceable || Data.PlaceAs == EMaterialType::Air) return;
+
+    // 放置中心 = 命中面法線方向的相鄰格
+    const FIntVector PlaceCenter = Hit.HitCell + Hit.FaceNormal;
+
+    EPlacementShape Shape = EPlacementShape::Single;
+    int32 Radius = 1;
+    if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+    {
+        Shape  = HUD->ActiveShape;
+        Radius = HUD->PlaceRadius;
+    }
+
+    int32 Placed = 0;
+    for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
+    {
+        const int32 tx = PlaceCenter.X + Off.X;
+        const int32 ty = PlaceCenter.Y + Off.Y;
+        const int32 tz = PlaceCenter.Z + Off.Z;
+        if (TW->GetTile(tx, ty, tz) == EMaterialType::Air)
+        {
+            TW->SetTile(tx, ty, tz, Data.PlaceAs);
+            ++Placed;
+        }
+    }
+    if (Placed > 0)
+        InventoryComp->Consume(Idx, Placed);
 }
