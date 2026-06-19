@@ -5,6 +5,7 @@
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/SpringArmComponent.h"
 #if WITH_EDITOR
 #include "UBlockEdGraph.h"
 #include "UBlockEdGraphSchema.h"
@@ -28,57 +29,101 @@ void ASkillCreatorPlayerController::SetupInputComponent()
         InputComponent->BindKey(Key, IE_Pressed, this, Fn);
     };
 
+    // 滾輪：Ctrl+滾 = 縮放；否則切換熱鍵欄（對應 Godot Main.cs scroll logic）
     Bind(EKeys::MouseScrollUp,   &ASkillCreatorPlayerController::OnScrollUp);
     Bind(EKeys::MouseScrollDown, &ASkillCreatorPlayerController::OnScrollDown);
-    Bind(EKeys::E,               &ASkillCreatorPlayerController::OnOpenEditor);
-    Bind(EKeys::One,             &ASkillCreatorPlayerController::OnHotbar1);
-    Bind(EKeys::Two,             &ASkillCreatorPlayerController::OnHotbar2);
-    Bind(EKeys::Three,           &ASkillCreatorPlayerController::OnHotbar3);
-    Bind(EKeys::Four,            &ASkillCreatorPlayerController::OnHotbar4);
-    Bind(EKeys::Five,            &ASkillCreatorPlayerController::OnHotbar5);
-    Bind(EKeys::B,               &ASkillCreatorPlayerController::OnOpenSettings);
-    Bind(EKeys::N,               &ASkillCreatorPlayerController::OnOpenShapeMenu);
-    Bind(EKeys::V,               &ASkillCreatorPlayerController::OnSpellGroupSwitch);
-    Bind(EKeys::Z,               &ASkillCreatorPlayerController::OnOpenInventory);
-    Bind(EKeys::X,               &ASkillCreatorPlayerController::OnOpenEquipment);
-    Bind(EKeys::C,               &ASkillCreatorPlayerController::OnOpenStats);
-    Bind(EKeys::I,               &ASkillCreatorPlayerController::OnOpenInputSettings);
-    Bind(EKeys::L,               &ASkillCreatorPlayerController::OnOpenSpellList);
-    Bind(EKeys::Q,               &ASkillCreatorPlayerController::OnEquipItem);
-    Bind(EKeys::Tab,             &ASkillCreatorPlayerController::OnToggleXray);
+
+    // 數字鍵 → 熱鍵欄（對應 Godot Key1~Key9/Key0 → Inventory.ActiveHotbarIndex）
+    Bind(EKeys::One,   &ASkillCreatorPlayerController::OnHotbar1);
+    Bind(EKeys::Two,   &ASkillCreatorPlayerController::OnHotbar2);
+    Bind(EKeys::Three, &ASkillCreatorPlayerController::OnHotbar3);
+    Bind(EKeys::Four,  &ASkillCreatorPlayerController::OnHotbar4);
+    Bind(EKeys::Five,  &ASkillCreatorPlayerController::OnHotbar5);
+    Bind(EKeys::Six,   &ASkillCreatorPlayerController::OnHotbar6);
+    Bind(EKeys::Seven, &ASkillCreatorPlayerController::OnHotbar7);
+    Bind(EKeys::Eight, &ASkillCreatorPlayerController::OnHotbar8);
+    Bind(EKeys::Nine,  &ASkillCreatorPlayerController::OnHotbar9);
+    Bind(EKeys::Zero,  &ASkillCreatorPlayerController::OnHotbar0);
+
+    // 面板開關
+    Bind(EKeys::E, &ASkillCreatorPlayerController::OnOpenEditor);
+    Bind(EKeys::B, &ASkillCreatorPlayerController::OnOpenSettings);
+    Bind(EKeys::N, &ASkillCreatorPlayerController::OnOpenShapeMenu);
+    Bind(EKeys::V, &ASkillCreatorPlayerController::OnSpellGroupSwitch);
+    Bind(EKeys::Z, &ASkillCreatorPlayerController::OnOpenInventory);
+    Bind(EKeys::X, &ASkillCreatorPlayerController::OnOpenEquipment);
+    Bind(EKeys::C, &ASkillCreatorPlayerController::OnOpenStats);
+    Bind(EKeys::Q, &ASkillCreatorPlayerController::OnEquipItem);
+
+    // Tab / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
 }
 
-// ── Spell hotbar ─────────────────────────────────────────────────────────
+// ── 物品熱鍵欄 ───────────────────────────────────────────────────────────
 
-void ASkillCreatorPlayerController::SetActiveSpellSlot(int32 Idx)
+void ASkillCreatorPlayerController::SetActiveHotbarIndex(int32 Idx)
 {
     ASkillCreatorCharacter* Char =
         GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char && Char->SpellCasterComp)
-        Char->SpellCasterComp->SwitchSlot(Idx);
+    if (Char && Char->InventoryComp)
+        Char->InventoryComp->SetActiveHotbarIndex(Idx);
 }
 
 void ASkillCreatorPlayerController::OnScrollUp()
 {
     ASkillCreatorCharacter* Char =
         GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char && Char->SpellCasterComp)
-        Char->SpellCasterComp->CycleSlot(+1);
+    if (!Char) return;
+
+    if (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))
+    {
+        // Ctrl + 滾上 = 鏡頭拉近（縮短彈簧臂）
+        if (Char->SpringArm)
+            Char->SpringArm->TargetArmLength =
+                FMath::Max(50.f, Char->SpringArm->TargetArmLength - 100.f);
+        return;
+    }
+    // 切換熱鍵欄：往前一格（wraps around）
+    if (Char->InventoryComp)
+    {
+        int32 Next = (Char->InventoryComp->ActiveHotbarIndex - 1 + UInventoryComponent::HotbarSize)
+                     % UInventoryComponent::HotbarSize;
+        Char->InventoryComp->SetActiveHotbarIndex(Next);
+    }
 }
 
 void ASkillCreatorPlayerController::OnScrollDown()
 {
     ASkillCreatorCharacter* Char =
         GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char && Char->SpellCasterComp)
-        Char->SpellCasterComp->CycleSlot(-1);
+    if (!Char) return;
+
+    if (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))
+    {
+        // Ctrl + 滾下 = 鏡頭拉遠（延長彈簧臂）
+        if (Char->SpringArm)
+            Char->SpringArm->TargetArmLength =
+                FMath::Min(2000.f, Char->SpringArm->TargetArmLength + 100.f);
+        return;
+    }
+    // 切換熱鍵欄：往後一格（wraps around）
+    if (Char->InventoryComp)
+    {
+        int32 Next = (Char->InventoryComp->ActiveHotbarIndex + 1)
+                     % UInventoryComponent::HotbarSize;
+        Char->InventoryComp->SetActiveHotbarIndex(Next);
+    }
 }
 
-void ASkillCreatorPlayerController::OnHotbar1() { SetActiveSpellSlot(0); }
-void ASkillCreatorPlayerController::OnHotbar2() { SetActiveSpellSlot(1); }
-void ASkillCreatorPlayerController::OnHotbar3() { SetActiveSpellSlot(2); }
-void ASkillCreatorPlayerController::OnHotbar4() { SetActiveSpellSlot(3); }
-void ASkillCreatorPlayerController::OnHotbar5() { SetActiveSpellSlot(4); }
+void ASkillCreatorPlayerController::OnHotbar1() { SetActiveHotbarIndex(0); }
+void ASkillCreatorPlayerController::OnHotbar2() { SetActiveHotbarIndex(1); }
+void ASkillCreatorPlayerController::OnHotbar3() { SetActiveHotbarIndex(2); }
+void ASkillCreatorPlayerController::OnHotbar4() { SetActiveHotbarIndex(3); }
+void ASkillCreatorPlayerController::OnHotbar5() { SetActiveHotbarIndex(4); }
+void ASkillCreatorPlayerController::OnHotbar6() { SetActiveHotbarIndex(5); }
+void ASkillCreatorPlayerController::OnHotbar7() { SetActiveHotbarIndex(6); }
+void ASkillCreatorPlayerController::OnHotbar8() { SetActiveHotbarIndex(7); }
+void ASkillCreatorPlayerController::OnHotbar9() { SetActiveHotbarIndex(8); }
+void ASkillCreatorPlayerController::OnHotbar0() { SetActiveHotbarIndex(9); }
 
 // ── 技能編輯器 overlay ────────────────────────────────────────────────────
 
@@ -96,7 +141,6 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
 
     if (!BlockEditorOverlay.IsValid())
     {
-        // 第一次開啟：建立 Graph + Widget，加入 viewport overlay
         UBlockEdGraph* Graph = NewObject<UBlockEdGraph>(GetTransientPackage());
         Graph->Schema = UBlockEdGraphSchema::StaticClass();
 
@@ -125,7 +169,6 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
             bBlockEditorOpen ? EVisibility::Visible : EVisibility::Hidden);
     }
 
-    // 開啟時釋放滑鼠給 Slate；關閉時還給遊戲
     if (bBlockEditorOpen)
     {
         SetShowMouseCursor(true);
@@ -139,7 +182,7 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
 }
 #endif
 
-// ── HUD 面板開關（每個都取 HUD 並呼叫對應 Toggle）───────────────────────
+// ── HUD 面板開關 ──────────────────────────────────────────────────────────
 
 void ASkillCreatorPlayerController::OnOpenSettings()
 {
@@ -171,16 +214,6 @@ void ASkillCreatorPlayerController::OnOpenStats()
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleStats();
 }
 
-void ASkillCreatorPlayerController::OnOpenInputSettings()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInputSettings();
-}
-
-void ASkillCreatorPlayerController::OnOpenSpellList()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSpellList();
-}
-
 // ── Q：裝備/使用熱鍵格物品 ───────────────────────────────────────────────
 
 void ASkillCreatorPlayerController::OnEquipItem()
@@ -194,11 +227,4 @@ void ASkillCreatorPlayerController::OnEquipItem()
     if (Char->InventoryComp->Slots[ActiveIdx].IsEmpty()) return;
 
     Char->EquipmentComp->TryEquip(Char->InventoryComp, ActiveIdx);
-}
-
-// ── Tab：X-ray 切換（顯示牆後敵人）─────────────────────────────────────
-// GPU Compute 渲染模式（M-10+），目前無實作。
-
-void ASkillCreatorPlayerController::OnToggleXray()
-{
 }

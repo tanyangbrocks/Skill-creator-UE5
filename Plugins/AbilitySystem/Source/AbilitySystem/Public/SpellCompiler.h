@@ -13,7 +13,7 @@
 //  測試時手動填入：
 //    Block.Params.Add("args", FInstancedStruct::Make<FSetVarArgs>(A));
 // ══════════════════════════════════════════════════════════════════
-class FSpellCompiler
+class ABILITYSYSTEM_API FSpellCompiler
 {
 public:
     // TotemSlotMap: totemId → slotRef（供 BlockType::Totem 積木轉換）

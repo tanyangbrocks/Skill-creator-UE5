@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "ManaType.h"
 #include "ElementType.h"
+#include "FBlockNode.h"
 #include "SpellArray.generated.h"
 
 // 容器施放方式（對應 Godot ContainerType.cs）
@@ -194,7 +195,12 @@ struct FSpellArray
     // 主要元素（SpellElement 即為主要元素；M-5+ 刻印元素系統完善後可從 GlobalEngravings 覆蓋）
     ESkillElementType PrimaryElement() const { return SpellElement; }
 
-    // 積木 AST 根節點（SpellCompiler 編譯後填入，載入時從 JSON 反序列化）
-    // 不能 UPROPERTY — TUniquePtr<FBlockNode> 不支援 UHT 反射
-    // Blocks 欄位在執行期由 SpellCompiler 結果覆蓋
+    // 積木 AST 根節點。TUniquePtr 不可 UPROPERTY，用 TSharedPtr 包裝使 FSpellArray 保持可複製
+    // （複製時共享相同的積木樹；由積木編輯器儲存後呼叫 SetBlocks() 寫入）
+    TSharedPtr<TArray<TUniquePtr<FBlockNode>>> Blocks;
+
+    void SetBlocks(TArray<TUniquePtr<FBlockNode>> InBlocks)
+    {
+        Blocks = MakeShared<TArray<TUniquePtr<FBlockNode>>>(MoveTemp(InBlocks));
+    }
 };

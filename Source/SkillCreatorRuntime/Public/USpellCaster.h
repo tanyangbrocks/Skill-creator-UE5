@@ -96,4 +96,9 @@ private:
                               AVoxelWorldActor* VW);
     void ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW);
     void ExecuteDomain(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW);
+
+    // 從 Spell + 已編譯 Code 建立完整 FExecutionContext（注入所有世界層 delegate）
+    // TryCast 和 OnBuildComboContext 共用
+    TUniquePtr<FExecutionContext> BuildContext(const FSpellArray& Spell,
+                                               const TArray<FInstruction>& Code);
 };

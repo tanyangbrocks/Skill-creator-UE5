@@ -140,6 +140,10 @@ public:
     // C++ 呼叫端，不需要 Blueprint 曝露。
     void ApplyCharacterSaveData(const FCharacterSaveData& Data);
 
+    // 把目前執行期狀態（Hp/Mp/Level/Xp/Position/Inventory/State/ManaCurrents）
+    // 寫回 OutData。OutData 的 Id/CharacterName 由呼叫方事先填好（這裡不改動）。
+    void FillSaveData(FCharacterSaveData& OutData) const;
+
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return -1; }
     virtual FGridPos GetPosition()   const override;

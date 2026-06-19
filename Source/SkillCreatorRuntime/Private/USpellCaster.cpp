@@ -11,6 +11,15 @@
 #include "WorldScale.h"
 #include "EngineUtils.h"
 #include "AbilityPointCalculator.h"
+#include "SpellCompiler.h"
+
+// Anchor 快照狀態（TryCast + BuildContext 共用）
+struct FAnchorState
+{
+    FIntVector        Min, Max;
+    TArray<FTileCell> Cells;
+    bool              bValid = false;
+};
 
 USpellCaster::USpellCaster()
 {
@@ -58,11 +67,30 @@ void USpellCaster::BeginPlay()
     };
 
     Runner.OnInvokeTotem = [](FExecutionContext&, FName) {};  // fallback; InvokeTotemFn on Ctx takes priority
-    // InvokeSpell 連段：需從玩家 SpellGroup 查找對應 Spell 並編譯新 Context（W-6 後實作）
-    Runner.OnBuildComboContext = [](FName SpellName) -> TUniquePtr<FExecutionContext>
+    // InvokeSpell 連段：從玩家 SpellGroup 查找對應 Spell 並編譯新 Context
+    Runner.OnBuildComboContext = [this](FName SpellName) -> TUniquePtr<FExecutionContext>
     {
-        UE_LOG(LogTemp, Warning, TEXT("[SpellCaster] OnBuildComboContext not implemented — InvokeSpell '%s' skipped"),
-               *SpellName.ToString());
+        FSpellLoadout& L = SpellGroups.GetActiveLoadout();
+        for (const FSpellArray& Spell : L.Slots)
+        {
+            if (FName(*Spell.Name) != SpellName) continue;
+            if (!Spell.Blocks.IsValid() || Spell.Blocks->IsEmpty()) return nullptr;
+
+            TMap<FName, FName> TotemSlotMap;
+            for (int32 i = 0; i < Spell.Slots.Num(); ++i)
+            {
+                const FSpellSlot& S = Spell.Slots[i];
+                if (S.IsEmpty()) continue;
+                FName Key = S.Name.IsNone()
+                    ? FName(*FString::Printf(TEXT("slot_%d"), i))
+                    : S.Name;
+                if (!S.TotemId.IsNone())
+                    TotemSlotMap.Add(S.TotemId, Key);
+            }
+            TArray<FInstruction> Code = FSpellCompiler::Compile(*Spell.Blocks, TotemSlotMap);
+            if (Code.IsEmpty()) return nullptr;
+            return BuildContext(Spell, Code);
+        }
         return nullptr;
     };
 }
@@ -158,154 +186,8 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     }
 
     // ── DirectCast：提交 VM 執行 Context ─────────────────────────────
-    auto Ctx = MakeUnique<FExecutionContext>(Code);
-
-    // 每次施放獨立的訊號集合
-    auto Signals = MakeShared<TSet<FName>>();
-
-    // 每次施放獨立的 Anchor 快照（用於 AnchorSnapshot / RollbackSnapshot 積木）
-    struct FAnchorState
-    {
-        FIntVector              Min, Max;
-        TArray<FTileCell>       Cells;
-        bool                    bValid = false;
-    };
-    auto Anchor = MakeShared<FAnchorState>();
-
-    FTileWorld3D* TW = CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld() : nullptr;
-
-    // EntityQuery：回傳半徑 Radius 格內的所有存活敵人
-    Ctx->EntityQuery = [this, Char](float Radius) -> TArray<FEntityInfo>
-    {
-        TArray<FEntityInfo> Out;
-        if (!CachedEnemyMgr) return Out;
-        FGridPos CP = Char->GetPosition();
-        for (AEnemy* E : CachedEnemyMgr->GetEnemies())
-        {
-            if (!E || !E->IsAlive()) continue;
-            FGridPos EP = E->GetPosition();
-            float Dist = FMath::Sqrt((float)((EP.X-CP.X)*(EP.X-CP.X) + (EP.Z-CP.Z)*(EP.Z-CP.Z)));
-            if (Dist <= Radius)
-                Out.Add({ E->GetEntityId(), EP, E->GetHp(), E->GetMaxHp() });
-        }
-        return Out;
-    };
-
-    // RaycastQuery：從 Start 格向 Dir 射線，最多 Dist 格
-    Ctx->RaycastQuery = [TW](FGridPos Start, FVector Dir, float Dist) -> FRaycastResult
-    {
-        FRaycastResult Out;
-        if (!TW) return Out;
-        FVector StartF((float)Start.X, (float)Start.Y, (float)Start.Z);
-        FRaycastResult3D R = TW->Raycast(StartF, Dir, Dist);
-        Out.bHit  = R.bHit;
-        Out.HitPos = FGridPos(R.HitCell.X, R.HitCell.Y, R.HitCell.Z);
-        Out.MatId  = R.bHit ? (int32)TW->GetTile(R.HitCell.X, R.HitCell.Y, R.HitCell.Z) : 0;
-        return Out;
-    };
-
-    // FocalPointQuery：角色正前方 5 格
-    Ctx->FocalPointQuery = [Char]() -> FGridPos
-    {
-        FVector Fwd = Char->GetActorForwardVector();
-        FGridPos CP = Char->GetPosition();
-        return FGridPos(
-            CP.X + FMath::RoundToInt(Fwd.X * 5.f),
-            CP.Y + FMath::RoundToInt(Fwd.Y * 5.f),
-            CP.Z + FMath::RoundToInt(Fwd.Z * 5.f)
-        );
-    };
-
-    // PlayerStatsQuery：hp / mp / hpPct / mpPct
-    Ctx->PlayerStatsQuery = [Char](FName Key) -> float
-    {
-        if (Key == "hp")    return Char->CurrentHp;
-        if (Key == "mp")    return Char->CurrentMp;
-        if (Key == "hpPct") return Char->Stats.MaxHpBase > 0.f ? Char->CurrentHp / Char->Stats.MaxHpBase : 0.f;
-        if (Key == "mpPct") return Char->Stats.MaxMpBase > 0.f ? Char->CurrentMp / Char->Stats.MaxMpBase : 0.f;
-        return 0.f;
-    };
-
-    // HasSignalFn / BroadcastFn：每次施放獨立訊號集合
-    Ctx->HasSignalFn = [Signals](FName S) { return Signals->Contains(S); };
-    Ctx->BroadcastFn = [Signals](FName S) { Signals->Add(S); };
-
-    // BattleStatFn：戰鬥統計（UCombatStateSubsystem）
-    Ctx->BattleStatFn = [this](FName Key) -> float
-    {
-        if (auto* GI = GetWorld()->GetGameInstance())
-        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
-        {
-            if (Key == "castCount")   return (float)Sub->CastCount;
-            if (Key == "damageDealt") return Sub->DamageDealt;
-            if (Key == "killCount")   return (float)Sub->KillCount;
-            if (Key == "battleId")    return (float)Sub->BattleId;
-        }
-        return 0.f;
-    };
-
-    // TookDamageThisTickFn
-    Ctx->TookDamageThisTickFn = [this]() -> bool
-    {
-        if (auto* GI = GetWorld()->GetGameInstance())
-        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
-            return Sub->bTookDamageThisFrame;
-        return false;
-    };
-
-    // AnchorSnapshot：快照角色周圍 Radius 格的 tile 狀態
-    Ctx->AnchorAction = [TW, Char, Anchor](int32 Radius)
-    {
-        if (!TW) return;
-        FGridPos CP = Char->GetPosition();
-        Anchor->Min = FIntVector(CP.X - Radius, CP.Y - Radius, CP.Z - Radius);
-        Anchor->Max = FIntVector(CP.X + Radius, CP.Y + Radius, CP.Z + Radius);
-        Anchor->Cells  = TW->SnapshotRegion(Anchor->Min, Anchor->Max);
-        Anchor->bValid = true;
-    };
-
-    // RollbackSnapshot：恢復快照
-    Ctx->RollbackAction = [TW, Anchor]()
-    {
-        if (!TW || !Anchor->bValid) return;
-        TW->RestoreRegion(Anchor->Min, Anchor->Max, Anchor->Cells);
-        Anchor->bValid = false;
-    };
-
-    // SetActivationModeFn：M-9 實作
-    Ctx->SetActivationModeFn = [](int32) {};
-    // RegisterFilterFn：轉送到 ActionBus（DeltaTime 計時，pause-aware）
-    Ctx->RegisterFilterFn = [Char](FName FilterType, FName Mode, bool bOneShot,
-                                   float Threshold, float CapValue)
-    {
-        if (Char) Char->ActionBus.RegisterFilter(FilterType, Mode, bOneShot, Threshold, CapValue);
-    };
-
-    // InvokeTotemFn：每次施放按此技能整構的 slots 建立 slot 查表，捕捉到 lambda
-    {
-        auto SlotLookup = MakeShared<TMap<FName, FSpellSlot>>();
-        for (int32 i = 0; i < Spell.Slots.Num(); ++i)
-        {
-            const FSpellSlot& S = Spell.Slots[i];
-            if (S.IsEmpty()) continue;
-            FName Key = S.Name.IsNone()
-                ? FName(*FString::Printf(TEXT("slot_%d"), i))
-                : S.Name;
-            SlotLookup->Add(Key, S);
-        }
-        TWeakObjectPtr<USpellCaster>    WeakThis(this);
-        TWeakObjectPtr<AVoxelWorldActor> WeakVW(CachedVoxelWorld.Get());
-        Ctx->InvokeTotemFn = [WeakThis, SlotLookup, WeakVW](FExecutionContext& C, FName TotemName)
-        {
-            USpellCaster* Caster = WeakThis.Get();
-            if (!Caster) return;
-            const FSpellSlot* Slot = SlotLookup->Find(TotemName);
-            if (!Slot) { C.DoneTotems.Add(TotemName); return; }
-            bool bAtHit = C.FixedOrigin.IsSet();
-            Caster->ResolveTotem(TotemName, *Slot, C, bAtHit, WeakVW.Get());
-        };
-    }
-
+    auto Ctx = BuildContext(Spell, Code);
+    if (!Ctx) return false;
     Runner.Submit(MoveTemp(Ctx));
     return true;
 }
@@ -328,8 +210,25 @@ void USpellCaster::TryCastSlot(int32 SlotIndex)
     FSpellLoadout& L = SpellGroups.GetActiveLoadout();
     if (!L.Slots.IsValidIndex(SlotIndex)) return;
     SwitchSlot(SlotIndex);
-    // M-9: full SpellCompiler pipeline here. For M-5: pass empty code.
-    TryCast(L.Slots[SlotIndex], {});
+    const FSpellArray& Spell = L.Slots[SlotIndex];
+
+    TArray<FInstruction> Code;
+    if (Spell.Blocks.IsValid() && !Spell.Blocks->IsEmpty())
+    {
+        TMap<FName, FName> TotemSlotMap;
+        for (int32 i = 0; i < Spell.Slots.Num(); ++i)
+        {
+            const FSpellSlot& S = Spell.Slots[i];
+            if (S.IsEmpty()) continue;
+            FName Key = S.Name.IsNone()
+                ? FName(*FString::Printf(TEXT("slot_%d"), i))
+                : S.Name;
+            if (!S.TotemId.IsNone())
+                TotemSlotMap.Add(S.TotemId, Key);
+        }
+        Code = FSpellCompiler::Compile(*Spell.Blocks, TotemSlotMap);
+    }
+    TryCast(Spell, Code);
 }
 
 void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
@@ -781,4 +680,143 @@ void USpellCaster::TickComponent(float DeltaTime, ELevelTick TickType,
         CooldownRemaining = FMath::Max(0.f, CooldownRemaining - DeltaTime);
 
     Runner.Tick(DeltaTime);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+//  BuildContext — 從 Spell + 已編譯 Code 建立 FExecutionContext
+//  TryCast 和 OnBuildComboContext 共用，避免 delegate 設定重複
+// ─────────────────────────────────────────────────────────────────────
+TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spell,
+                                                         const TArray<FInstruction>& Code)
+{
+    ASkillCreatorCharacter* Char = GetOwnerCharacter();
+    if (!Char) return nullptr;
+
+    FTileWorld3D* TW = CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld() : nullptr;
+
+    auto Ctx     = MakeUnique<FExecutionContext>(Code);
+    auto Signals = MakeShared<TSet<FName>>();
+    auto Anchor  = MakeShared<FAnchorState>();
+
+    Ctx->EntityQuery = [this, Char](float Radius) -> TArray<FEntityInfo>
+    {
+        TArray<FEntityInfo> Out;
+        if (!CachedEnemyMgr) return Out;
+        FGridPos CP = Char->GetPosition();
+        for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+        {
+            if (!E || !E->IsAlive()) continue;
+            FGridPos EP = E->GetPosition();
+            float Dist = FMath::Sqrt((float)((EP.X-CP.X)*(EP.X-CP.X) + (EP.Z-CP.Z)*(EP.Z-CP.Z)));
+            if (Dist <= Radius)
+                Out.Add({ E->GetEntityId(), EP, E->GetHp(), E->GetMaxHp() });
+        }
+        return Out;
+    };
+
+    Ctx->RaycastQuery = [TW](FGridPos Start, FVector Dir, float Dist) -> FRaycastResult
+    {
+        FRaycastResult Out;
+        if (!TW) return Out;
+        FVector StartF((float)Start.X, (float)Start.Y, (float)Start.Z);
+        FRaycastResult3D R = TW->Raycast(StartF, Dir, Dist);
+        Out.bHit   = R.bHit;
+        Out.HitPos = FGridPos(R.HitCell.X, R.HitCell.Y, R.HitCell.Z);
+        Out.MatId  = R.bHit ? (int32)TW->GetTile(R.HitCell.X, R.HitCell.Y, R.HitCell.Z) : 0;
+        return Out;
+    };
+
+    Ctx->FocalPointQuery = [Char]() -> FGridPos
+    {
+        FVector Fwd = Char->GetActorForwardVector();
+        FGridPos CP = Char->GetPosition();
+        return FGridPos(
+            CP.X + FMath::RoundToInt(Fwd.X * 5.f),
+            CP.Y + FMath::RoundToInt(Fwd.Y * 5.f),
+            CP.Z + FMath::RoundToInt(Fwd.Z * 5.f)
+        );
+    };
+
+    Ctx->PlayerStatsQuery = [Char](FName Key) -> float
+    {
+        if (Key == "hp")    return Char->CurrentHp;
+        if (Key == "mp")    return Char->CurrentMp;
+        if (Key == "hpPct") return Char->Stats.MaxHpBase > 0.f ? Char->CurrentHp / Char->Stats.MaxHpBase : 0.f;
+        if (Key == "mpPct") return Char->Stats.MaxMpBase > 0.f ? Char->CurrentMp / Char->Stats.MaxMpBase : 0.f;
+        return 0.f;
+    };
+
+    Ctx->HasSignalFn = [Signals](FName S) { return Signals->Contains(S); };
+    Ctx->BroadcastFn = [Signals](FName S) { Signals->Add(S); };
+
+    Ctx->BattleStatFn = [this](FName Key) -> float
+    {
+        if (auto* GI = GetWorld()->GetGameInstance())
+        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+        {
+            if (Key == "castCount")   return (float)Sub->CastCount;
+            if (Key == "damageDealt") return Sub->DamageDealt;
+            if (Key == "killCount")   return (float)Sub->KillCount;
+            if (Key == "battleId")    return (float)Sub->BattleId;
+        }
+        return 0.f;
+    };
+
+    Ctx->TookDamageThisTickFn = [this]() -> bool
+    {
+        if (auto* GI = GetWorld()->GetGameInstance())
+        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+            return Sub->bTookDamageThisFrame;
+        return false;
+    };
+
+    Ctx->AnchorAction = [TW, Char, Anchor](int32 Radius)
+    {
+        if (!TW) return;
+        FGridPos CP = Char->GetPosition();
+        Anchor->Min   = FIntVector(CP.X - Radius, CP.Y - Radius, CP.Z - Radius);
+        Anchor->Max   = FIntVector(CP.X + Radius, CP.Y + Radius, CP.Z + Radius);
+        Anchor->Cells = TW->SnapshotRegion(Anchor->Min, Anchor->Max);
+        Anchor->bValid = true;
+    };
+
+    Ctx->RollbackAction = [TW, Anchor]()
+    {
+        if (!TW || !Anchor->bValid) return;
+        TW->RestoreRegion(Anchor->Min, Anchor->Max, Anchor->Cells);
+        Anchor->bValid = false;
+    };
+
+    Ctx->SetActivationModeFn = [](int32) {};
+    Ctx->RegisterFilterFn = [Char](FName FilterType, FName Mode, bool bOneShot,
+                                   float Threshold, float CapValue)
+    {
+        if (Char) Char->ActionBus.RegisterFilter(FilterType, Mode, bOneShot, Threshold, CapValue);
+    };
+
+    {
+        auto SlotLookup = MakeShared<TMap<FName, FSpellSlot>>();
+        for (int32 i = 0; i < Spell.Slots.Num(); ++i)
+        {
+            const FSpellSlot& S = Spell.Slots[i];
+            if (S.IsEmpty()) continue;
+            FName Key = S.Name.IsNone()
+                ? FName(*FString::Printf(TEXT("slot_%d"), i))
+                : S.Name;
+            SlotLookup->Add(Key, S);
+        }
+        TWeakObjectPtr<USpellCaster>     WeakThis(this);
+        TWeakObjectPtr<AVoxelWorldActor> WeakVW(CachedVoxelWorld.Get());
+        Ctx->InvokeTotemFn = [WeakThis, SlotLookup, WeakVW](FExecutionContext& C, FName TotemName)
+        {
+            USpellCaster* Caster = WeakThis.Get();
+            if (!Caster) return;
+            const FSpellSlot* Slot = SlotLookup->Find(TotemName);
+            if (!Slot) { C.DoneTotems.Add(TotemName); return; }
+            bool bAtHit = C.FixedOrigin.IsSet();
+            Caster->ResolveTotem(TotemName, *Slot, C, bAtHit, WeakVW.Get());
+        };
+    }
+
+    return Ctx;
 }
