@@ -206,28 +206,30 @@
 
 ### 🟡 中優先（功能性但範圍較小，或仍是已知技術債的延伸）
 
-- [ ] **B-5 / B-14** ExecuteSummon 補視覺占位效果（目前是純空函式，比 Godot 更倒退）
-- [ ] **B-2** TryCast 的 MP 扣除改為多槽均分（目前永遠扣在找到的第一槽）
-- [ ] **B-3** 投射物方向改用滑鼠/鏡頭瞄準座標取代 ActorForwardVector，並做身體外緣起點偏移
-- [ ] **B-4** ExecuteContactHit 命中/未命中都應呼叫完整技能效果鏈（Runner.Submit），不只是固定傷害
-- [ ] **B-8** act_area_distant 距離公式修正（目前 Grain 平方級錯誤縮放，UE5 距離是 Godot 的 7.6倍）
-- [ ] **B-11** act_fire_projectile 命中補 AoE 範圍效果 + modifier 套用（push/pull/slow/freeze/stun）
-- [ ] **B-13** act_dash/teleport 步數對齊 Godot 固定值（目前 240 vs 20，差 12倍）
-- [ ] **B-17** ApplyModsToNearbyEnemies 改回逐格碰撞檢測（避免穿牆）+ 接通 Slow/Freeze/Stun（待 W-5）
+> **D-13 確認（2026-06-20）**：`FSpellSlot::AbilityPointCost` 在 UE5 只存 Totem 基礎成本（不含刻印），`CalculateTotalCost` 在計算時另外顯式加總 `LocalEngravings`（見 `AbilityPointCalculator.h:82-98`），無雙重計算。不需修改。
+
+- [x] **B-5 / B-14** ExecuteSummon 補視覺占位效果 — 已於 🔴高優先段順手修復（2026-06-20）
+- [x] **B-2** TryCast 的 MP 扣除改為多槽均分（2026-06-20：CalculateSlotCostByType 原子扣除，Godot SpellCaster.cs:251-275）
+- [x] **B-3** 投射物方向改用鏡頭前向 + 身體邊緣起點偏移（2026-06-20：PC->GetPlayerViewPoint+halfW+1 偏移，Godot SpellCaster.cs:56-70）
+- [x] **B-4** ExecuteContactHit 命中/未命中都提交 Runner.Submit（2026-06-20：加 Code 參數+FixedOrigin，Godot SpellCaster.cs:134-154）
+- [x] **B-8** act_area_distant 距離公式修正（2026-06-20：`16+BaseR*2`，爆炸 `BaseR+2`，Godot SpellCaster.cs:581-583）
+- [x] **B-11** act_fire_projectile 命中補 AoE + modifier 套用（2026-06-20：TW->Explode+ApplyModsToNearbyEnemies，Godot SpellProjectile.cs:114-116）
+- [x] **B-13** act_teleport 步數改 20 倒數搜尋（2026-06-20：MaxSteps=20 i=20→1，Godot SpellCaster.cs:853-857）
+- [x] **B-17** ApplyModsToNearbyEnemies 改逐格碰撞（2026-06-20：per-cell TileWorld check，Godot SpellCaster.cs:695-715；Slow/Freeze/Stun 待 W-5）
 - [ ] **D-7** EEngraveCategory/EEngraveTrigger 列舉數值對齊 Godot 順序 + 補回 OnExpire
-- [ ] **C-10 / D-13** 確認 `FSpellSlot::AbilityPointCost` 是否已含 LocalEngravings，若是則移除 `CalculateTotalCost` 的重複加總
-- [ ] **C-5** SpellRunner.PruneAfter 補回 MP 退還機制（若 Anchor/Rollback 積木仍依賴此語意）
-- [ ] **F-8** IWorldInterface.h 註解修正（曼哈頓→歐幾里德），避免未來實作誤用
-- [ ] **F-10** IWorldInterface 補 GetEntityProperty/SetEntityProperty/CreateEntity 三方法簽名（NPCBrain 感知系統需要）
-- [ ] **F-3** UCharacterStateComponent Mood 下降分支確認是否保留（UE5 自行擴充，未對齊 Godot 單向回升）
+- [x] **C-10 / D-13** 確認無雙重計算（見上方 D-13 確認說明）
+- [x] **C-5** SpellRunner.PruneAfter 補 MP 退還（2026-06-20：FActiveEntry.MpCost+OnMpRefund callback，Godot SpellRunner.cs:111-122）
+- [x] **F-8** IWorldInterface.h 曼哈頓→歐幾里德距離注解（2026-06-20，Godot IWorldInterface.cs:11）
+- [x] **F-10** IWorldInterface 補 GetEntityProperty/SetEntityProperty/CreateEntity 三方法（2026-06-20，Godot IWorldInterface.cs:12-19）
+- [x] **F-3** UCharacterStateComponent Mood 雙向回歸：保留 UE5 擴充（2026-06-20 審查，Godot 標記「簡化規則待完整設計」）
 
-### 🟢 低優先（純文件訂正，程式碼本身沒問題）
+### 🟢 低優先（純文件訂正，程式碼本身沒問題）— **全部 5 項已於 2026-06-20 訂正 ✅**
 
-- [ ] **B-20** `docs/issues.md` 第15行「§2 ~97%/act_*全部完成」改為保守描述，與197-200行統一
-- [ ] **C-2/C-3** `docs/issues.md:205-206` 移除「MaxComboDepth 8 vs Godot 5」「TriggerCombo stub」過期錯誤記錄（程式碼實際已正確）
-- [ ] **E-17** `實作進度.md` 第316行移除「TakeSnapshot/RestoreFromSnapshot 暫緩」字樣（已完整實作）
-- [ ] **A-14** issues.md 補充說明 Totem 查表機制已替換為直接攜帶 SlotRef（架構變更非缺失）
-- [ ] **A-22** issues.md 補充說明向量系統 2D→3D 升級導致 VecCross 回傳型別由純量變向量
+- [x] **B-20** `docs/issues.md` 第15行§2統計摘要改為保守描述（~93%，列出 B-2/3/4/8/11/13/17 待修項目）
+- [x] **C-2/C-3** `docs/issues.md` Submit/comboDepth 列改為「已實作」（MaxComboDepth=5 對齊 Godot）；TriggerCombo 列改為「已實作」（callback 拆分架構，非缺失）
+- [x] **E-17** `實作進度.md` 已無「TakeSnapshot 暫緩」字樣（前次 session 已移除，確認 skip）
+- [x] **A-14** `docs/issues.md` §1 VM Core 架構差異摘要補充：Tsm 查表機制 → instruction 直接攜帶 TotemId
+- [x] **A-22** `docs/issues.md` §1 VM Core 架構差異摘要補充：VecCross 回傳型別由純量升級為 FVector（3D 外積）
 
 ---
 

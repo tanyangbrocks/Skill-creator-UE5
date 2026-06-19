@@ -22,6 +22,8 @@ float UCharacterStateComponent::TickState(float DeltaTime, bool bInCombat)
     }
 
     // ── 心情值緩慢回歸中值 ─────────────────────────────────────────
+    // F-3 審查（2026-06-20）：Godot CharacterState.cs:208 只在 Mood < Default 時回升，
+    // 此「Mood > Default 也下降」為 UE5 刻意擴充（Godot 標記待完整設計），決定保留。
     if (Mood < MoodDefault)
         ModifyMood(MoodRecoveryRate * DeltaTime);
     else if (Mood > MoodDefault)

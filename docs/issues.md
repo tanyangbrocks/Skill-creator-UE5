@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-20（Round 3 稽核 A~F 完成 + 12 項🔴高優先修復：詳見 `docs/audit-round3-2026-06-19.md`；EngraveData雙公式/ContainerType三召喚值/EngraveCategory列舉序/act_area_fan+beam形狀/ExecuteTechnique+Morph+Domain/敵人ActionBus攔截/EventBus全域訊號等）  
+**最後更新**：2026-06-20（Round 3 稽核 A~F 完成 + 12 項🔴高優先修復；🟢文件訂正 B-20/C-2/C-3/A-14/A-22；D-13 確認無雙重計算）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -12,7 +12,7 @@
 | # | 子系統 | Godot 行數 | 完成率（估算） | 主要剩餘缺口 |
 |---|--------|-----------|--------------|------------|
 | 1 | VM Core | 1,979 | **~100%** | FormatTraceParams（低優先 debug 輸出） |
-| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | **~97%** | — （act_* / SafetyGuard / PruneAfter 全部完成） |
+| 2 | SpellCaster / SpellRunner / ActionBus | 1,612 | **~93%** | B-2/3/4/8/11/13/17 等 🟡中優先待修（act_area_distant 距離公式、act_dash/teleport 步數、投射物方向/AoE/Mods 等，詳見 audit-round3-2026-06-19.md；B-20 訂正） |
 | 3 | AbilitySystem 資料型別 | 843 | **~100%** | — |
 | 4 | Elemental System | 439 | **100%** | — |
 | 5 | Character / Combat / Interfaces | 738 | **~100%** | — |
@@ -155,7 +155,8 @@
 - Godot `Dictionary<string, object?>` → UE5 `FInstancedStruct`（每 OpCode 對應一個強型別 Args struct）
 - Godot `List<>/Stack<>/HashSet<>` → UE5 `TArray<>/TMap<>/TSet<>`
 - Godot `Func<...>` delegate → UE5 `TFunction<...>`
-- 向量從 2D 延伸到 3D；唯一真正缺失：`FormatTraceParams`
+- Godot `Tsm`（Totem System Manager）參數查表機制 → UE5 instruction 直接攜帶 TotemId；`Tsm` 不再傳入，Totem 資訊在編譯期嵌入 instruction 的 Payload（A-14 訂正）
+- 向量從 2D 延伸到 3D；`VecCross` 回傳型別由 Godot 純量（2D 垂直分量）升級為 `FVector`（3D 外積），下游讀取需用 `GetVec()` 取三分量（A-22 訂正）；`FormatTraceParams` 已實作（原誤標缺失）
 
 ---
 
@@ -203,8 +204,8 @@
 | SpellRunner.cs | Advance 等待狀態檢查（6 種）| 已實作 | `FSpellRunner.cpp` L46-51 | 完整對應 |
 | SpellRunner.cs | Advance PendingEntityDamage / PendingEntityMove | 已實作 | `FSpellRunner.cpp` L78-93 | 完整對應 |
 | SpellRunner.cs | PruneAfter() | **已實作** | `FSpellRunner.h/.cpp` | PruneAfter(MaxAgeSeconds) + ElapsedTime 追蹤（2026-06-16）|
-| SpellRunner.cs | Submit 參數完整性 / comboDepth | **stub** | `FActiveEntry::ComboDepth` | MaxComboDepth 8 vs Godot 5 |
-| SpellRunner.cs | TriggerCombo() | **stub** | `FSpellRunner.cpp` L64 | 無智慧查找，由遊戲層建立 Context |
+| SpellRunner.cs | Submit 參數完整性 / comboDepth | **已實作** | `FActiveEntry::ComboDepth`；`SafetyGuard.h::MaxComboDepth=5` | MaxComboDepth=5 對齊 Godot（C-2 訂正：原記錄「8 vs Godot 5」已過期，程式碼實際已正確） |
+| SpellRunner.cs | TriggerCombo() | **已實作** | `FSpellRunner.cpp` | callback 拆分後由遊戲層建立 Context、Runner 負責執行（架構轉換非缺失；C-3 訂正：原記錄「stub」已過期） |
 | SpellRunner.cs | Advance PendingInvokeTotem / PendingInvokeSpell | **stub** | `FSpellRunner.cpp` L53-76 | 簡化 callback，無 ResolveTotem 邏輯 |
 | SpellProjectile.cs | Position / IsAlive / MoveInterval / MaxRange / MoveTimer / TilesTravelled | 已實作 | `ASpellProjectile.h` L30-44 | 完整對應（MaxRange 20 vs Godot 55；MoveInterval 0.08 vs 0.06）|
 | SpellProjectile.cs | Init() / Tick() / AdvanceOneTile() / FindEnemyAt() | 已實作 | `ASpellProjectile.cpp` L12-86 | 完整對應 |

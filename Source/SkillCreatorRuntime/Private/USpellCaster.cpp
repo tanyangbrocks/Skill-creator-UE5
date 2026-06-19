@@ -12,6 +12,7 @@
 #include "EngineUtils.h"
 #include "AbilityPointCalculator.h"
 #include "SpellCompiler.h"
+#include "GameFramework/PlayerController.h"
 
 // Anchor 快照狀態（TryCast + BuildContext 共用）
 struct FAnchorState
@@ -85,6 +86,21 @@ void USpellCaster::BeginPlay()
         }
     };
 
+    // C-5 修正：PruneAfter 清除時退還已扣除 MP（對應 Godot SpellRunner.cs:118）
+    Runner.OnMpRefund = [this](float MpAmount)
+    {
+        ASkillCreatorCharacter* RefChar = GetOwnerCharacter();
+        if (!RefChar) return;
+        if (RefChar->ActiveManaSlots.Num() > 0)
+        {
+            FManaSlot& Slot = RefChar->ActiveManaSlots[0];
+            Slot.Current = FMath::Min(Slot.Max, Slot.Current + MpAmount);
+            RefChar->CurrentMp = Slot.Current;
+        }
+        else
+            RefChar->CurrentMp = FMath::Min(100.f, RefChar->CurrentMp + MpAmount);
+    };
+
     Runner.OnInvokeTotem = [](FExecutionContext&, FName) {};  // fallback; InvokeTotemFn on Ctx takes priority
     // InvokeSpell 連段：從玩家 SpellGroup 查找對應 Spell 並編譯新 Context
     Runner.OnBuildComboContext = [this](FName SpellName) -> TUniquePtr<FExecutionContext>
@@ -130,24 +146,29 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     // 能力點上限亂施法。對應 Godot SpellCaster.TryCast() 的等級上限拒放檢查。
     if (FAbilityPointCalculator::ExceedsLevelCap(Spell, Char->Level)) return false;
 
-    // W-6: 優先從技能使用的法力類型插槽扣除；找不到對應 key 則降格至 slot[0]
-    FManaSlot* Source = nullptr;
-    for (const FName& Key : Spell.GetUsedManaTypes())
+    // B-2 修正：依 ManaTypeKey 按比例分配 MP，先全部驗證再原子扣除
+    // 對應 Godot SpellCaster.cs:251-275 TryConsumeMp（bound.Count=0 回退 slot[0]，否則均分）
+    const float TotalMpCost = FAbilityPointCalculator::CalculateMpCost(Spell);
+    const TMap<FName, float> CostByType = FAbilityPointCalculator::CalculateSlotCostByType(Spell);
+
+    if (CostByType.IsEmpty())
     {
-        Source = Char->GetManaSlot(Key);
-        if (Source) break;
+        // 無 ManaTypeKey 插槽：回退到 ActiveManaSlots[0]（對應 Godot gui_dao 預設槽）
+        FManaSlot* Def = Char->ActiveManaSlots.Num() > 0 ? &Char->ActiveManaSlots[0] : nullptr;
+        if (!Def || Def->Current < TotalMpCost) return false;
+        Def->Current -= TotalMpCost;
     }
-    if (!Source && Char->ActiveManaSlots.Num() > 0)
-        Source = &Char->ActiveManaSlots[0];
-
-    float Available = Source ? Source->Current : Char->CurrentMp;
-    if (Available < Spell.BaseMpCost) return false;
-
-    if (Source)
-        Source->Consume(Spell.BaseMpCost);
     else
-        Char->CurrentMp -= Spell.BaseMpCost;
-
+    {
+        // 先全部驗證（原子性），再統一扣除
+        for (const auto& [Key, Cost] : CostByType)
+        {
+            const FManaSlot* MS = Char->GetManaSlot(Key);
+            if (!MS || MS->Current < Cost) return false;
+        }
+        for (const auto& [Key, Cost] : CostByType)
+            Char->GetManaSlot(Key)->Current -= Cost;
+    }
     if (Char->ActiveManaSlots.Num() > 0)
         Char->CurrentMp = Char->ActiveManaSlots[0].Current;
     CooldownRemaining = FMath::Max(GlobalCooldown, Spell.CastDelay);
@@ -163,8 +184,22 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
         ASpellProjectile* Proj = GetWorld()->SpawnActor<ASpellProjectile>();
         if (Proj)
         {
-            FVector Fwd = Char->GetActorForwardVector();
-            Proj->Init(Char->GetPosition(), Fwd, CachedEnemyMgr, CachedVoxelWorld);
+            // B-3 修正：取攝影機前向作瞄準方向（對應 Godot SpellCaster.cs:56-70 滑鼠格位差正規化）
+        // 並從身體邊緣起點發射（halfW+1 格偏移，對應 Godot startX=pos.X+sdx*(halfW+1)）
+        FVector Fwd = Char->GetActorForwardVector();
+        if (APlayerController* PC = Cast<APlayerController>(Char->GetController()))
+        {
+            FVector CLoc; FRotator CRot;
+            PC->GetPlayerViewPoint(CLoc, CRot);
+            Fwd = CRot.Vector();
+        }
+        const int32 HalfW = WorldScale::GrainCurrent / 2;  // = 8 tiles
+        const int32 HalfH = WorldScale::GrainCurrent;       // = 16 tiles (PlayerH/2)
+        const FGridPos CPos = Char->GetPosition();
+        const int32 SX = (Fwd.X > 0.01f) ? 1 : ((Fwd.X < -0.01f) ? -1 : 0);
+        const int32 SZ = (Fwd.Z > 0.01f) ? 1 : ((Fwd.Z < -0.01f) ? -1 : 0);
+        FGridPos ProjStart(CPos.X + SX * (HalfW + 1), CPos.Y + HalfH, CPos.Z + SZ * (HalfW + 1));
+            Proj->Init(ProjStart, Fwd, CachedEnemyMgr, CachedVoxelWorld);
 
             float Dmg = Proj->BaseDamage;
             const ESkillElementType Elem = Spell.SpellElement;
@@ -200,7 +235,7 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     // ── Contact 類型：前方掃描近戰命中 ───────────────────────────────
     if (Spell.Container == EContainerType::Contact)
     {
-        ExecuteContactHit(Spell);
+        ExecuteContactHit(Spell, Code);
         return true;
     }
 
@@ -210,7 +245,7 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     // 本體延遲至 W-11；顯式列出三個 case 避免被誤判為遺漏，詳見 docs/audit-round3-2026-06-19.md B-5）
     auto Ctx = BuildContext(Spell, Code);
     if (!Ctx) return false;
-    Runner.Submit(MoveTemp(Ctx));
+    Runner.Submit(MoveTemp(Ctx), TotalMpCost);  // C-5：記錄 MpCost 供 PruneAfter 退還
     return true;
 }
 
@@ -253,7 +288,7 @@ void USpellCaster::TryCastSlot(int32 SlotIndex)
     TryCast(Spell, Code);
 }
 
-void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
+void USpellCaster::ExecuteContactHit(const FSpellArray& Spell, const TArray<FInstruction>& Code)
 {
     ASkillCreatorCharacter* Char = GetOwnerCharacter();
     if (!Char || !CachedEnemyMgr) return;
@@ -284,30 +319,51 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
         }
     }
 
-    if (!Target) return;
-
-    // 元素 Aura 施加（無冷卻命中）
-    if (Spell.SpellElement != ESkillElementType::None && Target->AuraComp)
-        Target->AuraComp->ApplyImmediate(Spell.SpellElement, UElementalAuraComponent::DefaultAuraDuration, Target);
-
-    // 傷害（基礎值；M-9 接 SpellRunner 後改由 VM 計算）
-    constexpr float BaseDamage = 10.f;
-    const float HpBefore = Target->GetHp();
-    Target->TakeDamageAmount(BaseDamage);
-
-    if (auto* GI = GetWorld()->GetGameInstance())
-    if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+    if (Target)
     {
-        Sub->OnPlayerDealtDamage(BaseDamage);
-        if (HpBefore > 0.f && Target->GetHp() <= 0.f)
-            Sub->OnEnemyKilled();
+        // 元素 Aura 施加（無冷卻命中）
+        if (Spell.SpellElement != ESkillElementType::None && Target->AuraComp)
+            Target->AuraComp->ApplyImmediate(Spell.SpellElement, UElementalAuraComponent::DefaultAuraDuration, Target);
+
+        // 傷害（基礎值；M-9 接 SpellRunner 後改由 VM 計算）
+        constexpr float BaseDamage = 10.f;
+        const float HpBefore = Target->GetHp();
+        Target->TakeDamageAmount(BaseDamage);
+
+        if (auto* GI = GetWorld()->GetGameInstance())
+        if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
+        {
+            Sub->OnPlayerDealtDamage(BaseDamage);
+            if (HpBefore > 0.f && Target->GetHp() <= 0.f)
+                Sub->OnEnemyKilled();
+        }
+
+        // SpawnEffect：命中 tile 觸發元素 CA 反應
+        if (Spell.SpellElement != ESkillElementType::None && CachedVoxelWorld)
+        {
+            if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+                TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Spell.SpellElement);
+        }
+    }
+    else
+    {
+        // 未命中：在正前方 2 格執行 VM 效果（AoE 仍可擊中範圍內目標）
+        // 對應 Godot SpellCaster.cs:150-154：meleePt = pos + fx*2，runner.Submit 仍會觸發
+        HitPos = FGridPos(
+            Origin.X + FMath::RoundToInt(Fwd.X * 2.f),
+            Origin.Y + FMath::RoundToInt(Fwd.Y * 2.f),
+            Origin.Z + FMath::RoundToInt(Fwd.Z * 2.f)
+        );
     }
 
-    // SpawnEffect：命中 tile 觸發元素 CA 反應
-    if (Spell.SpellElement != ESkillElementType::None && CachedVoxelWorld)
+    // B-4 修正：提交 VM 在命中點執行（對應 Godot SpellCaster.cs:134-136 runner.Submit fixedOrigin）
+    if (Code.Num() > 0)
     {
-        if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
-            TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Spell.SpellElement);
+        if (auto Ctx = BuildContext(Spell, Code))
+        {
+            Ctx->FixedOrigin = HitPos;
+            Runner.Submit(MoveTemp(Ctx));
+        }
     }
 }
 
@@ -394,19 +450,39 @@ void USpellCaster::ApplyModsToNearbyEnemies(const FSpellMods& Mods, FGridPos Ori
                                         +(EP.Z-Origin.Z)*(EP.Z-Origin.Z)));
         if (Dist > NearbyR) continue;
 
+        // B-17 修正：逐格碰撞檢測（對應 Godot SpellCaster.cs:695-715）
+        // 原版整體 SetActorLocation 無視牆壁，現改為每格確認為空氣才移動
+        FTileWorld3D* TW_Mods = VW ? VW->GetTileWorld() : nullptr;
         if (Mods.PushDist > 0.f)
         {
-            FVector Away = (FVector(EP.X,0,EP.Z)-FVector(Origin.X,0,Origin.Z)).GetSafeNormal();
-            Enemy->SetActorLocation(Enemy->GetActorLocation()
-                + Away * Mods.PushDist * WorldScale::TileSizeCm,
-                true, nullptr, ETeleportType::None);
+            int32 DX = (EP.X > Origin.X) ? 1 : ((EP.X < Origin.X) ? -1 : 0);
+            int32 DZ = (EP.Z > Origin.Z) ? 1 : ((EP.Z < Origin.Z) ? -1 : 0);
+            if (DX == 0 && DZ == 0) DX = 1;  // 對應 Godot：if (dx == 0 && dz == 0) dx = 1
+            FGridPos EPos = EP;
+            for (int32 S = 0; S < (int32)Mods.PushDist; ++S)
+            {
+                FGridPos Nxt(EPos.X + DX, EPos.Y, EPos.Z + DZ);
+                if (TW_Mods && TW_Mods->GetTile(Nxt.X, Nxt.Y, Nxt.Z) != EMaterialType::Air) break;
+                EPos = Nxt;
+            }
+            if (EPos.X != EP.X || EPos.Z != EP.Z)
+                Enemy->SetActorLocation(FVector((float)EPos.X, Enemy->GetActorLocation().Y, (float)EPos.Z),
+                                        false, nullptr, ETeleportType::TeleportPhysics);
         }
         if (Mods.PullDist > 0.f)
         {
-            FVector To = (FVector(Origin.X,0,Origin.Z)-FVector(EP.X,0,EP.Z)).GetSafeNormal();
-            Enemy->SetActorLocation(Enemy->GetActorLocation()
-                + To * Mods.PullDist * WorldScale::TileSizeCm,
-                true, nullptr, ETeleportType::None);
+            const int32 DX = (Origin.X > EP.X) ? 1 : ((Origin.X < EP.X) ? -1 : 0);
+            const int32 DZ = (Origin.Z > EP.Z) ? 1 : ((Origin.Z < EP.Z) ? -1 : 0);
+            FGridPos EPos = EP;
+            for (int32 S = 0; S < (int32)Mods.PullDist; ++S)
+            {
+                FGridPos Nxt(EPos.X + DX, EPos.Y, EPos.Z + DZ);
+                if (TW_Mods && TW_Mods->GetTile(Nxt.X, Nxt.Y, Nxt.Z) != EMaterialType::Air) break;
+                EPos = Nxt;
+            }
+            if (EPos.X != EP.X || EPos.Z != EP.Z)
+                Enemy->SetActorLocation(FVector((float)EPos.X, Enemy->GetActorLocation().Y, (float)EPos.Z),
+                                        false, nullptr, ETeleportType::TeleportPhysics);
         }
 
         auto ApplyElem = [Enemy, EP, VW](ESkillElementType Elem)
@@ -531,8 +607,10 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
         }
         else if (Shape == "act_area_distant")
         {
-            int32 dist = (6 + BaseR) * Grain;
-            TW->Explode(Origin.X + FX*dist, Origin.Y, Origin.Z + FZ*dist, BaseR + 1);
+            // B-8 修正：Godot SpellCaster.cs:581-583 distRange=16+baseR*2，爆炸半徑 baseR+2
+            // 原版 (6+BaseR)*Grain 因 BaseR 已含 Grain 而產生二次縮放，現改為直接對齊 Godot
+            int32 dist = 16 + BaseR * 2;
+            TW->Explode(Origin.X + FX*dist, Origin.Y, Origin.Z + FZ*dist, BaseR + 2);
         }
         else if (Shape == "act_area_beam")
         {
@@ -680,7 +758,8 @@ void USpellCaster::ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origi
     const FSpellMods M = ReadMods(Slot);
     float Dmg = Proj->BaseDamage * (1.f + M.DmgBonus);
     TWeakObjectPtr<AVoxelWorldActor> WeakVW2(VW);
-    Proj->OnHitEnemy = [Dmg, M, WeakVW2](AEnemy* Enemy, FGridPos HitPos)
+    TWeakObjectPtr<USpellCaster>     WeakSelf(this);
+    Proj->OnHitEnemy = [Dmg, M, WeakVW2, WeakSelf](AEnemy* Enemy, FGridPos HitPos)
     {
         if (!Enemy) return;
         Enemy->TakeDamageAmount(Dmg);
@@ -698,6 +777,12 @@ void USpellCaster::ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origi
             if (M.bThunder) Enemy->AuraComp->ApplyImmediate(ESkillElementType::Thunder,
                                 UElementalAuraComponent::DefaultAuraDuration, Enemy);
         }
+        // B-11 修正：命中時觸發 AoE 爆炸 + 刻印位移效果
+        // 對應 Godot SpellProjectile.cs:114-116（runner.Submit 在命中點執行整個 spell）
+        if (VW2) if (FTileWorld3D* TW2 = VW2->GetTileWorld())
+            TW2->Explode(HitPos.X, HitPos.Y, HitPos.Z, 1 + FMath::Max(0, (int32)(M.DmgBonus * 2.f)));
+        if (WeakSelf.IsValid())
+            WeakSelf->ApplyModsToNearbyEnemies(M, HitPos, VW2);
     };
 }
 
@@ -750,19 +835,22 @@ void USpellCaster::ExecuteDisplacement(const FString& ActionId, const FSpellSlot
                 FVector((float)Final.X, Char->GetActorLocation().Y, (float)Final.Z),
                 false, nullptr, ETeleportType::TeleportPhysics);
     }
-    else // act_teleport / act_portal
+    else // act_teleport / act_portal（對應 Godot SpellCaster.cs:853-857）
     {
-        const int32 MaxSteps = 15 * WorldScale::GrainCurrent;
-        FGridPos Target = Pos;
-        for (int32 i = 1; i <= MaxSteps; ++i)
+        // B-13 修正：Godot 從最遠（20步）倒數找第一個空氣格，傳送到最遠可達空格
+        // 原版向前掃描取最後空氣格，邏輯相近但步數錯誤（=240）且方向語意不同
+        constexpr int32 MaxSteps = 20;
+        for (int32 i = MaxSteps; i >= 1; --i)
         {
             FGridPos Next(Pos.X + FX*i, Pos.Y, Pos.Z + FZ*i);
-            if (TW && TW->GetTile(Next.X, Next.Y, Next.Z) != EMaterialType::Air) break;
-            Target = Next;
+            if (!TW || TW->GetTile(Next.X, Next.Y, Next.Z) == EMaterialType::Air)
+            {
+                Char->TeleportTo(
+                    FVector((float)Next.X, Char->GetActorLocation().Y, (float)Next.Z),
+                    Char->GetActorRotation());
+                break;
+            }
         }
-        Char->TeleportTo(
-            FVector((float)Target.X, Char->GetActorLocation().Y, (float)Target.Z),
-            Char->GetActorRotation());
     }
 }
 

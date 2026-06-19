@@ -8,10 +8,11 @@ FSpellRunner::FSpellRunner()
 
 FSpellRunner::~FSpellRunner() = default;
 
-void FSpellRunner::Submit(TUniquePtr<FExecutionContext> Ctx)
+void FSpellRunner::Submit(TUniquePtr<FExecutionContext> Ctx, float MpCost)
 {
     FActiveEntry Entry;
-    Entry.Ctx = MoveTemp(Ctx);
+    Entry.Ctx    = MoveTemp(Ctx);
+    Entry.MpCost = MpCost;
     ActiveContexts.Add(MoveTemp(Entry));
 }
 
@@ -25,7 +26,12 @@ void FSpellRunner::PruneAfter(float MaxAgeSeconds)
     for (int32 i = ActiveContexts.Num() - 1; i >= 0; --i)
     {
         if (ActiveContexts[i].ElapsedTime >= MaxAgeSeconds)
+        {
+            // C-5 修正：退還已扣除 MP（對應 Godot SpellRunner.cs:118 s.Player.Mp += s.MpCost）
+            if (ActiveContexts[i].MpCost > 0.f && OnMpRefund)
+                OnMpRefund(ActiveContexts[i].MpCost);
             ActiveContexts.RemoveAt(i);
+        }
     }
 }
 

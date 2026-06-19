@@ -18,7 +18,8 @@ public:
     ~FSpellRunner();
 
     // ── 提交一個已就緒的技能執行（呼叫方負責注入所有 delegate）─
-    void Submit(TUniquePtr<FExecutionContext> Ctx);
+    // MpCost：此次施放已扣除的 MP，供 PruneAfter 退還用（對應 Godot ActiveSpell.MpCost）
+    void Submit(TUniquePtr<FExecutionContext> Ctx, float MpCost = 0.f);
 
     // ── 每幀驅動（從 AActor::Tick 或 UActorComponent::TickComponent 呼叫）
     void Tick(float DeltaTime);
@@ -32,6 +33,8 @@ public:
     int32 GetActiveCount() const { return ActiveContexts.Num(); }
 
     // ── 遊戲層 callback（SpellRunner 在每次 InvokeTotem 等之後呼叫）──
+    // C-5：PruneAfter 清除時呼叫，通知遊戲層退還 MP（對應 Godot SpellRunner.cs:118）
+    TFunction<void(float MpToRefund)>                        OnMpRefund;
     TFunction<void(FExecutionContext&, FName TotemName)>     OnInvokeTotem;
     TFunction<void(int32 EntityId, float Damage)>            OnEntityDamage;
     TFunction<void(int32 EntityId, FGridPos NewPos)>         OnEntityMove;
@@ -44,6 +47,7 @@ private:
         TUniquePtr<FExecutionContext> Ctx;
         int32                        ComboDepth  = 0;
         float                        ElapsedTime = 0.f;
+        float                        MpCost      = 0.f;  // C-5：施放時扣除的 MP，PruneAfter 退還用
     };
 
     TArray<FActiveEntry>       ActiveContexts;

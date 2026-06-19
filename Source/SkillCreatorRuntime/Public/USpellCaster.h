@@ -59,7 +59,8 @@ private:
     static constexpr int32 MeleeRange = 3;
 
     // Contact 類型：前方 MeleeRange 格 3D 掃描，命中後施加元素 Aura + 傷害 + SpawnEffect
-    void ExecuteContactHit(const FSpellArray& Spell);
+    // B-4：加 Code 參數以在命中點提交 VM 執行（對應 Godot SpellCaster.cs:134-136 runner.Submit）
+    void ExecuteContactHit(const FSpellArray& Spell, const TArray<FInstruction>& Code);
 
     virtual void BeginPlay() override;
 
