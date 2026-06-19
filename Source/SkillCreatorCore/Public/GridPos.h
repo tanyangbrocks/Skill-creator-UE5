@@ -33,6 +33,15 @@ struct FGridPos
         return FMath::Max3(FMath::Abs(X - O.X), FMath::Abs(Y - O.Y), FMath::Abs(Z - O.Z));
     }
 
+    // 歐幾里得距離（對應 Godot GridPos.DistanceTo，PlayerController.cs MiningRange 判定用）
+    float EuclideanDistance(const FGridPos& O) const
+    {
+        const float Dx = static_cast<float>(X - O.X);
+        const float Dy = static_cast<float>(Y - O.Y);
+        const float Dz = static_cast<float>(Z - O.Z);
+        return FMath::Sqrt(Dx * Dx + Dy * Dy + Dz * Dz);
+    }
+
     FString ToString() const { return FString::Printf(TEXT("(%d,%d,%d)"), X, Y, Z); }
 };
 

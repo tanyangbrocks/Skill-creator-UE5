@@ -21,12 +21,15 @@ namespace WorldScale
     // ── 基礎常數（唯一需要手動調整的地方）────────────────────────────────
     constexpr int32 ChunkSize          = 16;      // chunk 邊長（tile）
     constexpr int32 MegaChunkMult      = 4;       // Mega-Chunk = 4×4×4 chunks = 64³ tiles
-    constexpr int32 PlayerW            = 1;       // 玩家寬度（tile）
-    constexpr int32 PlayerH            = 2;       // 玩家高度（tile）
-    constexpr float TileSizeCm         = 30.f;   // 每 tile 物理邊長（cm）← 改這個
-    constexpr int32 DefaultWorldHeight = 256;     // 垂直 tile 上限（AVoxelWorldActor::WorldHeight 預設值）
-    constexpr int32 GrainCurrent       = 1;       // 目前 Grain（M-1~M-9 用 1）
+    // ⚠️ GrainCurrent 必須在 PlayerW/PlayerH/TileSizeCm 之前宣告（constexpr 前向引用限制）
+    // 對應 Godot WorldScale.cs Grain=16：1 遊戲單位 = 16 tile。
+    // 改此值 → Rebuild → 玩家體型/TileSize/採掘範圍/形狀半徑全部自動跟進。
+    constexpr int32 GrainCurrent       = 16;     // 目前 Grain（對應 Godot WorldScale.cs Grain=16）
     constexpr int32 GrainTarget        = 64;      // 長期目標（M-10 GPU CA 後）
+    constexpr int32 PlayerW            = GrainCurrent;          // 玩家寬度（tile）= 1 遊戲單位
+    constexpr int32 PlayerH            = GrainCurrent * 2;      // 玩家高度（tile）= 2 遊戲單位 = 200cm @ Grain=16
+    constexpr float TileSizeCm         = 100.f / static_cast<float>(GrainCurrent);  // 每 tile 邊長（cm）= 1m / Grain
+    constexpr int32 DefaultWorldHeight = 256;     // 垂直 tile 上限（AVoxelWorldActor::WorldHeight 預設值）
 
     // ── 衍生常數：玩家碰撞膠囊 ────────────────────────────────────────
     // 半徑比 tile 略窄（×0.45）使玩家能緊貼牆壁移動而不卡住
@@ -38,10 +41,22 @@ namespace WorldScale
     constexpr float CameraArmZOffset   = TileSizeCm * 1.5f;  // 臂根向上 1.5 tile
 
     // ── 衍生常數：移動 ────────────────────────────────────────────────
-    constexpr float WalkSpeedCm        = TileSizeCm * 20.f;  // 20 tile/s
-    constexpr float JumpZVelocityCm    = TileSizeCm * 14.f;  // 抵達 ~3 tile 高度（物理公式推導）
-    // 注意：UE5 重力 980 cm/s² 未依 tile 縮放。若 GrainTarget 改變需同時調整
-    // GetCharacterMovement()->GravityScale = (TileSizeCm / 30.f)（保持 tile/s² 一致）
+    // WalkSpeed：以「遊戲單位/s」表示（1 遊戲單位 = GrainCurrent tiles = 100 cm）。
+    // TileSizeCm * GrainCurrent = 100 cm（恆等式），故 4 遊戲單位/s = 400 cm/s（不隨 Grain 改變）。
+    constexpr float WalkSpeedCm        = TileSizeCm * static_cast<float>(GrainCurrent) * 4.f;  // ≡ 400 cm/s
+    // Jump：GravityScale = TileSizeCm / 30.f（ASkillCreatorCharacter 建構子設定），
+    // 有效重力 g_eff = 980 * (TileSizeCm/30)，JumpZVelocity = TileSizeCm * 14 → 抵達 3 tile 高。
+    // 3 tiles = 3 * 6.25 cm = 18.75 cm（Grain=16；tile 單位跳躍高度不隨 Grain 改變）。
+    constexpr float JumpZVelocityCm    = TileSizeCm * 14.f;  // 配合 GravityScale 使用：3 tile 高
+    // GravityScale 縮放因子（讓 980 cm/s² 等效為「tile 單位重力」一致）
+    constexpr float GravityScaleMult   = TileSizeCm / 30.f;
+
+    // ── 衍生常數：採掘 / 放置（對應 Godot PlayerController.cs MiningRange / Main.cs _shapeRadius）─
+    // Godot: MiningRange => BodyH * 6f（PlayerController.cs:42）；BodyH 預設 = WorldScale.PlayerH。
+    // UE5 用自己的 PlayerH（tile 高度）重新推導，不照抄 Godot 的 32/6 數字。
+    constexpr int32 MiningRangeTiles   = PlayerH * 6;                          // ~6× 玩家高度（tile）
+    // Godot: _shapeRadius = WorldScale.PlayerH/6（Main.cs:72），下限 1。
+    constexpr int32 DefaultShapeRadius = (PlayerH / 6 > 0) ? (PlayerH / 6) : 1; // 預設形狀半徑（tile）
 
     // ── 座標轉換：Voxel → UE5 FVector ────────────────────────────────
     inline FVector TileToWorld(int32 VoxX, int32 VoxY, int32 VoxZ,

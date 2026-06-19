@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-19（Round 1 稽核修復 + 文件訂正：存檔系統接通遊玩 / 3 個 UI Widget 接進 HUD / 自動裝備 / 敵人環境傷害 / 遠程投射物 / 採掘高亮；修正 4 個反向錯誤：FormatTraceParams / MeleeRange / EContainerType::Contact / CharacterState.TickState 均已實作非缺失）  
+**最後更新**：2026-06-19（Round 2 稽核修復：WorldScale Grain=16 可擴縮架構、bHoldToPlace=true、PlaceCooldown 移至 Tick；GridPos.DistanceTo→已實作、EnemyManager.Tick→已實作（部分）、EventBus→架構不同；WorldScale 常數細分）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -81,6 +81,9 @@
 | 敵人環境傷害：站在 Fire/Lava tile 每幀扣血 | AEnemyManager.cpp | 2026-06-19 |
 | 遠程敵人發射投射物：UBTTask_AttackPlayer Ranged 分支改為 Spawn ASpellProjectile | UBTTask_AttackPlayer.cpp | 2026-06-19 |
 | 採掘高亮：Tick 每幀視線 Raycast + AVoxelWorldActor::ShowHighlight/HideHighlight | ASkillCreatorCharacter.cpp | 2026-06-19 |
+| WorldScale Grain=16 可擴縮架構：GrainCurrent=16、TileSizeCm=100/Grain=6.25cm、PlayerW=Grain、PlayerH=Grain×2、WalkSpeedCm=400cm/s（恆等式）、GravityScaleMult=TileSizeCm/30 | WorldScale.h、ASkillCreatorCharacter.cpp | 2026-06-19 |
+| bHoldToPlace 預設值修正：false→true（對應 Godot Main.cs:124 _holdToPlace=true） | ASkillCreatorHUD.h | 2026-06-19 |
+| PlaceCooldown 移至 Tick()（對應 Godot 每幀倒數，不依賴右鍵是否按住） | ASkillCreatorCharacter.cpp | 2026-06-19 |
 
 ---
 
@@ -208,7 +211,7 @@
 | SpellProjectile.cs | HitAt Runner 提交 / ExecuteEffects 同步分支 | **完全缺失** | — | 改為 OnHitEnemy callback |
 | GameAction.cs | GameAction 抽象型別 / EntityDamageAction / PlayerDamageAction / PlayerDeathAction | **完全缺失** | — | 改為 PendingEntityDamageId + Amount |
 | ActionBus.cs | ActionBus（Register / UnregisterByTag / ClearAll / Dispatch / Count）| **已實作** | `ActionBus.h` | RegisterFilter / DispatchPlayerDamage / DispatchPlayerDeath；API 不同但功能完整（M-5）|
-| EventBus.cs | Broadcast() / HasSignal() / ClearFrame() / ClearAll() | **stub** | `USpellCaster.cpp` L187-188 | lambda 預留但未真正實作 |
+| EventBus.cs | Broadcast() / HasSignal() / ClearFrame() / ClearAll() | **架構不同** | `USpellCaster.cpp` L698-750 | lambda 有實作，但 per-cast 局部 TSet；Godot 的跨技能全域廣播（靜態 HashSet 跨幀共享）缺失 |
 | SafetyGuard.cs | MaxExecutionsPerTick / MaxWhileIterations / MaxEntityCount / MaxContainerDepth | **已實作** | `SafetyGuard.h` L11-16 | 完整對應（前 session）|
 | SafetyGuard.cs | MaxComboDepth | **已實作** | `SafetyGuard.h` L13 | constexpr MaxComboDepth=5 |
 | SafetyGuard.cs | HasMp() / TryProc() / ResetProcMask() / TryUseSpell() / ResetSceneCounts() | **已實作** | `SafetyGuard.h` L19-41 | 完整對應（前 session）|
@@ -377,11 +380,14 @@
 | IWorldInterface.cs | GetEntityAt / GetMaterialAt / GetEntitiesNear / DestroyTile / ApplyForce / SpawnEffect / OnEntityHit / OnTileDestroyed / OnEntityDied / OnPlayerAction | **已實作（介面定義）** | `IWorldInterface.h` | 純虛擬介面已定義 10 項；⚠️ 截至 2026-06-19，**全專案零實作**（沒有任何類別繼承並實作此介面），NPCBrain M-NPC-3 感知系統已依賴此介面但同樣等待接通 |
 | IWorldInterface.cs | GetEntityProperty / SetEntityProperty / CreateEntity | **完全缺失** | — | 2026-06-19 稽核：先前標記已實作，但這 3 項在介面定義中不存在，全專案 grep 無結果 |
 | GridPos.cs | X / Y / Z / 建構子 / operator+ / operator- / ToString() | 已實作 | `GridPos.h` L12-30 | 完整對應 |
-| GridPos.cs | DistanceTo() | **stub** | `GridPos.h` L25-28 | Godot 歐幾里德距 → UE5 曼哈頓距離 |
+| GridPos.cs | DistanceTo() | **已實作** | `GridPos.h` L37-43 | `EuclideanDistance()` 完整歐幾里德（Godot MathF.Sqrt(dx²+dy²+dz²)）；另有 ManhattanDistance() 和 ChebyshevDistance()；在 ASkillCreatorCharacter.cpp 實際使用 |
 | GridPos3D.cs | 全部（X / Y / Z / operator+ / operator- / DistanceTo / MoveX / MoveY / MoveZ / ToWorldPos / ToString / Neighbors6）| **完全缺失** | — | UE5 統一用 FGridPos；Neighbors6 改為行內邏輯 |
-| WorldScale.cs | TileSize / PlayerW / PlayerH | **stub** | `WorldScale.h` L14-18 | 計算方式不同：Godot 1/Grain，UE5 固定 30cm tile |
+| WorldScale.cs | TileSize / PlayerW / PlayerH | **已實作** | `WorldScale.h` L31-50 | 2026-06-19 修正：TileSizeCm=100/GrainCurrent=1/Grain（與 Godot 公式對齊）；PlayerW=GrainCurrent；PlayerH=GrainCurrent*2；WalkSpeedCm=TileSizeCm*Grain*4=400cm/s；GravityScaleMult=TileSizeCm/30 |
 | WorldScale.cs | GpuZoneW=128 / GpuZoneH=256 / GpuZoneD=128 | **stub** | `WorldScale.h` L43-45 | 值相同但來源不同 |
-| WorldScale.cs | Grain / WorldH / WorldW / WorldD / CamTilesV / OrthoSize / SimRadiusChunks / MeshRadiusChunks / OriginX / OriginZ | **完全缺失** | — | UE5 無對應常數 |
+| WorldScale.cs | Grain | **已實作** | `WorldScale.h` GrainCurrent=16 | 對應 Godot Grain=16 |
+| WorldScale.cs | WorldH / WorldW / WorldD | **完全缺失（設計差異）** | — | Godot 固定大小世界；UE5 無邊界懶載入（刻意省略），WorldHeight 由 AVoxelWorldActor UPROPERTY 動態管理 |
+| WorldScale.cs | CamTilesV / OrthoSize / OriginX / OriginZ | **完全缺失** | — | UE5 無正射相機模式；無邊界不需要 OriginX/Z |
+| WorldScale.cs | SimRadiusChunks / MeshRadiusChunks | **架構替換** | AVoxelWorldActor UPROPERTY | 由 ChunkStreamingManager 動態管理，非常數 |
 | GameClock.cs | TicksPerSecond / TicksPerDay / TotalTicks / DayCount / DayFraction / Advance() / Reset() | **已實作** | `UGameClockSubsystem.h/.cpp` | UGameInstanceSubsystem（前 session）|
 | DestroyReason.cs | Mining / ShapeMining / Explosion / Slash / Crush enum | **已實作** | `WorldTypes.h` EDestroyReason | 前 session；整合至 IWorldInterface |
 | SpawnCategory.cs | SpawnCategory enum / MobTableEntry record（Type / Category / Weight / AreaCenter / AreaRadius）| **已實作** | `AEnemy.h` ESpawnCategory；`AMobSpawnController.h` FMobTableEntry | 前 session |
@@ -545,7 +551,7 @@
 | EnemyManager.cs | EnemyProjectiles / _spawner / FireDps / LavaDps / BoltDamage 常數 | **已實作** | `AEnemyManager.h` | FireDps / LavaDps / BoltDamage 常數；EnemyProjectiles TArray<TObjectPtr<ASpellProjectile>>；CachedSpawner AMobSpawnController*（2026-06-17 Batch 2）|
 | EnemyManager.cs | SetSpawner() | **已實作** | `AEnemyManager.h` | SetSpawner(AMobSpawnController*) inline setter（2026-06-17 Batch 2）|
 | EnemyManager.cs | Spawn() | 已實作 | `AEnemyManager.cpp` L10-29 | 建立 AEnemy Actor |
-| EnemyManager.cs | Update() / Tick() | **stub** | `AEnemyManager.cpp` L31-61 | 只清理死亡敵人；生成邏輯 M-5 |
+| EnemyManager.cs | Update() / Tick() | **已實作（部分）** | `AEnemyManager.cpp` L48-114 | 環境傷害（Fire/Lava DPS）+ 死亡清理（獎勵+掉落物+DynamicActiveCount--）+ 投射物清理；生成邏輯由 AMobSpawnController 獨立處理（架構分離，非缺失）|
 | EnemyManager.cs | ApplyExplosionDamage() | 已實作 | `AEnemyManager.cpp` L63-73 | 球形傷害（曼哈頓→歐式距離）|
 | EnemyProjectile.cs | Position / _dir / _damage / _moveTimer / TilesTravelled / MoveInterval / MaxRange | 已實作 | `ASpellProjectile.h` | 完整對應 |
 | EnemyProjectile.cs | Constructor / Init() / Update()→Tick() / AdvanceOneTile() / FindEnemyAt() | 已實作 | `ASpellProjectile.cpp` | 完整對應 |
@@ -690,6 +696,13 @@
 | Main.cs | 技能欄位顯示 / 傷害數字池 | **已實作（浮動傷害）** | `UFloatingDamageWidget.h/.cpp` / `AFloatingDamageActor.h/.cpp` | AFloatingDamageActor::Spawn() 在任意世界位置生成 UMG 浮動傷害數字；向上漂移 40cm/s + 後半段淡出 + MaxLifeTime=1.2s 後自動 Destroy（2026-06-17 Batch 2）|
 | InputBindings.cs | RegisterAll() | **stub** | `ASkillCreatorPlayerController::SetupInputBindings()` | UE5 用 Enhanced Input System |
 | InputBindings.cs | GetKeys() / Rebind() / ResetToDefault() / SaveToFile() / LoadFromFile() | **已實作** | `UInputSettingsWidget.h/.cpp` | GetCurrentBindings / RemapAction / SaveBindings / LoadAndApplyBindings / ResetToDefaults（UI-2, 2026-06-16）|
+| InputBindings.cs | Hotbar1~5（Key1~Key5）+ Main.cs hardcode Key6~Key0 → ActiveHotbarIndex 0~9 | **已實作** | `ASkillCreatorPlayerController.cpp` OnHotbar1~0 | 2026-06-19 校正：原錯誤呼叫 SpellCasterComp->SwitchSlot，現改呼叫 InventoryComp->SetActiveHotbarIndex(0~9)；補加 6~0 五鍵 |
+| InputBindings.cs | TogglePaint（F1）→ 開發者筆刷面板（材質直接繪製） | **已實作（部分）** | `ASkillCreatorCharacter.cpp` `OnDebugPaint()` F1→IA_DbgPaint | 2026-06-19 修正：按鍵綁定+toggle 狀態已實作；材質繪製邏輯（OnMine 分支）尚未實作 |
+| InputBindings.cs | DebugCoord（F2）→ 座標驗證 overlay（格/世界/玩家位置/OrthoZoom） | **已實作** | `ASkillCreatorCharacter.cpp` `OnDebugCoord()` F2→IA_DbgCoord；Tick 顯示格座標+世界座標 | 2026-06-19 修正：OrthoZoom 未實作（UE5 無正射模式 zoom 參數），其餘完整對應 |
+| InputBindings.cs | DebugVmTrace（F3）→ VM 執行追蹤（TraceMode） | **已實作** | `ASkillCreatorCharacter.cpp` `OnDebugTrace()` F3→IA_DbgTrace | 完整對應 |
+| InputBindings.cs | DebugSurvival（F4）→ 生存速率 overlay（8 項數值＋/s 速率） | **已實作（部分）** | `ASkillCreatorCharacter.cpp` `OnDebugSurvival()` F4→IA_DbgSurvival；Tick 顯示 Stamina/MentalEnergy/Mood/HP/MP | 2026-06-19 修正：8 項中顯示 5 項；速率（/s）未計算（Godot 另有速率追蹤邏輯） |
+| InputBindings.cs | DebugSnapTake（F5）→ 快照取樣 | **已實作** | `ASkillCreatorCharacter.cpp` `OnDebugSnapshotTake()` F5→IA_SnapTake | 完整對應 |
+| InputBindings.cs | DebugSnapRoll（F6）→ 快照回滾並比對 | **已實作** | `ASkillCreatorCharacter.cpp` `OnDebugSnapshotApply()` F6→IA_SnapApply | 完整對應 |
 | PlayerController.cs | IElementalTarget 實作 | **stub** | `ASkillCreatorCharacter.h` | 介面存在但方法可能不完整 |
 | PlayerController.cs | Aura / Stats / State / Position / Facing / Inventory / Equipment / Level / Xp / TierName / ActiveManaSlots / Mp / MaxMp | 已實作 | `ASkillCreatorCharacter.h` | 完整對應 |
 | PlayerController.cs | TakeDamage() / Tick() / GainXp() | **已實作** | `ASkillCreatorCharacter.cpp` | 3 個方法確認存在 |

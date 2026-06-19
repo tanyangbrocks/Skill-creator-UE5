@@ -66,10 +66,11 @@ void UDroppedItemManager::SpawnForReason(int32 x, int32 y, int32 z,
     switch (Reason)
     {
     case EDestroyReason::Explosion:
-        // 爆炸由技能邏輯另行生成碎片掉落物，此處跳過一般掉落避免重複
+    case EDestroyReason::ShapeMining:
+        // 爆炸/形狀採掘：由呼叫端（ASkillCreatorCharacter::OnMine）批次處理掉落，
+        // per-tile 不生成（對應 Godot DroppedItemManager.cs:15-16 Spawn() 的早退判斷）
         return;
     case EDestroyReason::Mining:
-    case EDestroyReason::ShapeMining:
     case EDestroyReason::Slash:
     case EDestroyReason::Crush:
         // 一般摧毀：依材質預設掉落表生成掉落物

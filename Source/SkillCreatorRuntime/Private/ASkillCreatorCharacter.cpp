@@ -24,6 +24,8 @@
 #include "SpellSaveSystem.h"
 #include "ASkillCreatorHUD.h"
 #include "PlacementShape.h"
+#include "PlacementValidator.h"
+#include "MaterialRegistry.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -53,6 +55,9 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     // 移動速度：依 WorldScale 尺度
     GetCharacterMovement()->MaxWalkSpeed  = WorldScale::WalkSpeedCm;
     GetCharacterMovement()->JumpZVelocity = WorldScale::JumpZVelocityCm;
+    // GravityScale 縮放：使「3 tile 跳躍高度」在任意 GrainCurrent 下保持一致（tile 單位）。
+    // 不設定 → Grain=16 時有效重力過強，跳躍高度僅 4 cm（物理公式：h = v²/2g）。
+    GetCharacterMovement()->GravityScale  = WorldScale::GravityScaleMult;
 
     // 鏡頭 rig：臂長與偏移依 WorldScale 尺度
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
@@ -260,6 +265,10 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
                 CachedVoxelWorld->HideHighlight();
         }
     }
+
+    // 放置冷卻：每幀減算（對應 Godot Main.cs _process 中 PlaceCooldown 每幀倒數，不依賴右鍵是否按住）
+    if (PlaceCooldown > 0.f)
+        PlaceCooldown -= DeltaTime;
 
     // ── F2：座標偵錯 overlay ──────────────────────────────────────────
     if (bDebugCoordEnabled && GEngine)
@@ -508,7 +517,11 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     EIC->BindAction(IA_Jump,  ETriggerEvent::Started,    this, &ACharacter::Jump);
     EIC->BindAction(IA_Jump,  ETriggerEvent::Completed,  this, &ACharacter::StopJumping);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnMine);
+    EIC->BindAction(IA_Mine,  ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnMineReleased);
+    EIC->BindAction(IA_Mine,  ETriggerEvent::Canceled,   this, &ASkillCreatorCharacter::OnMineReleased);
     EIC->BindAction(IA_Place, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnPlace);
+    EIC->BindAction(IA_Place, ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnPlaceReleased);
+    EIC->BindAction(IA_Place, ETriggerEvent::Canceled,   this, &ASkillCreatorCharacter::OnPlaceReleased);
 
     EIC->BindAction(IA_SpellU, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
     EIC->BindAction(IA_SpellI, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
@@ -718,15 +731,16 @@ void ASkillCreatorCharacter::HandleSpellInput()
         SpellCasterComp->TryCastSlot(Slot);
 }
 
-// ── Mining / Placement ────────────────────────────────────────────────────
+// ── Mining / Placement ──────────────────────────────────────────────────
+// 對應 Godot Main.cs:1197-1287（採掘/放置主迴圈）+ PlayerController.cs:430-471（TickMining）。
 
 void ASkillCreatorCharacter::OnMine()
 {
-    if (!CachedVoxelWorld) return;
+    if (!CachedVoxelWorld) { CancelMining(); return; }
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
-    if (!TW) return;
+    if (!TW) { CancelMining(); return; }
     APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) return;
+    if (!PC) { CancelMining(); return; }
 
     FVector CamLoc;
     FRotator CamRot;
@@ -737,26 +751,80 @@ void ASkillCreatorCharacter::OnMine()
     const FVector VoxDir    = WorldScale::DirToVoxel(CamDir);
 
     FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
-    if (!Hit.bHit) return;
+    if (!Hit.bHit) { CancelMining(); return; }
 
-    // 讀取 HUD 的形狀設定（N 鍵 ShapeMenuWidget 設定）
-    EPlacementShape Shape = EPlacementShape::Single;
-    int32 Radius = 1;
+    // 採掘距離限制（Godot PlayerController.cs:42 MiningRange => BodyH * 6f）
+    const FGridPos PlayerPos = GetPosition();
+    const FGridPos TargetPos(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
+    if (PlayerPos.EuclideanDistance(TargetPos) > static_cast<float>(WorldScale::MiningRangeTiles))
+    {
+        CancelMining();
+        return;
+    }
+
+    // ── 漸進式採掘（Godot PlayerController.cs:442-471 TickMining）─────────
+    const EMaterialType TargetMat = TW->GetTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
+    const FMaterialData& MatData  = FMaterialRegistry::Get(TargetMat);
+
+    const int32 ActiveToolTier = InventoryComp ? InventoryComp->GetActiveToolTier() : 0;
+    if (!MatData.bIsMineable || MatData.RequiredToolTier > ActiveToolTier)
+    {
+        CancelMining();
+        return;
+    }
+
+    // 換目標 → 重置進度
+    if (!MiningTarget.IsSet() || MiningTarget.GetValue() != Hit.HitCell)
+    {
+        MiningTarget   = Hit.HitCell;
+        MiningProgress = 0.f;
+    }
+
+    // 以 60fps 為基準累加進度，乘上工具速度倍率（Godot PlayerController.cs:461）
+    const float SpeedMult = InventoryComp ? InventoryComp->GetActiveMiningSpeedMult() : 1.f;
+    MiningProgress += SpeedMult * GetWorld()->GetDeltaSeconds() * 60.f;
+
+    if (MiningProgress < MatData.Hardness)
+        return; // 仍在進行中，中心格尚未被摧毀
+
+    // 達到硬度門檻 → 中心格摧毀（ShapeMining：靜默摧毀，由下方統一 spawn 1 個掉落物）
+    TW->DestroyTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, EDestroyReason::ShapeMining);
+    CancelMining();
+
+    // 讀取 HUD 的形狀設定（N 鍵 ShapeMenuWidget 設定；預設 Cube + WorldScale::DefaultShapeRadius，
+    // 對應 Godot Main.cs:71-72 _activeShape=Cube / _shapeRadius=PlayerH/6）
+    EPlacementShape Shape = EPlacementShape::Cube;
+    int32 Radius = WorldScale::DefaultShapeRadius;
     if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
     {
         Shape  = HUD->ActiveShape;
         Radius = HUD->PlaceRadius;
     }
 
-    // DestroyTile 內部已觸發 OnTileDestroyed（掉落回呼），此處不重複派送
+    // 形狀範圍內其他格子立即摧毀（中心格已摧毀，跳過 dx=dy=dz=0；對應 Main.cs:1229-1235）
     for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
     {
+        if (Off == FIntVector::ZeroValue) continue;
         const int32 tx = Hit.HitCell.X + Off.X;
         const int32 ty = Hit.HitCell.Y + Off.Y;
         const int32 tz = Hit.HitCell.Z + Off.Z;
         if (TW->GetTile(tx, ty, tz) != EMaterialType::Air)
-            TW->DestroyTile(tx, ty, tz, EDestroyReason::Mining);
+            TW->DestroyTile(tx, ty, tz, EDestroyReason::ShapeMining);
     }
+
+    // 整個形狀採掘只 spawn 1 個掉落物（對應 Main.cs:1238；ShapeMining 在
+    // UDroppedItemManager::SpawnForReason 已不再 per-tile 生成，這裡顯式呼叫一次）
+    if (UWorld* W = GetWorld())
+        if (UDroppedItemManager* DropMgr = W->GetSubsystem<UDroppedItemManager>())
+            DropMgr->SpawnForReason(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, TargetMat, EDestroyReason::Mining);
+
+    // 已知缺口（R-6 PlacedObjectRegistry「完美移除」分流，對應 Main.cs:1203-1225）：
+    // 若採掘目標屬於玩家放置過的 PlacedUnit，Godot 在 _perfectRemove 模式下會改走
+    // 移除整個 Unit + 返還 1 物品的路線，不走形狀採掘。UE5 的 FPlacedObjectRegistry/
+    // FPlacedUnit 已存在但尚無實例掛在 AVoxelWorldActor 上，且 OnMine/OnPlace 從未
+    // 呼叫過。完整移植需要：① 在 AVoxelWorldActor 加一個 FPlacedObjectRegistry 成員、
+    // ② 採掘前查詢 Registry、③ 依 bPerfectRemove 分流處理。這部分工作量超出本次
+    // 任務範圍，故暫不實作，僅在此記錄缺口。
 }
 
 void ASkillCreatorCharacter::OnPlace()
@@ -766,6 +834,22 @@ void ASkillCreatorCharacter::OnPlace()
     if (!TW) return;
     APlayerController* PC = Cast<APlayerController>(GetController());
     if (!PC) return;
+
+    // 放置節流：_holdToPlace=true 時 0.12 秒節流連放，false 時 rising-edge
+    // （對應 Main.cs:1250-1255）。HUD->bHoldToPlace 預設 false（rising-edge），
+    // Enhanced Input 的 Triggered 事件每幀觸發，故節流邏輯需要角色自己持有計時器。
+    ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD());
+    const bool bHoldToPlace = HUD && HUD->bHoldToPlace;
+
+    if (bHoldToPlace)
+    {
+        if (PlaceCooldown > 0.f) return;
+    }
+    else
+    {
+        if (bRightMouseWasPressed) return; // 按住不放：rising-edge 已觸發過，等鬆開再按
+        bRightMouseWasPressed = true;
+    }
 
     FVector CamLoc;
     FRotator CamRot;
@@ -786,29 +870,58 @@ void ASkillCreatorCharacter::OnPlace()
     const FItemData& Data = FItemRegistry::Get(Stack.ItemId);
     if (!Data.bIsPlaceable || Data.PlaceAs == EMaterialType::Air) return;
 
-    // 放置中心 = 命中面法線方向的相鄰格
+    // 放置中心 = 命中面法線方向的相鄰格（對應 Main.cs:1262 MouseGridPos + MouseFaceNormal）
     const FIntVector PlaceCenter = Hit.HitCell + Hit.FaceNormal;
 
-    EPlacementShape Shape = EPlacementShape::Single;
-    int32 Radius = 1;
-    if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+    EPlacementShape Shape = EPlacementShape::Cube;
+    int32 Radius = WorldScale::DefaultShapeRadius;
+    if (HUD)
     {
         Shape  = HUD->ActiveShape;
         Radius = HUD->PlaceRadius;
     }
 
+    const FGridPos PlayerPos = GetPosition();
+
+    // 已知缺口：Godot 每格還會檢查 !OccupiedByEntity(p)（玩家/敵人佔用格不可放置，
+    // Main.cs:1270 + 1654-1661）。UE5 的 FTileWorld3D::SetOccupied/IsOccupied 目前
+    // 從未被 SkillCreatorRuntime 呼叫填入玩家/敵人位置（純 CA 用途），故此處暫不
+    // 重現該檢查，留待之後接通 AEnemyManager::GetEnemies() 一併處理。
     int32 Placed = 0;
     for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
     {
-        const int32 tx = PlaceCenter.X + Off.X;
-        const int32 ty = PlaceCenter.Y + Off.Y;
-        const int32 tz = PlaceCenter.Z + Off.Z;
-        if (TW->GetTile(tx, ty, tz) == EMaterialType::Air)
-        {
-            TW->SetTile(tx, ty, tz, Data.PlaceAs);
-            ++Placed;
-        }
+        const FIntVector P = PlaceCenter + Off;
+        const FGridPos PGrid(P.X, P.Y, P.Z);
+
+        // 每格距離限制（對應 Main.cs:1271 _player.Position.DistanceTo(p) <= MiningRange）
+        if (PlayerPos.EuclideanDistance(PGrid) > static_cast<float>(WorldScale::MiningRangeTiles))
+            continue;
+
+        // 每格放置合法性（對應 Main.cs:1272 PlacementValidator.CanPlace；
+        // Registry 參數留空 = 暫不檢查 PlacedObjectRegistry 佔用，見上方已知缺口說明）
+        if (!FPlacementValidator::CanPlace(*TW, { P }, Data.PlaceAs))
+            continue;
+
+        TW->SetTile(P.X, P.Y, P.Z, Data.PlaceAs);
+        ++Placed;
     }
+
     if (Placed > 0)
-        InventoryComp->Consume(Idx, Placed);
+    {
+        // 只消耗 1 個物品，不管形狀放了多少格（對應 Main.cs:1281）
+        InventoryComp->Consume(Idx, 1);
+        PlaceCooldown = 0.12f; // 對應 Main.cs:1282
+    }
+}
+
+// 滑鼠左鍵鬆開 / 輸入中斷：取消採掘進度（對應 Main.cs:1244-1247 else 分支）
+void ASkillCreatorCharacter::OnMineReleased()
+{
+    CancelMining();
+}
+
+// 滑鼠右鍵鬆開：重置 rising-edge 狀態，讓下次按下能再次觸發放置（對應 Main.cs:1255 _rightWasPressed）
+void ASkillCreatorCharacter::OnPlaceReleased()
+{
+    bRightMouseWasPressed = false;
 }

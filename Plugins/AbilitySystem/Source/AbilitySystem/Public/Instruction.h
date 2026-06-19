@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "StructUtils/InstancedStruct.h"
 #include "OpCode.h"
+#include "SpellArray.h"
 #include "Instruction.generated.h"
 
 // ══════════════════════════════════════════════════════════════════
@@ -115,6 +116,47 @@ struct FInvokeSpellArgs
 {
     GENERATED_BODY()
     UPROPERTY() FName SpellName;
+};
+
+// ══════════════════════════════════════════════════════════════════
+//  設計時積木參數（不產生 VM 指令，僅供 SyncSlotsFromBlocks 掃描）
+//  對應 Godot AbilityEditorUI.SyncSlotsFromBlocks() 讀取的
+//  BlockNode.Params["totemId"/"customName"/"manaTypeKey"] 與
+//  BlockNode.Params["engraveId"/"pts"]。
+//  UE5 目前無 TotemLibrary/AllEngravings 資料表（已知缺口，見 實作進度.md），
+//  故 Totem 積木本身直接攜帶 TotemType/BaseAbilityPointCost，
+//  不像 Godot 透過 totemId 查表取得——這是唯一可行的對應方式。
+// ══════════════════════════════════════════════════════════════════
+
+// EBlockType::Totem 設計時參數（Params["args"]）
+USTRUCT()
+struct FTotemBlockArgs
+{
+    GENERATED_BODY()
+
+    // 技能因子 ID（"custom" = 自訂；其餘對應未來 TotemLibrary 條目）
+    UPROPERTY() FName TotemId;
+
+    // TotemId == "custom" 時的顯示名稱覆寫
+    UPROPERTY() FText CustomName;
+
+    // 因子類型（無 TotemLibrary 可查表時，由積木本身攜帶）
+    UPROPERTY() ETotemType TotemType = ETotemType::Custom;
+
+    UPROPERTY() int32 BaseAbilityPointCost = 10;
+
+    // 此插槽注入的 MP 類型（None = 未指定）
+    UPROPERTY() FName ManaTypeKey;
+};
+
+// EBlockType::Engraving 設計時參數（Params["args"]）
+USTRUCT()
+struct FEngravingBlockArgs
+{
+    GENERATED_BODY()
+
+    UPROPERTY() FName   EngraveId;
+    UPROPERTY() float   Points = 0.f;
 };
 
 // RepeatPush（推入 RepeatN 迭代次數）

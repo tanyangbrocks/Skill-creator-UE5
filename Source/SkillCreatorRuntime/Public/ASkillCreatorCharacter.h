@@ -190,6 +190,18 @@ private:
     void OnDebugSnapshotApply();
     void OnMine();
     void OnPlace();
+    void OnMineReleased();
+    void OnPlaceReleased();
+
+    // ── 採掘狀態（對應 Godot PlayerController.cs MiningTarget/MiningProgress）──
+    // 漸進式採掘：換目標重置進度；達到材質 Hardness 才真正摧毀中心格。
+    TOptional<FIntVector> MiningTarget;
+    float                 MiningProgress = 0.f;
+    void CancelMining() { MiningTarget.Reset(); MiningProgress = 0.f; }
+
+    // ── 放置節流狀態（對應 Godot Main.cs _placeCooldown/_rightWasPressed）──
+    float PlaceCooldown          = 0.f;
+    bool  bRightMouseWasPressed  = false;
 
     // F1/F2/F4 開發者工具（對應 Godot TogglePaint/DebugCoord/DebugSurvival）
     bool bDebugPaintEnabled    = false;

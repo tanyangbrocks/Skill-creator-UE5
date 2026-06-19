@@ -57,7 +57,7 @@ public:
     TObjectPtr<USpellListWidget>  SpellListPanel;
 
     // ── 全域放置狀態（PlayerController 切換，VoxelWorld 讀取）───────
-    bool bHoldToPlace    = false;
+    bool bHoldToPlace    = true;   // Godot Main.cs:124 _holdToPlace = true
     bool bPerfectRemove  = false;
     EPlacementShape ActiveShape = EPlacementShape::Single;
     int32 PlaceRadius = 1;
