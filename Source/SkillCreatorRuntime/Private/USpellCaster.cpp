@@ -10,6 +10,7 @@
 #include "MaterialType.h"
 #include "WorldScale.h"
 #include "EngineUtils.h"
+#include "AbilityPointCalculator.h"
 
 USpellCaster::USpellCaster()
 {
@@ -77,6 +78,10 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
 
     ASkillCreatorCharacter* Char = GetOwnerCharacter();
     if (!Char || !Char->IsAlive()) return false;
+
+    // 2026-06-19 稽核發現：ExceedsLevelCap() 寫對了但從未在施法路徑被呼叫，玩家可無視
+    // 能力點上限亂施法。對應 Godot SpellCaster.TryCast() 的等級上限拒放檢查。
+    if (FAbilityPointCalculator::ExceedsLevelCap(Spell, Char->Level)) return false;
 
     // W-6: 優先從技能使用的法力類型插槽扣除；找不到對應 key 則降格至 slot[0]
     FManaSlot* Source = nullptr;
@@ -412,7 +417,7 @@ USpellCaster::FSpellMods USpellCaster::ReadMods(const FSpellSlot& Slot)
         else if (Id == "orange_slow")   M.SlowDur   = E.CalculateEffect();
         else if (Id == "orange_freeze") M.FreezeDur = E.CalculateEffect();
         else if (Id == "red_stun")      M.StunDur   = E.CalculateEffect();
-        else if (Id == "yellow_hp")     M.HpCost    = E.CalculateEffect();
+        else if (Id == "yellow_hp_cost") M.HpCost   = E.CalculateEffect();
     }
     return M;
 }
@@ -454,6 +459,13 @@ void USpellCaster::ApplyGlobalEngravings(const FSpellArray& Spell)
 void USpellCaster::ApplyModsToNearbyEnemies(const FSpellMods& Mods, FGridPos Origin,
                                               AVoxelWorldActor* VW)
 {
+    // HP 代價是施法者自損換效果（對應 Godot SpellCaster.cs:445 player.TakeDamage(m.HpCost)，
+    // "yellow_hp_cost" 刻印的 DisplayName 即「HP代價」），不是對敵人造成傷害。
+    // 2026-06-19 稽核發現先前語意寫反：對敵人造成免費額外傷害，現修正套用對象為施法者。
+    if (Mods.HpCost > 0.f)
+        if (ASkillCreatorCharacter* Char = GetOwnerCharacter())
+            Char->TakeDirectDamage(Mods.HpCost);
+
     if (!CachedEnemyMgr) return;
     for (AEnemy* Enemy : CachedEnemyMgr->GetEnemies())
     {
@@ -491,7 +503,7 @@ void USpellCaster::ApplyModsToNearbyEnemies(const FSpellMods& Mods, FGridPos Ori
         if (Mods.bWater)   ApplyElem(ESkillElementType::Water);
         if (Mods.bIce)     ApplyElem(ESkillElementType::Ice);
         if (Mods.bThunder) ApplyElem(ESkillElementType::Thunder);
-        if (Mods.HpCost > 0.f) Enemy->TakeDamageAmount(Mods.HpCost);
+        // HpCost 已在函式開頭套用在施法者身上（自損機制），不對敵人重複套用
         // Slow/Freeze/Stun → W-5 status effects
     }
 }

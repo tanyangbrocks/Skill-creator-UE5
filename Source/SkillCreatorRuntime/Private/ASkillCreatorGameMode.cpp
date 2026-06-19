@@ -5,6 +5,7 @@
 #include "AVoxelWorldActor.h"
 #include "AMobSpawnController.h"
 #include "AEnemy.h"
+#include "AEnemyManager.h"
 #include "EngineUtils.h"
 #include "UGameSessionSubsystem.h"
 #include "UGameFlowWidget.h"
@@ -104,6 +105,17 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed)
             VW->FinishSpawning(T);
         }
     }
+
+    // 自動生成 AEnemyManager（若關卡中沒有手動放置）。必須在 AMobSpawnController 之前
+    // 生成 —— AMobSpawnController::BeginPlay() 用 TActorIterator 找 AEnemyManager，
+    // 順序顛倒會導致一直找不到，敵人系統整個不會啟動（2026-06-19 稽核發現：先前完全沒有
+    // 任何程式碼會生成 AEnemyManager，除非關卡裡手動放置，否則敵人完全不會出現）。
+    bool bHasEnemyMgr = false;
+    for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It)
+    { bHasEnemyMgr = true; break; }
+
+    if (!bHasEnemyMgr)
+        GetWorld()->SpawnActor<AEnemyManager>();
 
     // 自動生成 AMobSpawnController（若關卡中沒有手動放置）
     bool bHasSpawnCtrl = false;

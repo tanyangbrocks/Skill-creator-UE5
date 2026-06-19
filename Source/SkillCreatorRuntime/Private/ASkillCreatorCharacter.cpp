@@ -339,9 +339,6 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     UInputAction* IA_SpellO    = MakeBool(TEXT("SpellO"));
     UInputAction* IA_SpellP    = MakeBool(TEXT("SpellP"));
     UInputAction* IA_Camera    = MakeBool(TEXT("ToggleCamera"));
-    UInputAction* IA_Inv       = MakeBool(TEXT("OpenInventory"));
-    UInputAction* IA_Equip     = MakeBool(TEXT("OpenEquipment"));
-    UInputAction* IA_CharPanel = MakeBool(TEXT("OpenCharPanel"));
     UInputAction* IA_DbgTrace  = MakeBool(TEXT("DebugTrace"));
     UInputAction* IA_SnapTake  = MakeBool(TEXT("SnapshotTake"));
     UInputAction* IA_SnapApply = MakeBool(TEXT("SnapshotApply"));
@@ -395,9 +392,6 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     IMC->MapKey(IA_SpellO,    EKeys::O);
     IMC->MapKey(IA_SpellP,    EKeys::P);
     IMC->MapKey(IA_Camera,    EKeys::Tab);
-    IMC->MapKey(IA_Inv,       EKeys::Z);
-    IMC->MapKey(IA_Equip,     EKeys::X);
-    IMC->MapKey(IA_CharPanel, EKeys::C);
     IMC->MapKey(IA_DbgTrace,  EKeys::F3);
     IMC->MapKey(IA_SnapTake,  EKeys::F5);
     IMC->MapKey(IA_SnapApply, EKeys::F6);
@@ -420,9 +414,6 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     EIC->BindAction(IA_SpellP, ETriggerEvent::Started, this, &ASkillCreatorCharacter::HandleSpellInput);
 
     EIC->BindAction(IA_Camera,    ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnToggleCameraMode);
-    EIC->BindAction(IA_Inv,       ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenInventory);
-    EIC->BindAction(IA_Equip,     ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenEquipment);
-    EIC->BindAction(IA_CharPanel, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnOpenCharacterPanel);
     EIC->BindAction(IA_DbgTrace,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugTrace);
     EIC->BindAction(IA_SnapTake,  ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotTake);
     EIC->BindAction(IA_SnapApply, ETriggerEvent::Started, this, &ASkillCreatorCharacter::OnDebugSnapshotApply);
@@ -527,59 +518,6 @@ void ASkillCreatorCharacter::CycleCameraMode()
 void ASkillCreatorCharacter::OnToggleCameraMode()
 {
     CycleCameraMode();
-}
-
-void ASkillCreatorCharacter::OnOpenInventory()
-{
-    if (!InventoryComp || !GEngine) return;
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 物品欄 [Z] ==="));
-    bool bAny = false;
-    for (int32 i = 0; i < InventoryComp->Slots.Num(); ++i)
-    {
-        const FItemStack& S = InventoryComp->Slots[i];
-        if (S.IsEmpty()) continue;
-        UEnum* E = StaticEnum<EItemId>();
-        FString Name = E ? E->GetNameStringByValue((int64)S.ItemId) : FString::FromInt((int32)S.ItemId);
-        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-            FString::Printf(TEXT("  [%d] %s x%d"), i, *Name, S.Count));
-        bAny = true;
-    }
-    if (!bAny)
-        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White, TEXT("  （空）"));
-}
-
-void ASkillCreatorCharacter::OnOpenEquipment()
-{
-    if (!EquipmentComp || !GEngine) return;
-    UEnum* E = StaticEnum<EItemId>();
-    auto Name = [&](EItemId Id) -> FString {
-        return E ? E->GetNameStringByValue((int64)Id) : FString::FromInt((int32)Id);
-    };
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 裝備欄 [X] ==="));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  武器:  %s  ATK×%.2f"), *Name(EquipmentComp->WeaponId),   EquipmentComp->GetTotalAtkMult()));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  防具:  %s  DEF+%.0f"), *Name(EquipmentComp->ArmorId),    EquipmentComp->GetTotalDefFlat()));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  飾品:  %s  MP+%.0f"), *Name(EquipmentComp->AccessoryId), EquipmentComp->GetTotalMpBonus()));
-}
-
-void ASkillCreatorCharacter::OnOpenCharacterPanel()
-{
-    if (!GEngine) return;
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::Cyan, TEXT("=== 角色狀態 [C] ==="));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  等級: %d  境界: %s"), Level, *GetTierName(Level)));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  XP: %.0f / %d"), Xp, XpRequired(Level)));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  HP: %.0f / %.0f"), CurrentHp, Stats.MaxHpBase));
-    GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-        FString::Printf(TEXT("  MP: %.0f / %.0f"), CurrentMp, Stats.MaxMpBase));
-    if (StateComp)
-        GEngine->AddOnScreenDebugMessage(-1, 8.f, FColor::White,
-            FString::Printf(TEXT("  體力: %.0f  心情: %.0f"),
-                StateComp->Stamina, StateComp->Mood));
 }
 
 void ASkillCreatorCharacter::OnDebugTrace()

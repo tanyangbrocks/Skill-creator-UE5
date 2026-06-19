@@ -231,7 +231,12 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
             ToProcess.Add(CC);
         }
     }
-    DirtyChunks.Empty();
+    // 2026-06-19 稽核發現：先前這裡無條件 DirtyChunks.Empty()，半徑外被篩掉的 chunk
+    // 會直接永久遺失（玩家走遠時變 dirty 的格子，回來後也不會再模擬，除非被其他
+    // SetTile/WriteCell 呼叫重新標記）。對應 Godot TileWorld3D.cs:156-165 會把超出
+    // 半徑的 dirty chunk 留到下一幀——這裡改成只移除這次真的要處理的 chunk，其餘留著。
+    for (const FIntVector& CC : ToProcess)
+        DirtyChunks.Remove(CC);
 
     // 排序：ChunkY 大的（底部）先處理 → 砂礫正確落下
     ToProcess.Sort([](const FIntVector& A, const FIntVector& B) { return A.Y > B.Y; });
@@ -251,10 +256,12 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
         FChunk3D* C = *Found;
         if (!C->IsDirty()) continue;
 
-        // 記錄 dirty AABB 後清除（本幀新寫入的 cell 會重新展開 AABB）
-        int32 MinX = C->DirtyMin[0], MaxX = C->DirtyMax[0];
-        int32 MinY = C->DirtyMin[1], MaxY = C->DirtyMax[1];
-        int32 MinZ = C->DirtyMin[2], MaxZ = C->DirtyMax[2];
+        // 記錄 dirty AABB 後清除（本幀新寫入的 cell 會重新展開 AABB）。
+        // ±1 margin：CA 粒子會影響鄰格（對應 Godot TileWorld3D.cs:168-176），
+        // 沒有這個 margin 會讓 dirty AABB 邊緣外一格的傳播延遲一幀才生效。
+        int32 MinX = FMath::Max(0, C->DirtyMin[0] - 1), MaxX = FMath::Min(FChunk3D::Size - 1, C->DirtyMax[0] + 1);
+        int32 MinY = FMath::Max(0, C->DirtyMin[1] - 1), MaxY = FMath::Min(FChunk3D::Size - 1, C->DirtyMax[1] + 1);
+        int32 MinZ = FMath::Max(0, C->DirtyMin[2] - 1), MaxZ = FMath::Min(FChunk3D::Size - 1, C->DirtyMax[2] + 1);
         C->ClearDirty();
 
         for (int32 lz = MinZ; lz <= MaxZ; ++lz)

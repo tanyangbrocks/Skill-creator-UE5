@@ -4,6 +4,7 @@
 #include "AVoxelWorldActor.h"
 #include "WorldScale.h"
 #include "EngineUtils.h"
+#include "UObject/ConstructorHelpers.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -12,7 +13,15 @@ AEnemy::AEnemy()
     PrimaryActorTick.bCanEverTick = false;
     AuraComp = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     UniqueId = ++NextId;
-    AIControllerClass = AEnemyAIController::StaticClass();
+
+    // 優先用 BP_EnemyAIController（若存在，留給未來在 Blueprint 補額外邏輯的空間）；
+    // 找不到時 fallback 到純 C++ AEnemyAIController（其 constructor 自己也會載入
+    // /Game/BT_Enemy，所以即使 BP 子類別不存在，AI 仍會正常運作）。
+    static ConstructorHelpers::FClassFinder<AAIController> AIControllerBPClass(TEXT("/Game/BP_EnemyAIController"));
+    if (AIControllerBPClass.Succeeded())
+        AIControllerClass = AIControllerBPClass.Class;
+    else
+        AIControllerClass = AEnemyAIController::StaticClass();
 }
 
 void AEnemy::BeginPlay()

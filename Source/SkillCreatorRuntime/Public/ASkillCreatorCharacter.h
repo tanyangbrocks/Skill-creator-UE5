@@ -175,10 +175,12 @@ private:
     void ApplyEnvironmentalDamage(float DeltaTime);
 
     // ── 面板 / 偵錯按鍵處理 ──────────────────────────────────────
+    // 2026-06-19 稽核：原本這裡還有 OnOpenInventory/OnOpenEquipment/OnOpenCharacterPanel
+    // 透過 Enhanced Input 把 Z/X/C 也綁了一份，但只會印 GEngine 偵錯文字，跟
+    // ASkillCreatorPlayerController 用 legacy BindKey 綁的同一批鍵（呼叫 HUD 真正開關
+    // 面板）同時觸發——玩家按一次鍵同時看到面板開關又被洗一堆偵錯文字。已刪除這份重複
+    // 綁定，Z/X/C 的真正行為統一由 PlayerController 端負責。
     void OnToggleCameraMode();
-    void OnOpenInventory();
-    void OnOpenEquipment();
-    void OnOpenCharacterPanel();
     void OnDebugTrace();
     void OnDebugSnapshotTake();
     void OnDebugSnapshotApply();

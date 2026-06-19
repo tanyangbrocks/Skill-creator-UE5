@@ -33,10 +33,18 @@ float FActionBus::DispatchPlayerDamage(float InDamage)
     {
         FActionFilterEntry& E = Entries[i];
         if (E.FilterType != TEXT("DamageShield")) continue;
-        if (E.CapValue <= 0.f)
-            Damage = 0.f;                          // 全擋
+
+        // 2026-06-19 稽核：Mode 欄位先前儲存了但從未被讀取，"Halve" 模式形同無作用。
+        // 目前沒有任何積木/Totem UI 會真的產生 "Halve" 值（Mode 預設空字串），所以這不是
+        // 「目前遊玩中算錯傷害」的可見 bug，是「欄位存在但邏輯沒接上」的死碼問題，現在補上。
+        // Mode 未設定（空字串）時維持原本行為：CapValue<=0 全擋，否則限制單次傷害上限。
+        if (E.Mode == TEXT("Halve"))
+            Damage *= 0.5f;
+        else if (E.Mode == TEXT("Cancel"))
+            Damage = 0.f;
         else
-            Damage = FMath::Min(Damage, E.CapValue); // 限制單次傷害上限
+            Damage = (E.CapValue <= 0.f) ? 0.f : FMath::Min(Damage, E.CapValue);
+
         if (E.bOneShot)
             Entries.RemoveAt(i);
     }

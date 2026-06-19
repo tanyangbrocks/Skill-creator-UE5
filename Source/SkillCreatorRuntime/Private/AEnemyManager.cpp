@@ -6,10 +6,17 @@
 #include "MaterialRegistry.h"
 #include "WorldScale.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/ConstructorHelpers.h"
 
 AEnemyManager::AEnemyManager()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    static ConstructorHelpers::FClassFinder<AEnemy> EnemyBPClass(TEXT("/Game/BP_Enemy"));
+    if (EnemyBPClass.Succeeded())
+        EnemyClassToSpawn = EnemyBPClass.Class;
+    else
+        EnemyClassToSpawn = AEnemy::StaticClass();
 }
 
 AEnemy* AEnemyManager::Spawn(FGridPos Pos, EEnemyType Type, float MaxHp, ESpawnCategory Cat)
@@ -21,7 +28,7 @@ AEnemy* AEnemyManager::Spawn(FGridPos Pos, EEnemyType Type, float MaxHp, ESpawnC
     FActorSpawnParameters Params;
     Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-    AEnemy* Enemy = GetWorld()->SpawnActor<AEnemy>(AEnemy::StaticClass(), WorldLoc, FRotator::ZeroRotator, Params);
+    AEnemy* Enemy = GetWorld()->SpawnActor<AEnemy>(EnemyClassToSpawn, WorldLoc, FRotator::ZeroRotator, Params);
     if (!Enemy) return nullptr;
 
     Enemy->Type         = Type;

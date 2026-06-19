@@ -54,4 +54,8 @@ private:
     int32 DynamicActiveCount = 0;
 
     UPROPERTY() TObjectPtr<AMobSpawnController> CachedSpawner;
+
+    // 優先用 BP_Enemy（若存在）；找不到時 fallback 到純 C++ AEnemy::StaticClass()。
+    // ConstructorHelpers::FClassFinder 只能在 constructor 用，所以在這裡快取結果供 Spawn() 使用。
+    UPROPERTY() TSubclassOf<AEnemy> EnemyClassToSpawn;
 };
