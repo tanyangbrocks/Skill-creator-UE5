@@ -1,0 +1,116 @@
+{
+  "agent": "F",
+  "section": "§5 Character/Combat/Interfaces",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "F-1",
+      "topic": "CharacterStats 全部欄位與初始值核對",
+      "godot_ref": "CharacterStats.cs:17-136（MaxHpBase=100f, MpRegenRate=8f, CritRate=0.05f, CritDmgMult=1.5f, SuperCritDmgMult=2.0f, MoveSpeedMult=1.0f, Talent*=50, BloodlineStrength=1.0f 等全部欄位）",
+      "ue5_ref": "CharacterStats.h:14-164（FCharacterStats USTRUCT，逐欄位 UPROPERTY 對應）",
+      "verdict": "✅ correct",
+      "detail": "逐一核對 Godot CharacterStats.cs 全部 float/int 欄位（生命/防禦/攻擊/MP/機動/社會外貌/生產探索/經驗加成/天賦點/能力點/BloodlineStrength），UE5 FCharacterStats 欄位名稱、型別、預設值完全一致：MaxHpBase=100, MpRegenRate=8, CritRate=0.05, CritDmgMult=1.5, SuperCritDmgMult=2.0, MoveSpeedMult=1.0, AtkSpeedMult=1.0, HitRate=1.0, MpOutput/MpEfficiency/MpControl=1.0, DispatchEfficiency=1.0, Talent*=50, BloodlineStrength=1.0。元素親和力/輸出/抗性改用 TMap<ESkillElementType,float> 取代 Godot 的 Dictionary<ElementType,float>，Getter 預設值（Affinity=0, OutputMult=1, Resistance=0）也與 Godot 的 GetValueOrDefault 預設值一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-2",
+      "topic": "CharacterState 生存四值 Drain/Regen 速率核對",
+      "godot_ref": "CharacterState.cs:18-167（StaminaRegenPerSec=5/StaminaDrainCombat=2/MentalEnergyRegenPerSec=3/MentalEnergyDrainCombat=1/ThirstDrainPerSec=0.05/HungerDrainPerSec=0.02/OxygenDrainPerSec=10/OxygenRegenPerSec=30/BodyTempAdaptRate=1.5/ThirstHeatMultiplier=2.0）",
+      "ue5_ref": "UCharacterStateComponent.h:37-154（同名 static constexpr 全部數值）",
+      "verdict": "✅ correct",
+      "detail": "逐項核對 Stamina(Max=100,Regen=5,DrainCombat=2,DepletedThreshold=1)、MentalEnergy(Max=100,Regen=3,DrainCombat=1)、Mood(Max=100,InsanityThreshold=10,Default=70)、BodyTemperature(Normal=36.5,DefaultAmbient=20,Hypothermia=10,Heatstroke=42,AdaptRate=1.5,ThirstHeatMult=2.0)、Thirst(Max=100,Drain=0.05,Warning=20,Critical=5,CriticalDamage=2)、Hunger(Max=100,Drain=0.02,Warning=20,Critical=5,CriticalDamage=1)、Oxygen(Max=100,Drain=10,Regen=30,Critical=5,CriticalDamage=15)，UE5 全部數值與 Godot 逐一相符，實作進度.md 已知技術債表列出的數值（ThirstDrain 0.05/s、HungerDrain 0.02/s、OxygenDrain 10/s、BodyTempAdaptRate 1.5°C/s、StaminaDrainCombat 2/s、MentalEnergyDrainCombat 1/s）皆確認屬實且 UE5 端一致採用。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-3",
+      "topic": "CharacterState.Tick() 整體流程核對（含 Mood 漂移邏輯差異）",
+      "godot_ref": "CharacterState.cs:191-244（Tick(delta, inCombat)：Stamina/MentalEnergy 戰鬥消耗或恢復 → Mood 僅在 < MoodDefaultValue 時緩慢回升（無下降分支）→ BodyTemperature 向 AmbientTemperature 漂移 → Thirst/Hunger drain + 臨界傷害 → Oxygen drain/regen + 窒息傷害，回傳 pendingDamage）",
+      "ue5_ref": "UCharacterStateComponent.cpp:8-64（TickState()）",
+      "verdict": "⚠️ partial",
+      "detail": "整體流程與返回值語意一致，但 Mood 漂移邏輯有行為差異：Godot CharacterState.cs:208-209 只有 `if (Mood < MoodDefaultValue) SetMood(Mood + 1f * delta)`，沒有 Mood 高於 MoodDefaultValue 時往下拉回的分支（也就是說心情可以無限制地維持在高於 70 的狀態，例如被其他系統設為 100 後不會自動下降）。UE5 UCharacterStateComponent.cpp:25-28 卻額外加了 `else if (Mood > MoodDefault) ModifyMood(-MoodRecoveryRate * DeltaTime);`，讓 Mood 高於 70 時也會被拉回 70。這是 UE5 端自行擴充的對稱邏輯，與 Godot 原始行為不符（Godot 只單向回升、UE5 雙向回歸中值）。其餘部分（口渴/飢餓/氧氣/體溫漂移/戰鬥消耗）逐行核對皆一致。",
+      "fix_suggestion": "若要嚴格對齊 Godot 行為，應移除 UCharacterStateComponent.cpp:27-28 的 `else if (Mood > MoodDefault)` 分支，只保留 Mood 偏低時回升的邏輯；若此為刻意設計改進，應在程式碼註解或 issues.md 中明確標記為「UE5 主動擴充，非 Godot 對應行為」。"
+    },
+    {
+      "id": "F-4",
+      "topic": "CombatState 欄位、事件方法、OutOfCombatTimeout 邏輯核對",
+      "godot_ref": "CombatState.cs:7-98（OutOfCombatTimeout=5f；InCombat/BattleId/CastCount/DamageDealt/KillCount/TookDamageThisFrame；OnSpellCast/OnPlayerDealtDamage/OnPlayerTookDamage/OnEnemyKilled/Advance/Reset/EnterCombat/ExitCombat 全部邏輯）",
+      "ue5_ref": "UCombatStateSubsystem.h:18-72 + UCombatStateSubsystem.cpp:1-65",
+      "verdict": "✅ correct",
+      "detail": "UE5 改用 UGameInstanceSubsystem 取代 Godot 的 static class（合理架構轉換）。逐一核對：OutOfCombatTimeout=5f 一致；EnterCombat() 邏輯（bInCombat=true, BattleId=NextBattleId++, CastCount/DamageDealt/KillCount 清零, IdleTimer=0）與 Godot EnterCombat() 完全一致；ExitCombat()（bInCombat=false, IdleTimer=0）一致；Advance() 先清 TookDamageThisFrame 再判斷 IdleTimer>=OutOfCombatTimeout 觸發 ExitCombat 邏輯與 Godot Advance(delta) 完全一致；Reset() 不重置 NextBattleId（保持跨局唯一性）的註解與行為也與 Godot Reset() 一致。OnHit 事件用 FCombatHitSignature（FGridPos,float,bool）對應 Godot 的 Action<GridPos,float,bool>。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-5",
+      "topic": "GridPos.DistanceTo() 數學公式核對（歐幾里德 vs 曼哈頓）",
+      "godot_ref": "GridPos.cs:14-18（DistanceTo：dx²+dy²+dz² 開根號，純歐幾里德距離）",
+      "ue5_ref": "GridPos.h:25-43（ManhattanDistance/ChebyshevDistance/EuclideanDistance 三種距離函式）",
+      "verdict": "✅ correct",
+      "detail": "UE5 FGridPos::EuclideanDistance() 公式（Dx*Dx+Dy*Dy+Dz*Dz 開根號）與 Godot GridPos.DistanceTo() 完全一致，且程式碼註解明確標示「對應 Godot GridPos.DistanceTo」。額外提供 ManhattanDistance/ChebyshevDistance 是 UE5 自行擴充的輔助方法（Godot 沒有），不影響與 Godot 對應方法的正確性。在 ASkillCreatorCharacter.cpp 中實際以 EuclideanDistance() 用於採礦距離判定（對應 Godot PlayerController.cs 用 DistanceTo 判定 MiningRange），方法選用正確。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-6",
+      "topic": "WorldScale Grain=16 可擴縮架構派生公式核對",
+      "godot_ref": "WorldScale.cs:25-54（Grain=16；TileSize=1/Grain；PlayerH=Grain*2；PlayerW=Grain；WorldH=PlayerH*50；CamTilesV=PlayerH*10；OrthoSize=CamTilesV*TileSize*0.5）",
+      "ue5_ref": "WorldScale.h:22-59（GrainCurrent=16；TileSizeCm=100/GrainCurrent；PlayerW=GrainCurrent；PlayerH=GrainCurrent*2；WalkSpeedCm=TileSizeCm*GrainCurrent*4；GravityScaleMult=TileSizeCm/30；MiningRangeTiles=PlayerH*6；DefaultShapeRadius=PlayerH/6 取下限1）",
+      "verdict": "✅ correct",
+      "detail": "核心 Grain 派生邏輯一致：Godot TileSize=1/Grain（無單位）、UE5 TileSizeCm=100/GrainCurrent（換算為公分，1 Grain=100cm/Grain 之恒等式，數學上等價於 Godot 公式乘以 100 的單位轉換）；PlayerW=Grain（一致）；PlayerH=Grain*2（一致）。額外查證 Main.cs:72 `_shapeRadius = WorldScale.PlayerH/6 > 0 ? WorldScale.PlayerH/6 : 1` 與 WorldScale.h:59 `DefaultShapeRadius = (PlayerH/6>0)?(PlayerH/6):1` 完全一致；PlayerController.cs:42 `MiningRange => BodyH*6f` 與 WorldScale.h:57 `MiningRangeTiles = PlayerH*6` 完全一致。UE5 額外推導 WalkSpeedCm/JumpZVelocityCm/GravityScaleMult/CapsuleRadius/CapsuleHalfHeight/CameraArmLength 等是 Godot WorldScale.cs 沒有的（Godot 該邏輯散落在 PlayerController.cs/Main.cs），屬合理的 UE5 Character Movement 需求擴充，且公式本身（如 GravityScaleMult=TileSizeCm/30，明確標註 30 為基準）有清楚的物理推導依據與程式碼註解佐證，並非憑空捏造。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-7",
+      "topic": "WorldScale 世界尺寸/相機/GpuZone 常數設計差異（非錯誤，但需注意）",
+      "godot_ref": "WorldScale.cs:32-54（WorldH/WorldW/WorldD 固定大小世界；CamTilesV/OrthoSize 正射相機；OriginX/OriginZ 世界置中；GpuZoneW/H/D=128/256/128 不隨 Grain 縮放）",
+      "ue5_ref": "WorldScale.h（無 WorldW/WorldD/CamTilesV/OrthoSize/OriginX/OriginZ；DefaultWorldHeight=256 對應垂直上限）",
+      "verdict": "⚠️ partial",
+      "detail": "此為刻意的架構差異而非疏漏：UE5 採用水平無邊界懶載入設計（CLAUDE.md 明確記載 AVoxelWorldActor::WorldWidth/Depth=0=無限），因此沒有移植 Godot 的固定 WorldW/WorldD/OriginX/OriginZ；也沒有正射相機模式因此省略 CamTilesV/OrthoSize。DefaultWorldHeight=256 對應 Godot 邏輯但數值來源不同（Godot WorldH=PlayerH*50=1600 tiles，UE5 直接寫死 256，並非用 PlayerH*50 公式推導）。issues.md 第 388-390 行已記錄此為「完全缺失（設計差異）」，本次核對確認該記錄屬實，非新發現問題，但點出 UE5 DefaultWorldHeight=256 這個數字本身並非由任何公式（如 Godot 的 PlayerH*50）推導而來，是寫死的獨立常數，未來若 Grain 改變，DefaultWorldHeight 不會跟著自動調整，與 CLAUDE.md「改 Grain 全部自動跟進」的設計目標有落差。",
+      "fix_suggestion": "若要完全符合「改 Grain 全部自動跟進」目標，DefaultWorldHeight 應考慮改為公式推導（例如某個與 PlayerH 成比例的值），而非寫死 256；但若此為刻意的效能/記憶體上限設計，建議在程式碼註解中說明「此值刻意不隨 Grain 縮放」以避免未來誤判為遺漏。"
+    },
+    {
+      "id": "F-8",
+      "topic": "IWorldInterface.GetEntitiesNear 距離公式：UE5 註解誤標為曼哈頓距離",
+      "godot_ref": "IWorldInterface.cs:11（List<WorldEntity> GetEntitiesNear(GridPos position, float radius)）；實際實作見 TileWorld3D.cs:871-872（`_entities.Where(e => e.IsAlive && e.Position.DistanceTo(pos) <= radius)`，DistanceTo 為歐幾里德距離，GridPos.cs:14-18）",
+      "ue5_ref": "IWorldInterface.h:21-22（純虛擬介面宣告，註解寫「傳回所有在 Pos 曼哈頓距離 Radius 格以內的活體實體」）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot 端 GetEntitiesNear 的實際距離判定邏輯（在 TileWorld.cs:497、TileWorld3D.cs:871-872、MockWorld.cs:76 三處實作中）一致使用 `Position.DistanceTo(pos) <= radius`，而 GridPos.DistanceTo() 是純歐幾里德距離（GridPos.cs:14-18：sqrt(dx²+dy²+dz²)），並非曼哈頓距離。但 UE5 IWorldInterface.h:21 的中文註解寫「傳回所有在 Pos 曼哈頓距離 Radius 格以內的活體實體」，與 Godot 原始行為不符。雖然 issues.md 第 380 行已記錄「全專案零實作」（此介面目前沒有任何具體類別實作 GetEntitiesNear），代表此錯誤尚未造成實際執行期行為偏差，但若未來開發者依此錯誤註解實作 IWorldInterface::GetEntitiesNear，會產生與 Godot 不一致的篩選結果（曼哈頓距離篩選範圍是菱形，歐幾里德距離篩選範圍是圓形，半徑相同時兩者覆蓋的格子集合不同）。",
+      "fix_suggestion": "將 IWorldInterface.h:21 的註解改為「傳回所有在 Pos 歐幾里德距離 Radius 格以內的活體實體」，並在未來實作 GetEntitiesNear 時使用 FGridPos::EuclideanDistance()（已存在於 GridPos.h:37-43）而非 ManhattanDistance()，以與 Godot TileWorld3D.cs:871-872 行為一致。"
+    },
+    {
+      "id": "F-9",
+      "topic": "ICreature 介面欄位/Aura 屬性差異",
+      "godot_ref": "ICreature.cs:8-13（Id, Position, Hp, MaxHp, IsAlive 五個 property + ElementalAuraComponent Aura 屬性）",
+      "ue5_ref": "ICreature.h:12-16（GetCreatureId/GetPosition/GetHp/GetMaxHp/IsAlive 五個純虛擬方法，無 Aura）",
+      "verdict": "⚠️ partial",
+      "detail": "五個核心欄位（Id/Position/Hp/MaxHp/IsAlive）改為 getter 方法形式完整對應，型別與語意一致（int→int32, GridPos→FGridPos, float→float, bool→bool）。Aura 屬性（ElementalAuraComponent）在 UE5 端確認缺失：UE5 ICreature 位於無 UObject 依賴的 SkillCreatorCore 模組，而 UElementalAuraComponent 在 SkillCreatorRuntime 模組，若加入會造成模組循環依賴。issues.md:379 已記錄此為「N/A（架構決策）」，改由 AEnemy / ASkillCreatorCharacter 直接暴露 AuraComp 成員。本次核對確認此架構理由成立（純虛擬基類確實不應依賴上層模組型別），屬合理的技術限制下的設計妥協，非疏漏。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-10",
+      "topic": "IWorldInterface 缺失方法：GetEntityProperty / SetEntityProperty / CreateEntity",
+      "godot_ref": "IWorldInterface.cs:12,18-19（object? GetEntityProperty(WorldEntity,string); void SetEntityProperty(WorldEntity,string,object?); WorldEntity? CreateEntity(string,GridPos,Dictionary<string,object?>)）",
+      "ue5_ref": "IWorldInterface.h（介面中完全不存在這三個方法）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot IWorldInterface.cs 共宣告 10 個方法/事件，UE5 IWorldInterface.h 只實作了 7 個（GetEntityAt/GetMaterialAt/GetEntitiesNear/DestroyTile/ApplyForce/SpawnEffect + 4 個事件回呼），缺少 GetEntityProperty、SetEntityProperty、CreateEntity 三個方法。issues.md:381 已記錄「2026-06-19 稽核：先前標記已實作，但這 3 項在介面定義中不存在，全專案 grep 無結果」，本次核對在 IWorldInterface.h 全文中確認這三個方法確實不存在，issues.md 記錄屬實。由於整個 IWorldInterface 目前零實作（無任何類別繼承），這個缺失尚未造成執行期問題，但屬於介面定義不完整，後續 NPCBrain 感知系統若需要動態查詢/設定實體屬性（例如 AI 判斷血量百分比、設定狀態旗標）將無管道可用。",
+      "fix_suggestion": "在 IWorldInterface.h 補上對應簽名：virtual TOptional<FInstancedStruct> GetEntityProperty(ICreature* Entity, FName Property) = 0; virtual void SetEntityProperty(ICreature* Entity, FName Property, ...) = 0; virtual ICreature* CreateEntity(FName Type, FGridPos Pos, const TMap<FName,float>& Params) = 0;（型別細節需配合 UE5 既有資料結構慣例調整，並對應 Godot object?/Dictionary<string,object?> 的彈性鍵值語意）。"
+    },
+    {
+      "id": "F-11",
+      "topic": "GameClock 邏輯與常數核對",
+      "godot_ref": "GameClock.cs:11-34（TicksPerSecond=20, TicksPerDay=28800；Advance(delta) 累加器邏輯；DayFraction 計算；Reset()）",
+      "ue5_ref": "UGameClockSubsystem.h:14-44 + UGameClockSubsystem.cpp:1-18",
+      "verdict": "✅ correct",
+      "detail": "常數一致：TicksPerSecond=20，TicksPerDay=28800（24 現實分鐘）。Advance() 邏輯逐行核對一致：Accumulator += delta*TicksPerSecond → 取整數 Ticks → 若為 0 直接 return（避免不必要更新）→ Accumulator 扣除整數部分 → TotalTicks 累加 → DayCount = TotalTicks/TicksPerDay。GetDayFraction() 對應 Godot DayFraction 屬性，公式 (TotalTicks % TicksPerDay) / (float)TicksPerDay 完全一致。UE5 額外提供 GetDayHour()（DayFraction*24）是 Godot 沒有的便利方法，不影響正確性。Reset() 邏輯（TotalTicks/DayCount/Accumulator 全部清零）一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "F-12",
+      "topic": "GridPos3D 完全未移植（UE5 統一用 FGridPos）",
+      "godot_ref": "GridPos3D.cs:5-37（獨立的 GridPos3D struct，含 MoveX/MoveY/MoveZ/ToWorldPos/Neighbors6 靜態陣列）",
+      "ue5_ref": "（無對應檔案；UE5 統一使用 FGridPos 處理所有 3D 格座標需求）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 中 GridPos（2D 起源，含 Z 但語意上常與 GridPos3D 並存）與 GridPos3D 是兩個獨立型別，後者額外提供 MoveX/MoveY/MoveZ 鏈式移動方法與 Neighbors6（CA 用 6-鄰接偏移陣列，Y+向下=重力方向）。UE5 將兩者合併為單一 FGridPos，沒有 MoveX/MoveY/MoveZ 便利方法，Neighbors6 改為「行內邏輯」（issues.md:384 記載）。本次稽核未在 VoxelWorld 模組找到對應的 6-鄰接陣列實作位置去逐一核對（超出本次 §5 範圍，建議由負責 VoxelWorld/CA 系統的稽核 Agent 另行核對 Neighbors6 行內邏輯是否與 Godot (0,+1,0)/(0,-1,0)/(-1,0,0)/(1,0,0)/(0,0,-1)/(0,0,+1) 順序與方向完全一致）。issues.md 已記錄為「完全缺失」但標註為合理的型別合併簡化，本次核對同意此判定，非新問題。",
+      "fix_suggestion": ""
+    }
+  ],
+  "summary": "本次核對 12 項，✅ 正確對應 6 項（CharacterStats 全欄位、CharacterState 速率常數、CombatState、GridPos.DistanceTo 歐幾里德公式、WorldScale Grain=16 核心派生公式、GameClock），⚠️ 部分不符 4 項（CharacterState.Tick() Mood 漂移多了 Godot 沒有的下降分支、WorldScale 世界尺寸類常數設計差異且 DefaultWorldHeight=256 並非公式推導、ICreature 缺 Aura 屬性但屬合理架構妥協、GridPos3D 合併為 FGridPos 但 Neighbors6 行內邏輯未逐一核對），❌ 錯誤或缺失 2 項（IWorldInterface.h 註解誤將 GetEntitiesNear 標為曼哈頓距離，但 Godot 實際用歐幾里德距離；IWorthInterface 缺少 GetEntityProperty/SetEntityProperty/CreateEntity 三個方法，issues.md 先前記錄屬實）。最嚴重問題是 F-8（曼哈頓/歐幾里德距離註解錯誤，未來實作時會導致敵人/實體偵測範圍形狀與 Godot 不同）和 F-10（IWorldInterface 方法缺失會阻礙 NPCBrain 感知系統的屬性查詢需求）。"
+}

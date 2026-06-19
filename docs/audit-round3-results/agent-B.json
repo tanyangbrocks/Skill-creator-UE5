@@ -1,0 +1,188 @@
+{
+  "agent": "B",
+  "section": "§2 SpellCaster 執行方法（act_* / Execute*）",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "B-1",
+      "topic": "TryCast 整體流程（冷卻/MP扣除/等級上限檢查）",
+      "godot_ref": "SpellCaster.cs:36-100",
+      "ue5_ref": "USpellCaster.cpp:103-193",
+      "verdict": "✅ correct",
+      "detail": "Godot TryCast()：先檢查 player.CanCast，再檢查 AbilityPointCalculator.ExceedsLevelCap，再 TryConsumeMp，再 SetCastCooldown(spell.CastDelay)，再 ApplyGlobalEngravings，最後依 Container 分派。UE5 TryCast() 對應：CooldownRemaining>0 擋下、ExceedsLevelCap 檢查（程式內註解標明 2026-06-19 稽核新增）、依 GetUsedManaTypes 找法力槽扣 BaseMpCost、CooldownRemaining = Max(GlobalCooldown, Spell.CastDelay)、ApplyGlobalEngravings、依 Container 分派 Projectile/Contact/DirectCast。流程結構一致，MP 扣除機制做法不同（Godot 用 TryConsumeMp 支援多槽均分；UE5 用 GetUsedManaTypes 找第一個可用槽）但屬已知架構差異非邏輯錯誤。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "B-2",
+      "topic": "TryConsumeMp 多槽均分扣除邏輯",
+      "godot_ref": "SpellCaster.cs:251-276",
+      "ue5_ref": "USpellCaster.cpp:114-133",
+      "verdict": "⚠️ partial",
+      "detail": "Godot TryConsumeMp()：先找出所有有 ManaTypeKey 的 slots，若無則退回 ActiveManaSlots[0] 扣 totalCost；若有，則 costPerSlot = totalCost/bound.Count，先驗證所有槽都夠用（原子性，避免部分扣款後失敗），再統一扣除每槽 costPerSlot。UE5 TryCast() 的對應段：只找『第一個』在 GetUsedManaTypes() 中且存在的槽位 Source，全部 BaseMpCost 扣在這一個槽上，不是均分到所有用到的法力類型槽。也沒有『先驗證全部足夠再扣除』的原子性邏輯（雖然此處只扣一槽所以原子性問題較小）。功能上行為不同：Godot 多法力類型技能會均分消耗到各類型槽，UE5 永遠整筆扣在找到的第一個槽。",
+      "fix_suggestion": "USpellCaster::TryCast 應遍歷 Spell.GetUsedManaTypes() 找出所有對應存在的槽位，costPerSlot = BaseMpCost / 槽數，先檢查全部足夠再統一扣除，對齊 Godot SpellCaster.cs:267-274 的均分邏輯。"
+    },
+    {
+      "id": "B-3",
+      "topic": "Projectile 容器：投射物起點與方向計算",
+      "godot_ref": "SpellCaster.cs:54-79",
+      "ue5_ref": "USpellCaster.cpp:142-179",
+      "verdict": "⚠️ partial",
+      "detail": "Godot：方向以『滑鼠游標位置 - 玩家位置』算出精確浮點 fdx/fdy/fdz（含 Z 軸），若三軸皆接近 0 才 fallback 用 player.Facing.X；起點依符號位移 halfW(PlayerW/2=8)+1 / halfH(BodyH/2=16)+1，分別在 X/Y/Z 三軸各自偏移，確保投射物從玩家 mesh 外緣發射且方向精確指向滑鼠。UE5：直接用 Char->GetActorForwardVector()（即角色面向，非滑鼠瞄準方向）作為 Fwd，起點用 Char->GetPosition()（玩家腳底原點，未做 halfW/halfH 偏移），未做『以滑鼠位置決定方向』也未做 Godot 的 mesh-外緣起點位移。等於用『面向方向』取代了『精確滑鼠瞄準方向』，且起點未偏移到身體外緣。",
+      "fix_suggestion": "若要對齊 Godot，需在 ASkillCreatorCharacter 取得滑鼠/鏡頭瞄準的世界座標換算成 GridPos delta 取代純粹的 ActorForwardVector；並在 Init() 呼叫前依 PlayerW/2+1、PlayerH/2+1 位移 Origin 到身體外緣再生成 Projectile。"
+    },
+    {
+      "id": "B-4",
+      "topic": "Contact 容器：ExecuteContactHit 掃描與傷害公式",
+      "godot_ref": "SpellCaster.cs:116-163",
+      "ue5_ref": "USpellCaster.cpp:234-290",
+      "verdict": "⚠️ partial",
+      "detail": "Godot：只在 X 軸方向用 player.Facing.X 掃描（2D，忽略 Y/Z），逐格 d=1..MeleeRange 找敵人，命中傷害 = 20f * player.Equipment.TotalAtkMult（即基礎傷害會隨裝備攻擊力倍率縮放）；命中後若有 runner 則 Submit(fixedOrigin=checkPos)，否則暫改 player.Position 到 checkPos 執行 ExecuteEffects(atHitPoint:true) 再還原——也就是說 Contact 命中後『技能本體的全部效果（含所有 act_* 積木）』都會在命中點執行一次，傷害只是附帶的基礎近戰傷害，並非唯一效果。未命中敵人時，仍在正前方2格位置執行整個技能效果（AoE 可能仍命中範圍內目標）。\nUE5 ExecuteContactHit()：用 3D Fwd 向量（X/Y/Z 三軸）掃描，邏輯更完整地支援三維方向；但傷害固定 BaseDamage=10.f（常數，未乘任何裝備攻擊力倍率），且命中後只執行『元素 Aura + 固定傷害 + ApplyElementalImpact』，完全沒有呼叫 ExecuteEffects/BuildContext/Runner.Submit 去執行技能本身配置的 act_* 積木效果（DispatchAction 路徑）。換言之 UE5 的 Contact 容器只做了『基礎近戰傷害+元素套用』，遺漏了 Godot 對應的『命中後仍執行整個技能效果鏈（含 fixedOrigin 提交給 Runner）』，也沒有『未命中時仍在正前方2格執行效果』的 fallback。",
+      "fix_suggestion": "ExecuteContactHit() 命中或未命中時都應呼叫 Runner.Submit(Spell, Code, fixedOrigin=HitPos或前方2格) 觸發完整技能鏈，而不僅是寫死的基礎傷害；傷害也應該乘上裝備攻擊力倍率（對應 TotalAtkMult）。"
+    },
+    {
+      "id": "B-5",
+      "topic": "SummonMinion/Turret/Guardian 容器（TODO-STUB 佔位）",
+      "godot_ref": "SpellCaster.cs:86-112",
+      "ue5_ref": "USpellCaster.cpp（無對應分支）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot 明確標註 TODO-STUB：ContainerType.SummonMinion/SummonTurret/SummonGuardian 三種容器目前都走 ExecuteSummonContainer()，本質上跟 DirectCast 一樣（runner!=null 則 Submit，否則 ExecuteEffects），是已知佔位但『容器類型存在、有對應 case、行為等同直接施放』。UE5 USpellCaster::TryCast() 的 Container switch 只處理 Projectile / Contact，default 落到 DirectCast 邏輯（BuildContext+Runner.Submit）。檢查 EContainerType 定義會發現 UE5 SummonMinion/SummonTurret/SummonGuardian 即使存在於 enum，TryCast() 裡也沒有顯式 case，是靠 if-else 沒比對到才落到最後的 DirectCast 分支（隱性而非顯性）。結果上『行為相同』（兩邊召喚容器都等同直接施放技能本體），但 UE5 端完全沒有對應的 ExecuteSummonContainer 函式或註解標明這是已知技術債，稽核可追溯性差。另外 ExecuteSummon()（即 act_summon_entity 積木本身的視覺效果）在 UE5 是真正的空函式（只 UE_LOG，無任何效果），而 Godot 的 ExecuteSummon() 至少會 SpawnEffect/SetTile 產生視覺占位效果（summon_minion 噴火、summon_turret 立石柱、summon_guardian 噴水）。",
+      "fix_suggestion": "USpellCaster::ExecuteSummon() 目前完全是 no-op（只記 log），應至少對齊 Godot SpellCaster.cs:879-891 用 SpawnEffectTiles 模擬視覺占位效果，而不是什麼都不做；TryCast() 也應該顯式列出 SummonMinion/SummonTurret/SummonGuardian case 並加註解標明等同 DirectCast 的技術債，避免future維護者誤以為遺漏。"
+    },
+    {
+      "id": "B-6",
+      "topic": "act_area_around 形狀（半徑公式 + Explode）",
+      "godot_ref": "SpellCaster.cs:543-555",
+      "ue5_ref": "USpellCaster.cpp:472-486",
+      "verdict": "✅ correct",
+      "detail": "Godot：grain=WorldScale.Grain（16），baseR=(2+(int)(DmgBonus*3))*grain，act_area_around 呼叫 world.Explode(origin, baseR+1) + ApplyElement(origin, baseR+1)。UE5：Grain=WorldScale::GrainCurrent（16），BaseR=(2+(int32)(DmgBonus*3.f))*Grain，act_area_around 呼叫 TW->Explode(Origin, BaseR+1)。半徑公式完全一致（含 Grain 縮放）。UE5 缺少 ApplyElement 的等效呼叫（fire/water 在爆炸範圍內鋪設特效 tile），但 ApplyModsToNearbyEnemies 之後仍會對範圍內敵人套用元素 Aura（透過 ApplyElem lambda），核心爆炸半徑公式對齊。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "B-7",
+      "topic": "act_area_fan 扇形範圍公式（嚴重不符：寬度/長度/中斷條件全部不同）",
+      "godot_ref": "SpellCaster.cs:557-577",
+      "ue5_ref": "USpellCaster.cpp:487-498",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot act_area_fan：fanRange = 8+baseR（baseR 已含 grain 縮放，Grain=16 時 baseR 至少 32，fanRange 至少 40）；對每個距離 d=1..fanRange，spread=(d+1)/2（緩慢線性展開，例如 d=1→spread=1, d=10→spread=5），逐格掃描 s=-spread..spread，若該格不是 Stone 才 Explode(1)+ApplyElement；只要『整排』(-spread..spread 所有格)都被 Stone 擋住才 break 整個 fan（blocked 變數要整排都 continue 才會是 true）。也就是說只要這排有任何一格不是石頭，扇形就會繼續往下一個 d 距離擴散，即使被部分阻擋。\nUE5 act_area_fan：for d in [0, FanRange*Grain)（FanRange=5, Grain=16 → 0..79，比 Godot 略短但量級接近），內層 for w in [-d, d]（寬度=d本身，而非 Godot 的 (d+1)/2——UE5 寬度展開速度是 Godot 的 2 倍，形成更寬更銳利的等腰三角形而非緩慢展開的扇形）；且判斷邏輯是『單一格非空氣就 break 整個 w 迴圈』（GetTile != Air → break，而非檢查 Stone specifically，也不是『整排都擋住才中斷』）。任何非空氣（包括水、火等）都會立即中斷該距離的橫向掃描，行為與 Godot 明顯不同：Godot 只有 Stone 擋格，UE5 任何非 Air 都擋；Godot 整排都擋住才停止整個 fan，UE5 单一格擋住只停止該距離的橫向延伸但外層 d 迴圈仍會繼續到更遠距離（並非『整個 fan 中斷』，這點甚至比 Godot 更寬鬆，會穿透到更遠處因為外迴圈沒有 break 條件）。",
+      "fix_suggestion": "1) 寬度公式改為 spread=(d+1)/2，不要用 w 從 -d 到 d；2) 阻擋判定改為只看 EMaterialType::Stone，不要用 != Air；3) 中斷邏輯需要『該距離整排都被 Stone 擋住才中斷整個 fan』，目前 UE5 內層 break 只是退出該距離的橫向掃描，外層 d 迴圈完全沒有依 blocked flag 中斷，導致即使前方完全被石頭封死也會繼續往更遠的 d 嘗試（除非中途又遇到 InBounds false）。"
+    },
+    {
+      "id": "B-8",
+      "topic": "act_area_distant 形狀（距離公式不符）",
+      "godot_ref": "SpellCaster.cs:579-586",
+      "ue5_ref": "USpellCaster.cpp:499-503",
+      "verdict": "⚠️ partial",
+      "detail": "Godot：distRange = 16 + baseR*2（baseR 已含 grain），target = origin + facing*distRange，Explode(target, baseR+2) + ApplyElement(target, baseR+2)。UE5：dist = (6 + BaseR) * Grain —— 注意 Godot 的 baseR 本身已經是 (2+DmgBonus*3)*grain（含 grain 縮放），UE5 的寫法是 (6+BaseR)*Grain，等於把 BaseR（已經含一次 Grain）又乘了一次 Grain，導致距離公式產生「Grain 平方」式增長，與 Godot 的線性 baseR*2 加 16 完全不同量級。以 Grain=16, DmgBonus=0 為例：Godot baseR=2*16=32，distRange=16+64=80；UE5 BaseR=2*16=32，dist=(6+32)*16=608。UE5 距離是 Godot 的 7.6 倍，且隨 Grain 增大會以平方級數發散（Grain=64 時差距更誇張）。爆炸半徑用 BaseR+1（UE5）vs baseR+2（Godot）也少了 1。",
+      "fix_suggestion": "UE5 dist 公式應改為 dist = 16*Grain_unit + BaseR*2（即不要對已含 Grain 的 BaseR 再乘一次 Grain），對齊 Godot SpellCaster.cs:581 的 distRange = 16 + baseR*2；爆炸半徑改為 BaseR+2。"
+    },
+    {
+      "id": "B-9",
+      "topic": "act_area_beam 光束形狀（長度公式不符 + 缺少正交寬度 + 中斷條件不同）",
+      "godot_ref": "SpellCaster.cs:588-608",
+      "ue5_ref": "USpellCaster.cpp:504-514",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot act_area_beam：beamLen = 18+baseR；沿 facing 方向逐格 i=1..beamLen，每格再展開正交寬度 s=-1..1（共3格寬的光束截面），只要該寬度格不是 Stone 就 SetTile 改成 Water 或 Fire；若中心格 (tx,ty) 是 Stone 才 break 整個光束（注意：判斷 break 用的是中心格，寬度格各自獨立判斷是否設置）。UE5 act_area_beam：BeamRange=12, d=1..BeamRange*Grain=192（遠超 Godot 的 18+baseR，baseR含grain時約 18+32=50；UE5 192 vs Godot ~50，量級不同且 UE5 完全沒有用 baseR/DmgBonus 影響長度），且 UE5 完全沒有正交寬度展開（只在中心線 tx,tz 单一格 SpawnEffectTiles 半徑1，沒有左右各1格的截面寬度邏輯），中斷條件用『該格非 Air 就 break』而非『該格是 Stone 才 break』。整體上 UE5 beam 變成『單格寬、超長距離、任何非空氣都擋住』，跟 Godot『三格寬、長度隨 DmgBonus 變化、只有石頭擋住』的設計完全不同形狀。",
+      "fix_suggestion": "1) 長度公式改為 18*GrainScale + BaseR（納入 DmgBonus）而非固定 BeamRange*Grain；2) 加入正交寬度 s=-1..1（用 PX/PZ 垂直向量）對每格寬度都做 SetTile；3) 中斷條件改為只看中心格是否為 Stone。"
+    },
+    {
+      "id": "B-10",
+      "topic": "ExecuteTechnique 武技形狀與 Multi 重複次數",
+      "godot_ref": "SpellCaster.cs:723-809",
+      "ue5_ref": "USpellCaster.cpp:520-552",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot ExecuteTechnique 支援至少 9 種 Totem.Id 分支（technique_sword/punch/shield + 舊版 technique_slash/projectile/area/beam/chain），每種都有獨立公式：technique_sword 在 slashOfs(atHitPoint?0:4)+rep*3 處 Explode(半徑 r=2+DmgBonus*3)；technique_punch 半徑 r-1，offset 2+rep*2；technique_shield 半徑 r+1（TODO-STUB 註解：應為防禦/反擊，暫用衝擊波佔位）；且最外層有 `for rep in 0..Multi` 迴圈（blue_multi 刻印控制重複次數，每次重複位置都往前推進 rep*N）。\nUE5 ExecuteTechnique()：只用 if/else if 處理 technique_sword/slash 合併成同一案例（半徑固定 2，迴圈 i=1..3 在原地附近做 3 次小爆炸，與 Godot 用 r=2+DmgBonus*3 的單次大爆炸完全不同公式）、technique_punch（半徑1，单次爆炸，不含 DmgBonus 縮放也不含 atHitPoint offset 差異）、technique_shield（半徑3，固定值，不含 DmgBonus）、其他都落到 else 分支（半徑2，offset 1，等同一個 generic 處理）。完全沒有 Multi/blue_multi 重複次數迴圈（UE5 ReadMods 讀出 M.Multi 但 ExecuteTechnique 從未使用 M.Multi 跑迴圈），也沒有 atHitPoint 對 offset 的調整邏輯（Godot 用 atHitPoint?0:4 切換爆炸位置避免偏移到命中點外），且 technique_projectile/area/beam/chain（舊版相容技能因子）在 UE5 完全沒有對應分支，會落到 else 的 generic 處理。",
+      "fix_suggestion": "ExecuteTechnique 需要：1) 加入 for(rep=0; rep<M.Multi; rep++) 外層迴圈；2) 半徑公式統一用 r=2+(int)(DmgBonus*3)；3) sword/slash 用 atHitPoint?0:4 的 slashOfs 而非固定 i=1..3；4) 補上 technique_projectile/area/beam/chain 四種舊版相容分支；5) technique_punch 用 r-1 而非固定 1。"
+    },
+    {
+      "id": "B-11",
+      "topic": "act_fire_projectile（ExecuteProjectileTotem）命中後效果",
+      "godot_ref": "SpellCaster.cs:612-633",
+      "ue5_ref": "USpellCaster.cpp:554-588",
+      "verdict": "⚠️ partial",
+      "detail": "Godot ExecuteProjectileTotem()：建立一個『迷你技能整構』hitSpell，把來源 slot 的所有 Modifier 類刻印（white_dmg/blue_multi/elem_*/orange_*/red_stun/yellow_hp_cost）複製進去，再加一個 act_area_around 的 Action 刻印，意味著投射物命中時會執行『完整的 act_area_around 爆炸 + 所有 modifier 效果』（包括位移/減速/凍結等 ApplyModsToNearbyEnemies 全套邏輯），而不只是單純傷害。\nUE5 ExecuteProjectileTotem()：直接用 BaseDamage*(1+DmgBonus) 對單一命中敵人造成傷害，並依 M.bFire/bWater/bIce/bThunder 各自呼叫 SpawnEffectTiles + ApplyImmediate Aura，但沒有複製 push/pull/slow/freeze/stun 等 modifier 效果到投射物命中時的行為，也沒有觸發任何爆炸範圍效果（act_area_around 等效爆炸半徑），命中只影響『被擊中的單一敵人』而非範圍內所有敵人。",
+      "fix_suggestion": "ExecuteProjectileTotem 的 OnHitEnemy 回調中，應該額外呼叫等同 ExecuteArea(\"act_area_around\", ...) 在命中點觸發範圍爆炸，並透過 ApplyModsToNearbyEnemies 套用 push/pull/slow/freeze/stun，而不僅是對單一命中目標加傷害和元素。"
+    },
+    {
+      "id": "B-12",
+      "topic": "act_morph_apply（ExecuteMorph）變幻效果",
+      "godot_ref": "SpellCaster.cs:819-836",
+      "ue5_ref": "USpellCaster.cpp:590-606",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot ExecuteMorph() 依 slot.Totem.Id 分派 4 種變幻技能因子：morph_speed/morph_strengthen（噴水特效半徑1，純視覺占位，註解暗示真正應接 CharacterStats buff）、morph_flight（在玩家上方 Y+3 處 Explode 半徑2）、morph_invisible（噴水特效半徑2）。三種效果完全不同（不同位置/不同視覺）。\nUE5 ExecuteMorph()：完全沒有讀取 Slot.TotemId 做任何分支，對所有變幻技能因子一律執行同一段邏輯——在 Origin 周圍球狀半徑 Radius=max(1,1+DmgBonus) 範圍內，把所有 Air tile 改成 Stone（SetTile Stone）。這跟 Godot 的『噴水特效』『頭頂爆炸』『不可見噴水』完全不是同一種效果，UE5 版本其實做的是『憑空造出石頭球體』，語意上更像是地形塑形而非變幻 buff，且未依 TotemId 分支區分 morph_speed/strengthen/flight/invisible 四種不同表現。",
+      "fix_suggestion": "ExecuteMorph 應依 Slot.TotemId 分支：morph_speed/morph_strengthen → SpawnEffectTiles water 半徑1；morph_flight → Explode(Origin.Y+3, 半徑2)；morph_invisible → SpawnEffectTiles water 半徑2，對齊 Godot SpellCaster.cs:823-835，而非統一塞石頭球體。"
+    },
+    {
+      "id": "B-13",
+      "topic": "act_dash/act_dodge/act_teleport/act_portal（ExecuteDisplacement）",
+      "godot_ref": "SpellCaster.cs:840-869",
+      "ue5_ref": "USpellCaster.cpp:608-651",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 只有 3 種位移技能因子：displace_dash（逐格前進最多10步，遇非Air就停）、displace_teleport（從遠到近 i=20..1 找第一個空氣格傳送，即優先傳到最遠可達點）、displace_dodge（逐格後退最多5步）。UE5 DispatchAction 對應 act_dash/act_teleport/act_dodge/act_portal 四個 actionId（Godot 沒有獨立的『act_portal』act_*，但 TotemLibrary 可能有 portal 技能因子映射到 displace_teleport，此處不算錯誤）。UE5 dash/dodge 都用『從近到遠尋找最遠可達點 Final』（逐步累加，遇阻擋才停在上一格），這跟 Godot dash 是『逐格移動，遇阻擋立刻停在當前已移動的位置』效果上一致（最終都是移到最遠可達格）。但 dodge 步數用 DodgeSteps=5 對應 Godot 5，dash 用 DashSteps=10 對應 Godot 10，數值一致。teleport 邏輯 Godot 是『i=20..1 從遠到近找』（找到最遠的空格就停，本質等同於『找最遠可達點』），UE5 是『i=1..MaxSteps(15*Grain) 從近到遠找，遇阻擋就停在上一個』——兩者算法方向相反但結果等價（都會找到該方向上連續空氣段的最遠端）,但 UE5 的 MaxSteps=15*Grain=240（Grain=16）跟 Godot 固定 20 格差距巨大（12倍），属於數值不對齊。",
+      "fix_suggestion": "ExecuteDisplacement 的 act_teleport/act_portal MaxSteps 應該對齊 Godot 的固定 20 格（或至少用更合理的 Grain 縮放公式如 20*某係數），目前 15*GrainCurrent=240 格的傳送距離明顯偏離原版設計意圖。"
+    },
+    {
+      "id": "B-14",
+      "topic": "act_summon_entity（ExecuteSummon）",
+      "godot_ref": "SpellCaster.cs:873-892",
+      "ue5_ref": "USpellCaster.cpp:653-657",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot ExecuteSummon()：依 Totem.Id 在玩家面前4格處分派 3 種效果：summon_minion（噴火特效半徑1）、summon_turret（在該點正交方向各1格設置 Stone 形成柱狀）、summon_guardian（噴水特效半徑2）。UE5 ExecuteSummon() 函式體只有一行 UE_LOG(Verbose, \"deferred (W-11)\")，完全沒有任何視覺或邏輯效果，是純粹的空函式（連視覺占位都沒有）。這是已知技術債（程式碼註解承認延遲至 W-11），但目前『完全沒有效果』比 Godot 端『至少有視覺占位特效』更倒退。",
+      "fix_suggestion": "若 W-11 召喚物 AI 尚未實作，至少應補上 Godot SpellCaster.cs:879-891 的視覺占位效果（SpawnEffectTiles fire/water + SetTile Stone 柱），讓玩家施放時至少有反饋，而非完全無聲無息。"
+    },
+    {
+      "id": "B-15",
+      "topic": "act_domain_activate（ExecuteDomain）",
+      "godot_ref": "SpellCaster.cs:896-918",
+      "ue5_ref": "USpellCaster.cpp:659-670",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot ExecuteDomain() 依 Totem.Id 分 3 種：domain_barrier（360度繞圈，每10度在半徑8處設置 Stone，形成環狀護欄，2D X/Y 平面）、domain_terrain（單次 Explode 半徑12，注意呼叫是 world.Explode(pos.X, pos.Y, 12) 只給3個參數，對照 Explode(int cx,int cy,int r) 的 2D overload，z=0）、domain_weather（在 pos.Y-10 處沿 X 軸 -8..8 鋪設 Water 形成一條雨幕線）。三種效果形狀、半徑、機制完全不同。\nUE5 ExecuteDomain() 完全沒有依 Slot.TotemId 分支，所有領域技能因子一律執行同一段邏輯：DomainR=(4+DmgBonus*4)*Grain 的單次 TW->Explode 爆炸 + 依 bFire/bWater 鋪設特效 tile + ApplyModsToNearbyEnemies。等同把 domain_barrier 的環狀護欄、domain_terrain 的純爆炸、domain_weather 的雨幕線三種完全不同效果，全部簡化成統一的一次大爆炸，遺失了 barrier 的『建立防禦結構』語意與 weather 的『持續性天氣線』語意。",
+      "fix_suggestion": "ExecuteDomain 應依 Slot.TotemId 分支對應 Godot 三種效果：domain_barrier 用 360度迴圈設置環狀 Stone；domain_terrain 用单次 Explode；domain_weather 用沿 X 軸鋪設 Water 線，而非統一塞一個爆炸公式。"
+    },
+    {
+      "id": "B-16",
+      "topic": "ReadMods 刻印讀取（Mods 結構與數值公式）",
+      "godot_ref": "SpellCaster.cs:639-673",
+      "ue5_ref": "USpellCaster.cpp:302-322",
+      "verdict": "✅ correct",
+      "detail": "兩邊 ReadMods 都讀取同一組刻印 Id（white_dmg/blue_multi/elem_fire/elem_water/elem_ice/elem_thunder/orange_push/orange_pull/orange_slow/orange_freeze/red_stun/yellow_hp_cost）並對應到同名欄位，數值來源都呼叫 CalculateEffect()。唯一差異：Godot 對 orange_slow/orange_freeze/red_stun 額外做 Math.Max(0.5f, e.CalculateEffect()) 確保至少0.5秒下限，UE5 直接用 E.CalculateEffect() 沒有下限保護（若引擎資料配置 CalculateEffect 算出 <0.5 的值，UE5 會套用比 Godot 更短的持續時間）。屬於小幅數值差異而非結構性錯誤。",
+      "fix_suggestion": "ReadMods 中 orange_slow/orange_freeze/red_stun 三項建議加上 FMath::Max(0.5f, E.CalculateEffect()) 對齊 Godot 下限保護（SpellCaster.cs:666-668）。"
+    },
+    {
+      "id": "B-17",
+      "topic": "ApplyModsToNearbyEnemies（push/pull/slow/freeze/stun + yellow_hp_cost）",
+      "godot_ref": "SpellCaster.cs:676-719",
+      "ue5_ref": "USpellCaster.cpp:358-408",
+      "verdict": "⚠️ partial",
+      "detail": "Godot：半徑 radius=4+DmgBonus*3（用曼哈頓距離 |dx|+|dz|），push/pull 逐格檢查目標 tile 是否 Air 才移動（逐步碰撞檢測，最多移動 PushDist/PullDist 步），freeze/slow/stun 呼叫 e.Aura.ApplyFreeze/ApplySlow（注意 Godot 原始碼 StunDur 也呼叫 ApplyFreeze 而非獨立的 Stun 方法——這是 Godot 原版的設計，待查 Aura 是否有獨立 Stun）。HpCost 在 ExecuteSlot 開頭直接對 player.TakeDamage（不在 ApplyModsToNearbyEnemies 內）。\nUE5：半徑改用 NearbyR=3.f 常數（固定值，未隨 DmgBonus 縮放，且改用歐式距離 sqrt 而非曼哈頓距離），push/pull 改用『瞬間位移到方向向量 * 距離 * TileSizeCm』（一次性 SetActorLocation 位移，不做逐格碰撞檢測，可能直接位移進牆內，跟 Godot 逐格檢查 Air 才移動的安全機制不同）。HpCost 處理移到 ApplyModsToNearbyEnemies 開頭（程式碼註解標明這是『2026-06-19 稽核發現先前語意寫反』後的修正，現在正確套用在施法者身上而非敵人）。Slow/Freeze/Stun 三項在 UE5 完全沒有實作（程式碼註解明確寫『Slow/Freeze/Stun → W-5 status effects』，目前是已知缺失）。",
+      "fix_suggestion": "1) 半徑公式改為 radius=4+(int)(DmgBonus*3)，需要傳入 DmgBonus 參數而非固定 NearbyR=3；2) push/pull 改為逐格碰撞檢測（檢查目標 tile 是否可通行才移動）而非一次性瞬移，避免穿牆；3) Slow/Freeze/Stun 待 W-5 status effect 系統完成後接通 e.Aura 對應方法。"
+    },
+    {
+      "id": "B-18",
+      "topic": "ApplyGlobalEngravings（green_death_replace / green_invincible）",
+      "godot_ref": "SpellCaster.cs:301-328",
+      "ue5_ref": "USpellCaster.cpp:344-356",
+      "verdict": "✅ correct",
+      "detail": "Godot：green_death_replace 用 ActionBus.Register 攔截 PlayerDeathAction（one-shot 取消死亡）；green_invincible 計算 duration=CalculateEffect()，用 ActionBus.Register 在 duration 秒內攔截 PlayerDamageAction。UE5：green_death_replace 呼叫 Char->ActionBus.RegisterFilter(\"DeathGuard\",\"Once\",true,0.f,0.f)；green_invincible 呼叫 RegisterFilter(\"DamageShield\",\"Cancel\",false, Max(0,CalculateEffect()), 0.f)。兩邊都是用 ActionBus 過濾器機制攔截對應 Action 類型，字串 key 命名不同但語意對應一致（Once=oneShot, Cancel/duration=持續時間過濾）。實作進度.md 先前標記此項為「完全缺失」已過時，實際上已實作。",
+      "fix_suggestion": "（無需修復，但建議更新 實作進度.md L193 的「ApplyGlobalEngravings ... 完全缺失」標記，該行已過時，現已實作於 USpellCaster.cpp:344-356）"
+    },
+    {
+      "id": "B-19",
+      "topic": "ExecuteEffects / VM 執行迴圈 + Pending* 消費（ConsumeInvokeTotem/EntityDamage/EntityMove）",
+      "godot_ref": "SpellCaster.cs:170-388",
+      "ue5_ref": "USpellCaster.cpp:689-822（BuildContext）+ FSpellRunner.cpp（Submit/Tick 內部）",
+      "verdict": "✅ correct",
+      "detail": "Godot ExecuteEffects() 是同步 while 迴圈跑 ExecutionLoop.Step()，並在每步檢查 PendingInvokeTotem/PendingInvokeSpell/PendingEntityDamageId/PendingEntityMoveId 並呼叫對應 Consume 函式。UE5 把這個迴圈邏輯移到 FSpellRunner（跨幀執行，非同步迴圈），但 BuildContext() 注入的 delegate（EntityQuery/RaycastQuery/FocalPointQuery/PlayerStatsQuery/InvokeTotemFn 等）與 Godot 對應欄位語意一致：EntityQuery 對應 QueryEnemies()（用距離排序、半徑過濾敵人，雖然 Godot 用 player.Position 為 origin、UE5 也用 Char->GetPosition()，一致）；InvokeTotemFn 內部呼叫 ResolveTotem() 對應 Godot 的 ConsumeInvokeTotem→ResolveTotem 鏈。架構上是『同步迴圈→跨幀 Runner』的合理重構，非邏輯錯誤，且 ConsumeEntityMove/ConsumeEntityDamage 的同步快取更新（_e.hp/_e.x/_e.y）邏輯有在 FSpellRunner 端對應實作（依 實作進度.md L194 記錄已對應）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "B-20",
+      "topic": "issues.md / 實作進度.md 現有標記準確性檢查",
+      "godot_ref": "N/A（文件比對）",
+      "ue5_ref": "docs/issues.md:103,197-200；實作進度.md:226-229",
+      "verdict": "⚠️ partial",
+      "detail": "docs/issues.md 第15行宣稱「§2 SpellCaster / SpellRunner / ActionBus ~97% 完成（act_* 全部完成）」，但第197-200行又自相矛盾地寫「DispatchAction 所有 act_* 分支 stub；act_area_fan/beam/morph 以 Explode 佔位，真實形狀 stub」「ExecuteArea/ExecuteTechnique/ExecuteMorph/ExecuteDisplacement/ExecuteSummon/ExecuteDomain stub（佔位實作，多數以 Explode 替代）」。本次稽核證實第197-200行的『stub』判定更準確：act_area_fan(B-7)/act_area_distant(B-8)/act_area_beam(B-9)/ExecuteTechnique(B-10)/ExecuteMorph(B-12)/ExecuteSummon(B-14)/ExecuteDomain(B-15) 確實都是公式不符或完全空殼的佔位實作，第15行的「~97%」「act_* 全部完成」是過度樂觀的誤判，應予訂正。實作進度.md L226-229 寫「act_area_fan/around/distant/beam 真實形狀（目前以 Explode 佔位）」「act_fire_projectile：圖騰層投射物（目前以爆炸佔位）」「act_morph_apply：真實 buff 接入 CharacterStats」列為待辦——這份記錄仍然準確反映現狀，尚未被後續 session 修正。",
+      "fix_suggestion": "docs/issues.md 第15行『§2 ~97%（act_* 全部完成）』應改為更保守的描述，例如『約60-70%，DispatchAction 入口與部分形狀（around）已對齊，但 fan/distant/beam/技能因子細節/morph/summon/domain 仍為公式不符或空殼佔位』，並與同檔案197-200行的『stub』判定統一，避免兩段自相矛盾。"
+    }
+  ],
+  "summary": "核實 20 項（act_*/Execute* 方法 + 文件交叉檢查）：✅ 6 項正確對應（TryCast 主流程、act_area_around、ReadMods、ApplyGlobalEngravings、VM執行迴圈架構、文件對照本身列為一項）；⚠️ 8 項部分不符（MP多槽均分、投射物起點方向、Contact容器命中後缺完整效果鏈、act_area_distant距離公式錯誤縮放、act_fire_projectile命中缺AoE、act_dash/teleport步數不對齊、ApplyModsToNearbyEnemies用瞬移取代逐格碰撞且缺Slow/Freeze/Stun、issues.md自相矛盾的完成度宣稱）；❌ 6 項錯誤或缺失（act_area_fan形狀公式完全不同且外層迴圈未中斷、act_area_beam缺正交寬度且長度公式錯誤、ExecuteTechnique缺Multi迴圈且各武技半徑公式錯誤、ExecuteMorph完全沒有依TotemId分支反而塞石頭球體、ExecuteSummon是純空函式、ExecuteDomain完全沒有依TotemId分支將三種完全不同效果簡化成統一爆炸）。最嚴重問題：act_area_fan(B-7)和act_area_beam(B-9)的形狀公式與原版設計意圖（緩慢扇形展開/三格寬光束）完全不同，已退化成完全不同的視覺與遊戲性表現；ExecuteTechnique(B-10)遺失Multi重複次數機制是核心戰鬥數值缺失；ExecuteMorph(B-12)和ExecuteDomain(B-15)完全沒有依Totem.Id分支，把多種設計上應該截然不同的效果（變幻buff、領域結界/天氣）全部塞進同一套公式，是最根本性的設計意圖偏離。issues.md 第15行『~97%/act_*全部完成』的樂觀宣稱與本次逐項核實結果嚴重不符，應予訂正。"
+}

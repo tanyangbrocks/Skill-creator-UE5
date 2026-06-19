@@ -6,14 +6,18 @@
 #include "SpellArray.generated.h"
 
 // 容器施放方式（對應 Godot ContainerType.cs）
+// 數值 0-5 對齊 Godot enum 順序（DirectCast/Projectile/Contact/SummonMinion/SummonTurret/SummonGuardian），
+// Area 為 UE5 額外擴充值，放在尾端避免與 Godot 既有數值序衝突（2026-06-20 Round3 D-4 修正）。
 UENUM(BlueprintType)
 enum class EContainerType : uint8
 {
-    DirectCast   UMETA(DisplayName="直接施放"),
-    Projectile   UMETA(DisplayName="投射物"),
-    Contact      UMETA(DisplayName="接觸命中"),  // 即時近戰：前方掃描 + 元素 CA
-    Summon       UMETA(DisplayName="召喚物"),
-    Area         UMETA(DisplayName="區域"),
+    DirectCast      UMETA(DisplayName="直接施放"),
+    Projectile      UMETA(DisplayName="投射物"),
+    Contact         UMETA(DisplayName="接觸命中"),     // 即時近戰：前方掃描 + 元素 CA
+    SummonMinion    UMETA(DisplayName="召喚·精靈"),    // TODO-STUB: 召喚物 AI 未實作
+    SummonTurret    UMETA(DisplayName="召喚·砲台"),    // TODO-STUB: 召喚物 AI 未實作
+    SummonGuardian  UMETA(DisplayName="召喚·護衛"),    // TODO-STUB: 召喚物 AI 未實作
+    Area            UMETA(DisplayName="區域"),         // UE5 擴充值，Godot 無對應
 };
 
 // 刻印顏色分類（對應 Godot EngraveColor.cs）
@@ -56,41 +60,74 @@ enum class ETotemType : uint8
     Custom       UMETA(DisplayName="自定義"),     // 語意由刻印決定
 };
 
-// 刻印分類（對應 Godot EngraveCategory.cs）
+// 刻印分類（對應 Godot EngraveColor.cs:19 — EngraveCategory { Modifier, Action }）
+// 數值順序對齊 Godot：Modifier=0, Action=1（2026-06-20 Round3 D-7 修正，原為 Action=0/Modifier=1/多餘Other=2）
 UENUM(BlueprintType)
 enum class EEngraveCategory : uint8
 {
-    Action    UMETA(DisplayName="行動"),   // act_* 刻印：決定效果類型
     Modifier  UMETA(DisplayName="修飾"),   // white_/blue_/elem_/orange_/red_/yellow_
-    Other     UMETA(DisplayName="其他"),
+    Action    UMETA(DisplayName="行動"),   // act_* 刻印：決定效果類型
 };
 
-// 刻印觸發時機（對應 Godot EngraveTrigger.cs）
+// 刻印觸發時機（對應 Godot EngraveColor.cs:22 — EngraveTrigger { OnCast, OnHit, OnTick, OnExpire }）
+// 補回 Godot 的 OnExpire（持續型技能因子結束時的收尾效果），移除無對應語意的 None
+// （2026-06-20 Round3 D-7 修正）
 UENUM(BlueprintType)
 enum class EEngraveTrigger : uint8
 {
-    OnCast  UMETA(DisplayName="施放時"),
-    OnTick  UMETA(DisplayName="每幀"),
-    OnHit   UMETA(DisplayName="命中時"),
-    None    UMETA(DisplayName="無"),
+    OnCast   UMETA(DisplayName="施放時"),
+    OnHit    UMETA(DisplayName="命中時"),
+    OnTick   UMETA(DisplayName="每幀"),
+    OnExpire UMETA(DisplayName="結束時"),
 };
 
 // 刻印資料（對應 Godot EngraveData.cs）
+// 2026-06-20 Round3 D-8 修正：補回 DisplayName/IsGlobal/BaseCost/RequiredPlayerLevel/Element/
+// IsRestriction/TotalAbilityPointCost 七項欄位，CalculateEffect() 改為依 Scaling 分支
+// Hyperbolic/Linear 雙公式（原本不分支，寫死單一線性公式）。
 USTRUCT(BlueprintType)
 struct FEngraveData
 {
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere) FName            EngraveId;
-    UPROPERTY(EditAnywhere) int32            Points      = 0;
+    UPROPERTY(EditAnywhere) FText             DisplayName;
+    UPROPERTY(EditAnywhere) int32            Points      = 0;          // PointsInvested
     UPROPERTY(EditAnywhere) EEngraveColor    Color       = EEngraveColor::White;
-    UPROPERTY(EditAnywhere) EEngraveCategory Category    = EEngraveCategory::Other;
-    UPROPERTY(EditAnywhere) EEngraveTrigger  Trigger     = EEngraveTrigger::None;
+    UPROPERTY(EditAnywhere) EEngraveCategory Category    = EEngraveCategory::Modifier;
+    UPROPERTY(EditAnywhere) EEngraveTrigger  Trigger     = EEngraveTrigger::OnCast;
     UPROPERTY(EditAnywhere) EScalingType     Scaling     = EScalingType::Hyperbolic;
-    // 效果基礎值；CalculateEffect() 按 Points 縮放：Effect * (1 + Points * 0.1)
-    UPROPERTY(EditAnywhere) float            Effect      = 0.f;
+    // Hyperbolic 的 a 值 / Linear 的 k 值（對應 Godot ScalingCoefficient）
+    UPROPERTY(EditAnywhere) float            ScalingCoefficient = 1.f;
+    // Linear 公式的基礎值（對應 Godot BaseEffect）
+    UPROPERTY(EditAnywhere) float            BaseEffect  = 0.f;
+    // 局部或全域（對應 Godot IsGlobal）
+    UPROPERTY(EditAnywhere) bool             bIsGlobal   = false;
+    // 刻印建構基礎成本（對應 Godot BaseCost，預設 1）
+    UPROPERTY(EditAnywhere) int32            BaseCost    = 1;
+    // 解鎖所需玩家等級（對應 Godot RequiredPlayerLevel）
+    UPROPERTY(EditAnywhere) int32            RequiredPlayerLevel = 0;
+    // 屬性元素（Elemental 刻印專用；對應 Godot Element）
+    UPROPERTY(EditAnywhere) ESkillElementType Element    = ESkillElementType::None;
+    // 是否為限制型（黃色）：加入後回收能力點而非消耗（對應 Godot IsRestriction）
+    UPROPERTY(EditAnywhere) bool             bIsRestriction = false;
 
-    float CalculateEffect() const { return Effect * (1.f + (float)Points * 0.1f); }
+    // 根據投入點計算效果值：Hyperbolic=1-1/(1+a*x)，Linear=base+x*k（對應 Godot EngraveData.cs:44-49）
+    float CalculateEffect() const
+    {
+        switch (Scaling)
+        {
+        case EScalingType::Hyperbolic: return 1.f - 1.f / (1.f + ScalingCoefficient * (float)Points);
+        case EScalingType::Linear:     return BaseEffect + (float)Points * ScalingCoefficient;
+        default:                       return 0.f;
+        }
+    }
+
+    // 總能力點影響：限制型為負（回收），普通為正（消耗）（對應 Godot EngraveData.cs:39-41）
+    int32 TotalAbilityPointCost() const
+    {
+        return bIsRestriction ? -(BaseCost + Points) : (BaseCost + Points);
+    }
 };
 
 // 技能因子資料（對應 Godot TotemData.cs）

@@ -27,10 +27,11 @@ FString FSpellDescriptionGenerator::TriggerName(uint8 T)
 {
     switch ((EEngraveTrigger)T)
     {
-    case EEngraveTrigger::OnCast: return TEXT("施放時");
-    case EEngraveTrigger::OnTick: return TEXT("每幀");
-    case EEngraveTrigger::OnHit:  return TEXT("命中時");
-    default:                      return TEXT("無");
+    case EEngraveTrigger::OnCast:   return TEXT("施放時");
+    case EEngraveTrigger::OnTick:   return TEXT("每幀");
+    case EEngraveTrigger::OnHit:    return TEXT("命中時");
+    case EEngraveTrigger::OnExpire: return TEXT("結束時");
+    default:                        return TEXT("無");
     }
 }
 
@@ -38,12 +39,14 @@ FString FSpellDescriptionGenerator::ContainerName(uint8 C)
 {
     switch ((EContainerType)C)
     {
-    case EContainerType::DirectCast: return TEXT("直接施放");
-    case EContainerType::Projectile: return TEXT("投射物");
-    case EContainerType::Contact:    return TEXT("接觸命中");
-    case EContainerType::Summon:     return TEXT("召喚物");
-    case EContainerType::Area:       return TEXT("區域");
-    default:                         return TEXT("未知");
+    case EContainerType::DirectCast:     return TEXT("直接施放");
+    case EContainerType::Projectile:     return TEXT("投射物");
+    case EContainerType::Contact:        return TEXT("接觸命中");
+    case EContainerType::SummonMinion:   return TEXT("召喚·精靈");
+    case EContainerType::SummonTurret:   return TEXT("召喚·砲台");
+    case EContainerType::SummonGuardian: return TEXT("召喚·護衛");
+    case EContainerType::Area:           return TEXT("區域");
+    default:                             return TEXT("未知");
     }
 }
 

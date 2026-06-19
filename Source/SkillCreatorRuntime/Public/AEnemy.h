@@ -6,6 +6,7 @@
 #include "ISnapshottable.h"
 #include "GridPos.h"
 #include "SnapshotTypes.h"
+#include "ActionBus.h"
 #include "AEnemy.generated.h"
 
 class UElementalAuraComponent;
@@ -92,6 +93,12 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
+
+    // 傷害攔截管線（對應 Godot Enemy.cs:425 ActionBus.Dispatch(EntityDamageAction)）。
+    // Godot 端 ActionBus 是全域靜態，玩家/敵人共用一條管線；UE5 維持既有的 per-instance
+    // 設計（同 ASkillCreatorCharacter::ActionBus），讓未來「對敵人的傷害護盾」類效果可註冊。
+    // 2026-06-20 Round3 C-6 修正：原本敵人傷害完全沒有走攔截管線。
+    FActionBus ActionBus;
 
     // ── 戰鬥參數（依 Type 決定）──────────────────────────────────
     float GetBaseMoveInterval() const;

@@ -1,7 +1,7 @@
 # SkillCreator UE5 — Godot → UE5 遷移完整審查報告
 
 **產生日期**：2026-06-16（初版）  
-**最後更新**：2026-06-19（Round 2 稽核修復：WorldScale Grain=16 可擴縮架構、bHoldToPlace=true、PlaceCooldown 移至 Tick；GridPos.DistanceTo→已實作、EnemyManager.Tick→已實作（部分）、EventBus→架構不同；WorldScale 常數細分）  
+**最後更新**：2026-06-20（Round 3 稽核 A~F 完成 + 12 項🔴高優先修復：詳見 `docs/audit-round3-2026-06-19.md`；EngraveData雙公式/ContainerType三召喚值/EngraveCategory列舉序/act_area_fan+beam形狀/ExecuteTechnique+Morph+Domain/敵人ActionBus攔截/EventBus全域訊號等）  
 **掃描來源**：11 個 agent audit-tmp 檔，涵蓋 Godot C# 原始碼全部子系統  
 **說明**：「UE5 狀態」欄使用三種標記：**已實作** / **stub**（骨架存在但邏輯空白）/ **完全缺失**
 
@@ -100,7 +100,8 @@
 | ✅ | §2 AbilityPointCalculator | CalculateSlotCostByType / HyperbolicEffect / LinearEffect / ExceedsLevelCap | 已在前 session 確認完成 |
 | ✅ | §2 SafetyGuard | HasMp / TryProc / ResetProcMask / TryUseSpell / ResetSceneCounts | 已在前 session 確認完成 |
 | ✅ | §2 SpellRunner | PruneAfter()（時間戳快照還原） | 2026-06-16 實作完成 |
-| ✅ | §2 SpellCaster | act_area_fan / around / distant / beam / projectile / morph | 已在前 session 確認完成（ExecuteArea / ExecuteProjectileTotem / ExecuteMorph） |
+| ✅ | §2 SpellCaster | act_area_around / projectile | 已在前 session 確認完成（ExecuteArea around 分支 / ExecuteProjectileTotem） |
+| ✅ | §2 SpellCaster | act_area_fan / beam（形狀公式）、ExecuteTechnique（Multi 迴圈）、ExecuteMorph/ExecuteDomain（TotemId 分支）、ExecuteSummon（視覺占位） | 2026-06-20 Round3 修正（B-7/B-9/B-10/B-12/B-15/B-5/B-14，見 docs/audit-round3-2026-06-19.md）；2026-06-19 前的「已確認完成」是誤判 |
 | ✅ | §8 CameraController | ThirdPerson / FirstPerson / Isometric / SideScroll2D | 已在前 session 確認完成（SkillCameraTypes.h） |
 | ✅ | §1 VM | FormatTraceParams | 已在前 session 確認完成（ExecutionLoop.h/.cpp） |
 | ⏳ | §6/§7 GPU CA | CaGpuSimulator 完整實作 | M-10 長期目標，暫緩 |
@@ -186,7 +187,7 @@
 | SpellCaster.cs | TryCast 投射物容器分支 | 已實作 | `USpellCaster.cpp` L82-114 | ASpellProjectile Spawn + OnHitEnemy 回調 |
 | SpellCaster.cs | TryCast 投射物方向計算 | **已實作** | `USpellCaster.cpp` L87-92 | 浮點正規化（前 session）|
 | SpellCaster.cs | TryCast Contact 容器分支 | **已實作** | `USpellCaster.cpp` | ExecuteContactHit() 3D 前向掃描（M-5）|
-| SpellCaster.cs | TryCast SummonContainer / ExecuteSummonContainer | **stub** | — | 佔位方法，無召喚物邏輯 |
+| SpellCaster.cs | TryCast SummonContainer / ExecuteSummonContainer | **部分實作** | `USpellCaster.cpp` ExecuteSummon | 2026-06-20 修正：補回視覺占位效果（summon_minion 噴火/turret 石柱/guardian 噴水），但召喚物 AI 本體仍延遲至 W-11 |
 | SpellCaster.cs | TryCast DirectCast 分支 | 已實作 | `USpellCaster.cpp` L117-237 | 提交 ExecutionContext 到 Runner |
 | SpellCaster.cs | ExecuteContactHit() | **已實作** | `USpellCaster.cpp` | 3D 前向掃描 MeleeRange=3 + ActionBus（M-5）|
 | SpellCaster.cs | ExecuteEffects() | **架構替換** | — | UE5 改為 ExecutionLoop::Step() 狀態機驅動，無直接對應 |
@@ -194,8 +195,8 @@
 | SpellCaster.cs | ConsumeEntityMove() / ConsumeEntityDamage() | 已實作 | `USpellCaster.cpp` L26-55；`FSpellRunner.cpp` L78-93 | 完整對應 |
 | SpellCaster.cs | QueryEnemies() | 已實作 | `USpellCaster.cpp` L135-149 | EntityQuery lambda |
 | SpellCaster.cs | BuildSlotLookup() / ResolveTotem() / ExecuteSlot() / DispatchAction() | **已實作** | `USpellCaster.h` L84,86 | ResolveTotem + DispatchAction 已實作；BuildSlotLookup 改為 instruction 陣列架構 |
-| SpellCaster.cs | DispatchAction 所有 act_* 分支（act_area_fan/around/distant/beam / act_technique_* / act_morph / act_dash / act_domain / act_passive_tick）| **stub** | `USpellCaster.cpp` | 入口點存在；act_area_fan/beam/morph 以 Explode 佔位，真實形狀 stub |
-| SpellCaster.cs | ExecuteArea / ExecuteTechnique / ExecuteMorph / ExecuteDisplacement / ExecuteSummon / ExecuteDomain | **stub** | `USpellCaster.cpp` | 佔位實作（多數以 Explode 替代），真實效果 stub |
+| SpellCaster.cs | DispatchAction 所有 act_* 分支（act_area_fan/around/distant/beam / act_technique_* / act_morph / act_dash / act_domain / act_passive_tick）| **部分實作** | `USpellCaster.cpp` | 2026-06-20 修正：act_area_fan/beam 形狀公式已對齊 Godot；act_area_distant 距離公式仍有 Grain 平方級錯誤縮放（B-8，待修）；act_dash/teleport 步數仍未對齊（B-13，待修）|
+| SpellCaster.cs | ExecuteArea / ExecuteTechnique / ExecuteMorph / ExecuteDisplacement / ExecuteSummon / ExecuteDomain | **部分實作** | `USpellCaster.cpp` | 2026-06-20 修正：ExecuteTechnique 補回 Multi 迴圈+8種技能因子公式；ExecuteMorph/ExecuteDomain 補回依 TotemId 分支；ExecuteSummon 補視覺占位。ExecuteDisplacement 步數公式仍待修（B-13）|
 | SpellCaster.cs | ApplyElement() | **完全缺失** | — | 元素效果在 SpellProjectile 中簡單實作 (L75-77) |
 | SpellCaster.cs | ApplyModsToNearbyEnemies() / ReadMods() / Mods 結構 | **完全缺失** | — | 改為 ExecutionLoop 內部解析 payload |
 | SpellRunner.cs | 核心架構（Submit / Tick / Advance / ActiveCount / GetActiveCount()）| 已實作 | `FSpellRunner` (.h & .cpp) | 完整對應 |
@@ -211,7 +212,8 @@
 | SpellProjectile.cs | HitAt Runner 提交 / ExecuteEffects 同步分支 | **完全缺失** | — | 改為 OnHitEnemy callback |
 | GameAction.cs | GameAction 抽象型別 / EntityDamageAction / PlayerDamageAction / PlayerDeathAction | **完全缺失** | — | 改為 PendingEntityDamageId + Amount |
 | ActionBus.cs | ActionBus（Register / UnregisterByTag / ClearAll / Dispatch / Count）| **已實作** | `ActionBus.h` | RegisterFilter / DispatchPlayerDamage / DispatchPlayerDeath；API 不同但功能完整（M-5）|
-| EventBus.cs | Broadcast() / HasSignal() / ClearFrame() / ClearAll() | **架構不同** | `USpellCaster.cpp` L698-750 | lambda 有實作，但 per-cast 局部 TSet；Godot 的跨技能全域廣播（靜態 HashSet 跨幀共享）缺失 |
+| Enemy.cs | TakeDamage() 經 ActionBus.Dispatch(EntityDamageAction) | **已實作** | `AEnemy.h/.cpp` ActionBus 成員 | 2026-06-20 修正：AEnemy 補上專屬 FActionBus 實例，TakeDamageAmount 改走 DispatchPlayerDamage 過濾；先前完全沒有攔截管線（C-6） |
+| EventBus.cs | Broadcast() / HasSignal() / ClearFrame() / ClearAll() | **已實作** | `USpellCaster.cpp` GEventBusSignals | 2026-06-20 修正：改為檔案級 static TSet 取代 per-cast 局部集合，配合 GFrameCounter 達成跨技能廣播 + 每幀清空，對應 Godot 全域靜態 HashSet 語意（C-7）|
 | SafetyGuard.cs | MaxExecutionsPerTick / MaxWhileIterations / MaxEntityCount / MaxContainerDepth | **已實作** | `SafetyGuard.h` L11-16 | 完整對應（前 session）|
 | SafetyGuard.cs | MaxComboDepth | **已實作** | `SafetyGuard.h` L13 | constexpr MaxComboDepth=5 |
 | SafetyGuard.cs | HasMp() / TryProc() / ResetProcMask() / TryUseSpell() / ResetSceneCounts() | **已實作** | `SafetyGuard.h` L19-41 | 完整對應（前 session）|
@@ -269,13 +271,13 @@
 | TotemData.cs | Id / DisplayName / Type / BaseAbilityPointCost / RequiredPlayerLevel | **已實作** | `SpellArray.h` FTotemData | 完整 FTotemData struct（前 session）|
 | TotemType.cs | Area / Technique / Projectile / Passive / Morph / Displacement / Summon / Domain / Custom | **已實作** | `SpellArray.h` ETotemType | ETotemType 9 值（前 session）|
 | EngraveData.cs | EngraveId / Points | 已實作 | `SpellArray.h` FEngraveData | 精簡版 |
-| EngraveData.cs | Color / Category / Trigger / Scaling / Effect / CalculateEffect() | **已實作** | `SpellArray.h` FEngraveData | 精簡版（Id + Points + 上述欄位）|
-| EngraveData.cs | DisplayName / IsGlobal / BaseCost / RequiredPlayerLevel / Element（自己的欄位）/ IsRestriction / TotalAbilityPointCost | **完全缺失** | — | 2026-06-19 稽核：先前標記已實作但 FEngraveData 實際沒有這些欄位（DisplayName/RequiredPlayerLevel 存在於不相關的 FTotemData，疑似比對時誤認）；待 W-6 完整屬性 |
-| EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **已實作** | `SpellArray.h` | EEngraveColor / EEngraveCategory / EEngraveTrigger / EScalingType（前 session）|
+| EngraveData.cs | Color / Category / Trigger / Scaling / Effect / CalculateEffect() | **已實作** | `SpellArray.h` FEngraveData | 2026-06-20 修正：CalculateEffect() 改為依 Scaling 分支 Hyperbolic/Linear 雙公式（原為寫死單一線性公式，D-8）|
+| EngraveData.cs | DisplayName / IsGlobal / BaseCost / RequiredPlayerLevel / Element（自己的欄位）/ IsRestriction / TotalAbilityPointCost | **已實作** | `SpellArray.h` FEngraveData | 2026-06-20 修正：補回全部 7 個欄位/計算屬性（D-8）|
+| EngraveColor.cs | EngraveColor enum（11 值）/ EngraveCategory enum / EngraveTrigger enum / ScalingType enum | **已實作** | `SpellArray.h` | 2026-06-20 修正：EEngraveCategory 數值順序對齊 Godot（Modifier=0/Action=1，移除多餘 Other）；EEngraveTrigger 補回 OnExpire（D-7）|
 | AbilityActivationType.cs | Instant / Declare / Sustained / None | 已實作 | `ManaType.h` EAbilityActivationType | 完整對應 |
 | ContainerType.cs | DirectCast / Projectile | 已實作 | `SpellArray.h` EContainerType | 完整對應 |
 | ContainerType.cs | Contact | **已實作** | `SpellArray.h` L14 | EContainerType::Contact 存在；先前稽核誤標已移除 |
-| ContainerType.cs | SummonMinion / SummonTurret / SummonGuardian | **stub** | EContainerType::Summon | 合併為單一 Summon（AI 未實作）|
+| ContainerType.cs | SummonMinion / SummonTurret / SummonGuardian | **已實作** | `SpellArray.h` EContainerType | 2026-06-20 修正：補回三個獨立值（數值對齊 Godot 3/4/5），Area 移至尾端避免數值衝突（D-4）；召喚物 AI 仍未實作 |
 | ElementType.cs | 全部 12 個值（None / Metal / Wood / Water / Fire / Earth / Ice / Wind / Light / Dark / Thunder / Poison）| 已實作 | `ElementType.h` ESkillElementType | 改名（EElementType 被 SlateCore 佔用）2026-06-16 |
 | SaveSystem.cs | SaveGroupToString / LoadGroupFromString | **已實作** | `SpellSaveSystem.h/.cpp` | 2 個方法 |
 | SaveSystem.cs | Opts / DtoLoadout / Save / Load / ToDto / BlockToDto / FromDto 等其餘 ~12 個方法 + 6 個 DTO 類別 | **完全缺失** | — | 2026-06-19 稽核：先前整行標記已實作，但 `SpellSaveSystem.h` 只有 2 個方法；該檔案自己 §3 架構摘要其實已承認「序列化系統...完全缺失」，與本行矛盾，現已修正一致 |

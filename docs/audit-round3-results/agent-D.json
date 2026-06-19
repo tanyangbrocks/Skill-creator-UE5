@@ -1,0 +1,134 @@
+{
+  "agent": "D",
+  "section": "§3 AbilitySystem 資料型別",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "D-1",
+      "topic": "ManaTypeRegistry 18 種基礎 MP 類型核對",
+      "godot_ref": "ManaTypeRegistry.cs:18-40（修煉六道 wu_dao/xian_dao/fa_dao/yi_dao/hun_dao/gui_dao，支配六法 mo_fa/yao_li/ao_shu/shen_sheng/yuan_neng/xing_neng，世界六意 ji_neng/zhi_ye/chao_neng/shen_li/gai_nian/xun_neng；Id 1-18、SortOrder 1-18 一一對應）",
+      "ue5_ref": "ManaTypeRegistry.cpp:11-33",
+      "verdict": "✅ correct",
+      "detail": "逐一核對 18 個 key、顯示名稱、RootGroup（修煉/支配/世界 → Cultivation/Domination/World）、Id、SortOrder，UE5 Register() 呼叫順序與數值完全對應 Godot，IsComposite 全部 false 亦一致。Get()→Find()、GetSortedForHud()、AreSameRoot()、Register() 方法簽章與行為一致（ManaTypeRegistry.h:12-26 / .cpp:36-60）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-2",
+      "topic": "ManaSlot 欄位與 Tick() 公式",
+      "godot_ref": "ManaSlot.cs:10-28（DefaultMax=100f, DefaultRegenRate=1f, Tick: Current=Min(Current+RegenRate*delta, Max)）",
+      "ue5_ref": "ManaSlot.h:12-34（FManaSlot::Tick 同公式，外加 HasEnough/Consume 輔助方法）",
+      "verdict": "✅ correct",
+      "detail": "DefaultMax/DefaultRegenRate 數值一致，建構子語義一致（Current 初始化為 max），Tick() 回復公式完全一致。UE5 額外加了 HasEnough()/Consume() 兩個輔助方法（Godot 無對應，但邏輯不衝突，屬合理擴充，不算缺失）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-3",
+      "topic": "AbilityActivationType 列舉值與順序",
+      "godot_ref": "AbilityActivationType.cs:5-8（Instant=0, Declare=1, Sustained=2, None=3；MP 倍數 0.8/1.0/1.5/1.0）",
+      "ue5_ref": "ManaType.h:31-37（EAbilityActivationType: Instant, Declare, Sustained, None，同順序同註解倍數）",
+      "verdict": "✅ correct",
+      "detail": "列舉順序、底層數值、MP 倍數註解完全一致，預設值 None 亦與 SpellArray 預設一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-4",
+      "topic": "ContainerType 列舉值與順序",
+      "godot_ref": "ContainerType.cs:9-17（DirectCast, Projectile, Contact[已移除但保留相容], SummonMinion, SummonTurret, SummonGuardian，共 6 個值，三種召喚容器分別對應精靈/砲台/護衛）",
+      "ue5_ref": "SpellArray.h:10-17（EContainerType: DirectCast, Projectile, Contact, Summon, Area，共 5 個值）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot 的 SummonMinion/SummonTurret/SummonGuardian 三個獨立召喚容器類型，在 UE5 被合併成單一個 Summon 值，遺失三種召喚物的區分語義（用於存檔列舉序號轉換時會對不上：Godot SummonMinion=3, UE5 Summon=3 數值剛好對齊，但 SummonTurret=4/SummonGuardian=5 在 UE5 沒有對應值，等於資料丟失）。另外 UE5 多了一個 Godot 沒有的 Area 值（=4），與 Godot 的 SummonTurret 數值位置衝突，若曾有舊存檔用 enum int 序列化會跨版本不相容。",
+      "fix_suggestion": "在 EContainerType 補回 SummonMinion/SummonTurret/SummonGuardian 三個獨立值（或至少保留與 Godot 數值對齊的 placeholder），不要用單一 Summon 取代；若要新增 Area 容器類型應放在數值序列尾端，不要插在中間造成位移。"
+    },
+    {
+      "id": "D-5",
+      "topic": "TotemType 列舉值與順序",
+      "godot_ref": "TotemType.cs:5-13（Area, Technique, Projectile, Passive, Morph, Displacement, Summon, Domain, Custom，共 9 值）",
+      "ue5_ref": "SpellArray.h:47-57（ETotemType 同 9 值同順序）",
+      "verdict": "✅ correct",
+      "detail": "9 個值、順序、語義說明完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-6",
+      "topic": "EngraveColor 11 種顏色分類",
+      "godot_ref": "EngraveColor.cs:3-16（Action, Black, White, Orange, Blue, Red, Green, Purple, Yellow, Elemental, Law，共 11 值）",
+      "ue5_ref": "SpellArray.h:21-34（EEngraveColor 同 11 值同順序同語義註解）",
+      "verdict": "✅ correct",
+      "detail": "11 個顏色分類與語義說明（控制/侵略/輔助/額外操作/能力限制/元素/法則）完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-7",
+      "topic": "EngraveCategory / EngraveTrigger 列舉值",
+      "godot_ref": "EngraveColor.cs:19-22（EngraveCategory: Modifier, Action，共 2 值；EngraveTrigger: OnCast, OnHit, OnTick, OnExpire，共 4 值）",
+      "ue5_ref": "SpellArray.h:60-76（EEngraveCategory: Action, Modifier, Other，共 3 值；EEngraveTrigger: OnCast, OnTick, OnHit, None，共 4 值）",
+      "verdict": "⚠️ partial",
+      "detail": "Category 方面 UE5 多了一個 Godot 沒有的 Other 值，且 Modifier/Action 數值順序顛倒（Godot Modifier=0,Action=1；UE5 Action=0,Modifier=1,Other=2），enum int 互轉會錯位。Trigger 方面 Godot 有 OnExpire（技能因子過期時觸發，刻印系統重要時機點，例如持續型技能結束時的收尾效果）但 UE5 完全沒有對應值，改用語義不同的 None 取代，遺失 OnExpire 這個觸發時機。",
+      "fix_suggestion": "EEngraveCategory 改回 Modifier=0, Action=1 兩值對齊 Godot 數值序，移除多餘的 Other（或明確標註為 UE5 專用擴充並在存檔轉換層做映射）。EEngraveTrigger 補回 OnExpire 值，不要用 None 取代，否則 W-6 完整刻印系統移植時會缺少『技能因子過期收尾』這個觸發時機。"
+    },
+    {
+      "id": "D-8",
+      "topic": "EngraveData 完整欄位核對",
+      "godot_ref": "EngraveData.cs:5-49（Id, DisplayName, Color, ScalingType, ScalingCoefficient, BaseEffect, IsGlobal, BaseCost, RequiredPlayerLevel, Element, Category, Trigger, IsRestriction, PointsInvested, TotalAbilityPointCost[計算屬性], CalculateEffect()[依 ScalingType 分支：Hyperbolic=1-1/(1+a*x)，Linear=base+x*k]）",
+      "ue5_ref": "SpellArray.h:80-94（FEngraveData 只有 EngraveId, Points, Color, Category, Trigger, Scaling, Effect；CalculateEffect() 寫死 Effect*(1+Points*0.1)）",
+      "verdict": "❌ wrong/missing",
+      "detail": "UE5 FEngraveData 缺少 DisplayName、IsGlobal、BaseCost、RequiredPlayerLevel、Element（刻印自己攜帶的屬性元素，與 SpellArray.SpellElement 是不同欄位）、IsRestriction、TotalAbilityPointCost 共 7 個欄位/計算屬性。更嚴重的是 CalculateEffect() 完全沒有依 Scaling（EScalingType）分支：Godot Hyperbolic 用 1-1/(1+ScalingCoefficient*PointsInvested) 公式、Linear 用 BaseEffect+PointsInvested*ScalingCoefficient 公式，兩者係數來源（ScalingCoefficient/BaseEffect）都是各刻印獨立欄位；UE5 版本不論 Scaling 是 Hyperbolic 或 Linear，永遠套用同一個寫死的線性公式 Effect*(1+Points*0.1)，等於 Scaling 欄位形同虛設、刻印強度曲線完全跟 Godot 設計不一致。此項與 docs/issues.md:273 先前稽核（2026-06-19）的記錄相符，本次覆核確認問題仍然存在，尚未修復。",
+      "fix_suggestion": "FEngraveData 補上 DisplayName(FText)、bIsGlobal、BaseCost(int32, default 1)、RequiredPlayerLevel(int32, default 0)、Element(ESkillElementType, default None)、bIsRestriction、以及計算屬性 TotalAbilityPointCost()（IsRestriction ? -(BaseCost+Points) : BaseCost+Points）。CalculateEffect() 改為依 Scaling switch：Hyperbolic 分支用 1-1/(1+ScalingCoefficient*Points)，Linear 分支用 BaseEffect+Points*ScalingCoefficient，需要先補上 ScalingCoefficient/BaseEffect 兩個欄位（目前被簡化成單一 Effect）。"
+    },
+    {
+      "id": "D-9",
+      "topic": "SpellArray 欄位與業務方法核對",
+      "godot_ref": "SpellArray.cs:8-45（Name, Slots, Blocks, GlobalEngravings, ActivationType=None預設, Container=DirectCast預設, CastDelay=0.3f, BaseMpCost=0f, NextInCombo, SceneUseLimit=0, IsPassive[計算屬性], ContainerEffect, IsValid, MaxManaTypes=3常數）",
+      "ue5_ref": "SpellArray.h:131-209（FSpellArray 同欄位集合，ActivationType=None, Container=DirectCast, CastDelay=0.3f, BaseMpCost=0f, SceneUseLimit=0, MaxManaTypes=3）",
+      "verdict": "✅ correct",
+      "detail": "核心欄位與預設值（CastDelay 0.3f、BaseMpCost 0f、MaxManaTypes 3、ActivationType/Container 預設）逐一比對全部一致。IsValid()/IsPassive()/GetUsedManaTypes()/IsValidManaTypeCount()/HasUnboundMpBlocks()/PrimaryElement() 六個業務方法在 UE5 都有對應實作（SpellArray.h:153-196），邏輯與 Godot 對應方法（SpellArray.cs:42, 37, 50-58, 61-62, 68-70, 76-87）一致。Blocks 改用 TSharedPtr<TArray<TUniquePtr<FBlockNode>>> + BlocksJson 字串持久化的設計（非直接 UPROPERTY），是因應 UE5 反射系統限制的合理變通，不算缺失。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-10",
+      "topic": "HasUnboundMpBlocks 是否真的接到儲存驗證流程",
+      "godot_ref": "AbilityEditorUI.cs:1110（編輯器即時警告）與 :1295-1296（SaveSpell() 存檔前第 4 項驗證）兩處都呼叫 _spell.HasUnboundMpBlocks()",
+      "ue5_ref": "SpellSlotSync.h:136-174 的 ValidateSpell()，第 162-163 行呼叫 Spell.HasUnboundMpBlocks()；由 SBlockEditorWidget.cpp:138-147 的 HandleSaveClicked() 呼叫 ValidateSpell() 並在驗證失敗時彈出 modal 視窗阻擋存檔",
+      "verdict": "✅ correct",
+      "detail": "起初以為 HasUnboundMpBlocks() 只是定義在 SpellArray.h 但沒人呼叫（呼叫鏈在不同檔案，未在 Grep 第一輪命中），追加搜尋後確認 SpellSlotSync.h 的 ValidateSpell() 五項驗證（名稱非空/至少一個 Totem/主動需發動類型/MP 綁定/能力點上限）完整對應 Godot SaveSpell()（AbilityEditorUI.cs:1282-1303）五項驗證，且 SBlockEditorWidget::HandleSaveClicked() 確實在存檔前呼叫並用 modal 視窗擋下不合法的存檔，行為與 Godot AcceptDialog 模式一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-11",
+      "topic": "SaveSystem 未知 ManaTypeKey 清除機制（WARN 7）是否移植",
+      "godot_ref": "SaveSystem.cs:282-287（FromDto 還原 SpellSlot 時呼叫 ManaTypeRegistry.Get(slot.ManaTypeKey)，若回傳 null 則 GD.PushWarning 並將 slot.ManaTypeKey 清為 null，防止存檔裡殘留已失效/拼錯的 MP 類型 key）",
+      "ue5_ref": "Source\\SkillCreatorRuntime\\Private\\SpellSaveSystem.cpp 全檔（PopulateBlocksJson/RestoreBlocksFromJson/ForEachSpellArray/SaveGroupToString/LoadGroupFromString），全文 Grep 'FManaTypeRegistry' 與 'ManaTypeKey' 均無結果",
+      "verdict": "❌ wrong/missing",
+      "detail": "UE5 的 FSpellSaveSystem::LoadGroupFromString() 完全透過 FJsonObjectConverter::JsonObjectStringToUStruct 直接反序列化整個 FSpellGroup（含內部 FSpellSlot.ManaTypeKey），沒有任何後處理步驟去檢查每個還原出來的 ManaTypeKey 是否存在於 FManaTypeRegistry。若存檔內殘留一個已被移除或拼錯的 ManaTypeKey（例如重新命名 MP 類型後的舊存檔），UE5 會直接帶著無效的 FName 進入遊戲邏輯，後續 ASkillCreatorCharacter::FindManaSlot 等查找會找不到對應插槽且沒有任何警告訊息可供除錯，行為與 Godot『清除並記錄警告』的防禦性設計不一致。docs/issues.md 中沒有任何條目記錄這個特定的驗證缺口（issues.md 只在 SaveSystem.cs 整體標記『DTO 系統完全缺失，改由 CharacterSaveData 統一管理』，但沒有具體點出 WARN 7 這個防禦性清除邏輯也跟著遺失）。",
+      "fix_suggestion": "在 FSpellSaveSystem::LoadGroupFromString() 反序列化完成後，加一個 ForEachSpellArray 風格的後處理：遍歷每個 FSpellArray.Slots 的 ManaTypeKey，呼叫 FManaTypeRegistry::Get().Find(Key)，若回傳 nullptr 則用 UE_LOG 印警告並將該 Slot.ManaTypeKey 清為 NAME_None，對應 Godot SaveSystem.cs:283-287 的行為。"
+    },
+    {
+      "id": "D-12",
+      "topic": "SpellGroup / SpellLoadout 欄位與常數核對",
+      "godot_ref": "SpellGroup.cs:9（MaxGroups=5）；SpellLoadout.cs:6-7（MaxSlots=10, MaxPassiveSlots=20）",
+      "ue5_ref": "SpellGroup.h:13（MaxGroups=5）；SpellLoadout.h:13-14（MaxSlots=10, MaxPassiveSlots=20）",
+      "verdict": "✅ correct",
+      "detail": "三個容量常數數值完全一致。ActiveGroupIndex/ActiveIndex 預設 0、GetGroup/SetActiveGroup/GetSlot/SetSlot/AddPassive/RemovePassive/GetPassive/ReplacePassive/ClearAll 方法簽章與邊界檢查（index clamp / IsValidIndex）邏輯對應 Godot 的 ArgumentOutOfRangeException 防呆與陣列邊界檢查語義一致（UE5 用 IsValidIndex 回傳預設值取代例外拋出，屬合理的 C++ 慣例調整，不算缺失）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "D-13",
+      "topic": "SpellSlot 欄位核對",
+      "godot_ref": "SpellSlot.cs:7-19（Name, Totem, LocalEngravings, ManaTypeKey, IsEmpty[計算屬性], HasAnyMpBlocks[計算屬性=!IsEmpty], AbilityPointCost[計算屬性]）",
+      "ue5_ref": "SpellArray.h:113-126（FSpellSlot: Name, TotemId, TotemType, ManaTypeKey, AbilityPointCost, LocalEngravings, IsEmpty()）",
+      "verdict": "⚠️ partial",
+      "detail": "欄位大致對應，但 UE5 沒有對應 Godot HasAnyMpBlocks 計算屬性（Godot：!IsEmpty，即只要有 Totem 就視為可能消耗 MP）。改用 HasUnboundMpBlocks() 內部直接寫 !S.IsEmpty() && S.TotemType != Passive 的判斷取代，邏輯結果大致等價但多了一個 Godot 沒有的 Passive 排除條件（Godot HasUnboundMpBlocks 是 Slots.Any(HasAnyMpBlocks && ManaTypeKey==null)，沒有特別排除 Passive 插槽）。這個差異目前看影響有限（Passive 插槽通常不需要 MP），但屬於邏輯分支不完全對齊，列為部分不符。另外 AbilityPointCost 在 UE5 變成存儲欄位（由放入時複製 BaseAbilityPointCost）而非 Godot 的計算屬性（Totem.BaseAbilityPointCost + LocalEngravings 加總），UE5 版本沒有把 LocalEngravings 的 TotalAbilityPointCost 加進去，可能導致能力點計算少算刻印成本（需與 AbilityPointCalculator.cpp 對照確認是否在別處補上，本次未深入此檔案，標記為部分不符待後續確認）。",
+      "fix_suggestion": "確認 AbilityPointCalculator.cpp 是否在計算總成本時額外加上 LocalEngravings 成本；若沒有，FSpellSlot.AbilityPointCost 的計算時機需改成即時計算屬性（含 LocalEngravings 加總）而非靜態複製值，否則刻印投入點數會被完全忽略在能力點計算中。HasUnboundMpBlocks 的 Passive 排除條件建議跟 Godot 的純 !IsEmpty 判斷對齊或在註解中明確標出這是刻意的設計調整。"
+    },
+    {
+      "id": "D-14",
+      "topic": "Blocks 序列化往返（FBlockNode ↔ BlocksJson）正確性",
+      "godot_ref": "SaveSystem.cs:238-258 (BlockToDto) 與 :345-360 (BlockFromDto)：遞迴序列化 Type/Params/Then/Else/Loop，Params 用 JsonElement 保留 string/float/bool 型別精度",
+      "ue5_ref": "SpellSaveSystem.cpp:6-29（PopulateBlocksJson/RestoreBlocksFromJson 呼叫 FBlockTreeSaveData::FromBlocks/ToBlocks 做轉換）",
+      "verdict": "✅ correct",
+      "detail": "UE5 採用獨立的 FBlockTreeSaveData 結構做積木樹序列化，職責切分清楚（FBlockNodeSaveData.h 另有檔案處理，本次未深入該檔案逐欄核對，但 SpellSaveSystem.cpp 層級的呼叫順序、空樹防呆（S.Blocks->IsEmpty() 時清空 BlocksJson）、還原後若 Blocks 為空則不覆寫 S.SetBlocks 的保守處理，與 Godot 的遞迴 DTO 模式語義一致，存讀檔流程完整可用。",
+      "fix_suggestion": ""
+    }
+  ],
+  "summary": "本次核實 14 項：✅ 正確對應 7 項（D-1/2/3/5/6/9/10/12/14，實際 9 項標 ✅），⚠️ 部分不符 2 項（D-7 EngraveCategory/Trigger 列舉錯位且缺 OnExpire，D-13 SpellSlot.AbilityPointCost 疑似漏算刻印成本），❌ 錯誤或缺失 3 項（D-4 ContainerType 三種召喚容器被合併成一個且新增不存在的 Area 導致數值錯位、D-8 EngraveData 缺 7 個欄位且 CalculateEffect() 完全沒實作 Hyperbolic/Linear 雙公式、D-11 SaveSystem 完全沒有移植 Godot 的『未知 ManaTypeKey 清除並警告』防禦邏輯）。最嚴重的是 D-8：刻印系統的核心強度公式被簡化成單一線性公式，意味著所有標記為 Hyperbolic 縮放的刻印（傷害/機率類，占多數）在 UE5 實際表現會與 Godot 設計嚴重偏離；其次是 D-11 存檔安全性缺口（無防禦性清除機制，可能讓無效 MP key 流入遊戲邏輯且無警告）；第三是 D-4 ContainerType 召喚容器語義丟失，影響未來召喚物 AI 實作時的型別判斷依據。"
+}

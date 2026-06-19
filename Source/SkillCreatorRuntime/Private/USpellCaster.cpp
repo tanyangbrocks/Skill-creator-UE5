@@ -21,6 +21,25 @@ struct FAnchorState
     bool              bValid = false;
 };
 
+// ── EventBus 全域訊號集合（對應 Godot EventBus.cs:6-24 的 static HashSet）────────
+// 2026-06-20 Round3 C-7 修正：原本每次 BuildContext 都建立全新 per-cast 局部 TSet，
+// 導致同一玩家的技能A Broadcast 訊號物理上無法被技能B 的 OnReceive 收到。改為檔案級
+// static 集合，所有 USpellCaster 實例共享，並在每個新的引擎 Tick 開頭清空一次
+// （對應 Godot Main._Process 開頭呼叫 EventBus.ClearFrame()）。用 GFrameCounter 而非
+// 「每次 TickComponent 呼叫就清空」，避免同一幀內多個 SpellCaster 實例互相清掉彼此剛
+// Broadcast 的訊號。
+static TSet<FName> GEventBusSignals;
+static uint64      GEventBusLastClearedFrame = (uint64)-1;
+
+static void EventBus_ClearFrameIfNeeded()
+{
+    if (GFrameCounter != GEventBusLastClearedFrame)
+    {
+        GEventBusSignals.Reset();
+        GEventBusLastClearedFrame = GFrameCounter;
+    }
+}
+
 USpellCaster::USpellCaster()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -185,7 +204,10 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
         return true;
     }
 
-    // ── DirectCast：提交 VM 執行 Context ─────────────────────────────
+    // ── DirectCast / SummonMinion / SummonTurret / SummonGuardian：────
+    // 提交 VM 執行 Context。召喚容器目前等同 DirectCast（對應 Godot SpellCaster.cs:86-112
+    // ExecuteSummonContainer 已知 TODO-STUB：容器類型存在但行為等同直接施放，召喚物 AI
+    // 本體延遲至 W-11；顯式列出三個 case 避免被誤判為遺漏，詳見 docs/audit-round3-2026-06-19.md B-5）
     auto Ctx = BuildContext(Spell, Code);
     if (!Ctx) return false;
     Runner.Submit(MoveTemp(Ctx));
@@ -293,8 +315,6 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell)
 //  技能施放核心 — 對應 Godot SpellCaster.cs §ReadMods / DispatchAction 等
 // ─────────────────────────────────────────────────────────────────────
 
-static constexpr int32 FanRange   = 5;
-static constexpr int32 BeamRange  = 12;
 static constexpr int32 DashSteps  = 10;
 static constexpr int32 DodgeSteps = 5;
 static constexpr float NearbyR    = 3.f;
@@ -486,14 +506,27 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
         }
         else if (Shape == "act_area_fan")
         {
-            for (int32 d = 0; d < FanRange * Grain; ++d)
-            for (int32 w = -d; w <= d; ++w)
+            // 對應 Godot SpellCaster.cs:557-577：fanRange=8+baseR，spread=(d+1)/2 緩慢展開，
+            // 僅 Stone 擋格，整排（-spread..spread）都被 Stone 擋住才中斷整個 fan。
+            // （PX/PZ 取代 Godot 因 2D→3D 遷移未更新而退化為 0 的 Facing.Y 分量，
+            // 以維持「水平扇形」設計意圖，細節見 docs/audit-round3-2026-06-19.md B-7）
+            const int32 FanRangeTiles = 8 + BaseR;
+            for (int32 d = 1; d <= FanRangeTiles; ++d)
             {
-                int32 tx = Origin.X + FX*d + PX*w;
-                int32 tz = Origin.Z + FZ*d + PZ*w;
-                if (!TW->InBounds(tx, Origin.Y, tz)) continue;
-                if (TW->GetTile(tx, Origin.Y, tz) != EMaterialType::Air) break;
-                TW->Explode(tx, Origin.Y, tz, 1);
+                const int32 Spread = (d + 1) / 2;
+                bool bRowBlocked = true;
+                for (int32 s = -Spread; s <= Spread; ++s)
+                {
+                    int32 tx = Origin.X + FX*d + PX*s;
+                    int32 tz = Origin.Z + FZ*d + PZ*s;
+                    if (!TW->InBounds(tx, Origin.Y, tz)) continue;
+                    if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone) continue;
+                    bRowBlocked = false;
+                    TW->Explode(tx, Origin.Y, tz, 1);
+                    if (M.bFire)  SpawnEffectTiles(VW, "fire",  FGridPos(tx, Origin.Y, tz), 1);
+                    if (M.bWater) SpawnEffectTiles(VW, "water", FGridPos(tx, Origin.Y, tz), 1);
+                }
+                if (bRowBlocked) break;
             }
         }
         else if (Shape == "act_area_distant")
@@ -503,13 +536,20 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
         }
         else if (Shape == "act_area_beam")
         {
-            const FName BeamType = M.bFire ? FName("fire") : FName("water");
-            for (int32 d = 1; d <= BeamRange * Grain; ++d)
+            // 對應 Godot SpellCaster.cs:588-608：beamLen=18+baseR，三格寬截面（s=-1..1），
+            // 僅中心格是 Stone 才中斷整個光束，寬度格各自獨立判斷是否設置。
+            const int32 BeamLen = 18 + BaseR;
+            for (int32 d = 1; d <= BeamLen; ++d)
             {
                 int32 tx = Origin.X + FX*d, tz = Origin.Z + FZ*d;
                 if (!TW->InBounds(tx, Origin.Y, tz)) break;
-                if (TW->GetTile(tx, Origin.Y, tz) != EMaterialType::Air) break;
-                SpawnEffectTiles(VW, BeamType, FGridPos(tx, Origin.Y, tz), 1);
+                for (int32 s = -1; s <= 1; ++s)
+                {
+                    int32 bx = tx + PX*s, bz = tz + PZ*s;
+                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone)
+                        TW->SetTile(bx, Origin.Y, bz, (M.bWater || M.bIce) ? EMaterialType::Water : EMaterialType::Fire);
+                }
+                if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone) break;
             }
         }
     }
@@ -520,6 +560,10 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
 void USpellCaster::ExecuteTechnique(const FSpellSlot& Slot, FGridPos Origin,
                                      bool bAtHitPoint, AVoxelWorldActor* VW)
 {
+    // 對應 Godot SpellCaster.cs:723-809。Godot 的 fx/fy 在 2D→3D 遷移後 fy 恆為 0
+    // （PlayerController.Facing 只設 X/Z，見 docs/audit-round3-2026-06-19.md B-10），
+    // 故此處以 FX/FZ（水平面）+ PX/PZ（水平垂直分量）取代，維持武技攻擊的水平設計意圖；
+    // 半徑/距離公式刻意不乘 Grain，逐行對齊 Godot（Godot 本身也未對此函式做 Grain 縮放）。
     FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr;
     if (!TW) return;
     const FSpellMods M = ReadMods(Slot);
@@ -528,24 +572,94 @@ void USpellCaster::ExecuteTechnique(const FSpellSlot& Slot, FGridPos Origin,
     if (ASkillCreatorCharacter* Char = GetOwnerCharacter()) Fwd = Char->GetActorForwardVector();
     const int32 FX = FMath::Abs(Fwd.X) >= FMath::Abs(Fwd.Z) ? (Fwd.X > 0 ? 1 : -1) : 0;
     const int32 FZ = FMath::Abs(Fwd.Z) >  FMath::Abs(Fwd.X) ? (Fwd.Z > 0 ? 1 : -1) : 0;
+    const int32 PX = -FZ, PZ = FX;
 
-    const FName TotemId = Slot.TotemId;
-    if (TotemId == "technique_sword" || TotemId == "technique_slash")
+    const int32 R        = 2 + (int32)(M.DmgBonus * 3.f);   // Godot: r = 2 + (int)(DmgBonus*3)
+    const int32 SlashOfs = bAtHitPoint ? 0 : 4;              // Godot: slashOfs
+    const FName TotemId  = Slot.TotemId;
+
+    for (int32 Rep = 0; Rep < M.Multi; ++Rep)  // Godot: for (rep=0; rep<m.Multi; rep++)（blue_multi 刻印）
     {
-        for (int32 i = 1; i <= 3; ++i)
-            TW->Explode(Origin.X + FX*i, Origin.Y, Origin.Z + FZ*i, 2);
-    }
-    else if (TotemId == "technique_punch")
-    {
-        TW->Explode(Origin.X + FX, Origin.Y, Origin.Z + FZ, 1);
-    }
-    else if (TotemId == "technique_shield")
-    {
-        TW->Explode(Origin.X, Origin.Y, Origin.Z, 3);
-    }
-    else
-    {
-        TW->Explode(Origin.X + FX, Origin.Y, Origin.Z + FZ, 2);
+        // ── 新武技技能因子（Design B）────────────────────────────
+        if (TotemId == "technique_sword")
+        {
+            const int32 Ofs = SlashOfs + Rep * 3;
+            FGridPos Hit(Origin.X + FX*Ofs, Origin.Y, Origin.Z + FZ*Ofs);
+            TW->Explode(Hit.X, Hit.Y, Hit.Z, R);
+            if (M.bFire)  SpawnEffectTiles(VW, "fire",  Hit, R);
+            if (M.bWater) SpawnEffectTiles(VW, "water", Hit, R);
+        }
+        else if (TotemId == "technique_punch")
+        {
+            const int32 PunchR = FMath::Max(1, R - 1);
+            const int32 Ofs    = (bAtHitPoint ? 0 : 2) + Rep * 2;
+            FGridPos Hit(Origin.X + FX*Ofs, Origin.Y, Origin.Z + FZ*Ofs);
+            TW->Explode(Hit.X, Hit.Y, Hit.Z, PunchR);
+            if (M.bFire)  SpawnEffectTiles(VW, "fire",  Hit, PunchR);
+            if (M.bWater) SpawnEffectTiles(VW, "water", Hit, PunchR);
+        }
+        else if (TotemId == "technique_shield")
+        {
+            // TODO-STUB：防禦/反擊，暫以前方衝擊波佔位（對應 Godot SpellCaster.cs:755-759 同註解）
+            const int32 Ofs = SlashOfs + Rep * 2;
+            FGridPos Hit(Origin.X + FX*Ofs, Origin.Y, Origin.Z + FZ*Ofs);
+            TW->Explode(Hit.X, Hit.Y, Hit.Z, R + 1);
+        }
+        // ── 舊武技技能因子（向後相容）────────────────────────────
+        else if (TotemId == "technique_slash")
+        {
+            const int32 Ofs = SlashOfs + Rep * 3;
+            FGridPos Hit(Origin.X + FX*Ofs, Origin.Y, Origin.Z + FZ*Ofs);
+            TW->Explode(Hit.X, Hit.Y, Hit.Z, R);
+            if (M.bFire)  SpawnEffectTiles(VW, "fire",  Hit, R);
+            if (M.bWater) SpawnEffectTiles(VW, "water", Hit, R);
+        }
+        else if (TotemId == "technique_projectile")
+        {
+            const int32 Range = 15 + Rep * 5;
+            for (int32 i = 1; i <= Range; ++i)
+            {
+                int32 tx = Origin.X + FX*i, tz = Origin.Z + FZ*i;
+                EMaterialType Mat = TW->GetTile(tx, Origin.Y, tz);
+                if (Mat == EMaterialType::Stone) break;
+                TW->SetTile(tx, Origin.Y, tz, (M.bWater || M.bIce) ? EMaterialType::Water : EMaterialType::Fire);
+                if (Mat != EMaterialType::Air) break;
+            }
+        }
+        else if (TotemId == "technique_area")
+        {
+            const int32 Ar = R + 2 + Rep;
+            FGridPos Center(Origin.X + FX*Rep*2, Origin.Y, Origin.Z + FZ*Rep*2);
+            TW->Explode(Center.X, Center.Y, Center.Z, Ar);
+            if (M.bFire)  SpawnEffectTiles(VW, "fire",  Center, Ar);
+            if (M.bWater) SpawnEffectTiles(VW, "water", Center, Ar);
+            if (!M.bWater && !M.bIce)
+                SpawnEffectTiles(VW, "fire", Origin, R);
+        }
+        else if (TotemId == "technique_beam")
+        {
+            const int32 Len = 25 + Rep * 8;
+            for (int32 i = 1; i <= Len; ++i)
+            {
+                int32 tx = Origin.X + FX*i, tz = Origin.Z + FZ*i;
+                if (!TW->InBounds(tx, Origin.Y, tz)) break;
+                for (int32 s = -1; s <= 1; ++s)
+                {
+                    int32 bx = tx + PX*s, bz = tz + PZ*s;
+                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone)
+                        TW->SetTile(bx, Origin.Y, bz, M.bWater ? EMaterialType::Water : EMaterialType::Fire);
+                }
+            }
+        }
+        else if (TotemId == "technique_chain")
+        {
+            for (int32 c = 0; c < 3 + Rep; ++c)
+            {
+                const int32 Ofs = 3 + c * 3;
+                FGridPos Cp(Origin.X + FX*Ofs, Origin.Y, Origin.Z + FZ*Ofs);
+                TW->Explode(Cp.X, Cp.Y, Cp.Z, FMath::Max(1, R - c));
+            }
+        }
     }
 
     ApplyModsToNearbyEnemies(M, Origin, VW);
@@ -589,19 +703,21 @@ void USpellCaster::ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origi
 
 void USpellCaster::ExecuteMorph(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW)
 {
-    FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr;
-    if (!TW) return;
-    const FSpellMods M = ReadMods(Slot);
-    const int32 Radius = FMath::Max(1, 1 + (int32)M.DmgBonus);
-    for (int32 dx = -Radius; dx <= Radius; ++dx)
-    for (int32 dy = -Radius; dy <= Radius; ++dy)
-    for (int32 dz = -Radius; dz <= Radius; ++dz)
+    // 對應 Godot SpellCaster.cs:819-836：依 Totem.Id 分四支，各自完全不同的視覺效果
+    // （2026-06-20 Round3 B-12 修正：原本不分支，統一塞 Stone 球體，跟變幻 buff 語意無關）
+    const FName TotemId = Slot.TotemId;
+    if (TotemId == "morph_speed" || TotemId == "morph_strengthen")
     {
-        if (dx*dx + dy*dy + dz*dz > Radius*Radius) continue;
-        int32 tx = Origin.X+dx, ty = Origin.Y+dy, tz = Origin.Z+dz;
-        if (!TW->InBounds(tx, ty, tz)) continue;
-        if (TW->GetTile(tx, ty, tz) == EMaterialType::Air)
-            TW->SetTile(tx, ty, tz, EMaterialType::Stone);
+        SpawnEffectTiles(VW, "water", Origin, 1);
+    }
+    else if (TotemId == "morph_flight")
+    {
+        if (FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr)
+            TW->Explode(Origin.X, Origin.Y + 3, Origin.Z, 2);
+    }
+    else if (TotemId == "morph_invisible")
+    {
+        SpawnEffectTiles(VW, "water", Origin, 2);
     }
 }
 
@@ -650,22 +766,72 @@ void USpellCaster::ExecuteDisplacement(const FString& ActionId, const FSpellSlot
     }
 }
 
-void USpellCaster::ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* /*VW*/)
+void USpellCaster::ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW)
 {
-    // 刻意延遲至 W-11（召喚實體工廠）；目前 Summon 容器類型技能靜默略過。
-    UE_LOG(LogTemp, Verbose, TEXT("[SpellCaster] ExecuteSummon deferred (W-11): %s"), *Slot.TotemId.ToString());
+    // 召喚物 AI 本體延遲至 W-11，但補回 Godot SpellCaster.cs:873-892 的視覺占位效果，
+    // 避免施放完全無聲無息（2026-06-20 Round3 B-5/B-14 修正：原為純空函式）。
+    // Godot 的 fy 因 2D→3D 遷移後恆為 0（同 B-10 註解），故以 FZ 取代 fy 維持水平位移意圖。
+    FVector Fwd(1.f, 0.f, 0.f);
+    if (ASkillCreatorCharacter* Char = GetOwnerCharacter()) Fwd = Char->GetActorForwardVector();
+    const int32 FX = FMath::Abs(Fwd.X) >= FMath::Abs(Fwd.Z) ? (Fwd.X > 0 ? 1 : -1) : 0;
+    const int32 FZ = FMath::Abs(Fwd.Z) >  FMath::Abs(Fwd.X) ? (Fwd.Z > 0 ? 1 : -1) : 0;
+    FGridPos Sp(Origin.X + FX*4, Origin.Y, Origin.Z + FZ*4);
+
+    const FName TotemId = Slot.TotemId;
+    if (TotemId == "summon_minion")
+    {
+        SpawnEffectTiles(VW, "fire", Sp, 1);
+    }
+    else if (TotemId == "summon_turret")
+    {
+        if (FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr)
+            for (int32 dy = -1; dy <= 1; ++dy)
+                TW->SetTile(Sp.X, Sp.Y + dy, Sp.Z, EMaterialType::Stone);
+    }
+    else if (TotemId == "summon_guardian")
+    {
+        SpawnEffectTiles(VW, "water", Sp, 2);
+    }
+    UE_LOG(LogTemp, Verbose, TEXT("[SpellCaster] ExecuteSummon AI deferred (W-11): %s"), *Slot.TotemId.ToString());
 }
 
 void USpellCaster::ExecuteDomain(const FSpellSlot& Slot, FGridPos Origin, AVoxelWorldActor* VW)
 {
+    // 對應 Godot SpellCaster.cs:896-918：依 Totem.Id 分三支，三種完全不同效果
+    // （2026-06-20 Round3 B-15 修正：原本不分支，統一塞單次大爆炸）。
+    // Godot 三個半徑/位移數值均為常數，未乘 Grain/DmgBonus（逐行對齊原始碼）。
     FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr;
     if (!TW) return;
     const FSpellMods M = ReadMods(Slot);
-    const int32 DomainR = (4 + (int32)(M.DmgBonus * 4.f)) * WorldScale::GrainCurrent;
+    const FName TotemId = Slot.TotemId;
 
-    TW->Explode(Origin.X, Origin.Y, Origin.Z, DomainR);
-    if (M.bFire)  SpawnEffectTiles(VW, "fire",  Origin, DomainR);
-    if (M.bWater) SpawnEffectTiles(VW, "water", Origin, DomainR);
+    if (TotemId == "domain_barrier")
+    {
+        // 環狀護欄：360 度繞圈，每 10 度在水平半徑 8 處設置 Stone（Y 與 Origin 同高）
+        for (int32 Angle = 0; Angle < 360; Angle += 10)
+        {
+            const float Rad = (float)Angle * PI / 180.f;
+            const int32 tx = Origin.X + (int32)(FMath::Cos(Rad) * 8.f);
+            const int32 tz = Origin.Z + (int32)(FMath::Sin(Rad) * 8.f);
+            if (TW->InBounds(tx, Origin.Y, tz))
+                TW->SetTile(tx, Origin.Y, tz, EMaterialType::Stone);
+        }
+    }
+    else if (TotemId == "domain_terrain")
+    {
+        TW->Explode(Origin.X, Origin.Y, Origin.Z, 12);
+    }
+    else if (TotemId == "domain_weather")
+    {
+        // 雨幕線：沿 X 軸 -8..8，在 Origin.Y-10（較低處）鋪設 Water
+        for (int32 dx = -8; dx <= 8; ++dx)
+        {
+            const int32 tx = Origin.X + dx;
+            if (TW->InBounds(tx, Origin.Y - 10, Origin.Z))
+                TW->SetTile(tx, Origin.Y - 10, Origin.Z, EMaterialType::Water);
+        }
+    }
+
     ApplyModsToNearbyEnemies(M, Origin, VW);
 }
 
@@ -679,6 +845,7 @@ void USpellCaster::TickComponent(float DeltaTime, ELevelTick TickType,
     if (CooldownRemaining > 0.f)
         CooldownRemaining = FMath::Max(0.f, CooldownRemaining - DeltaTime);
 
+    EventBus_ClearFrameIfNeeded();
     Runner.Tick(DeltaTime);
 }
 
@@ -695,7 +862,6 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
     FTileWorld3D* TW = CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld() : nullptr;
 
     auto Ctx     = MakeUnique<FExecutionContext>(Code);
-    auto Signals = MakeShared<TSet<FName>>();
     auto Anchor  = MakeShared<FAnchorState>();
 
     Ctx->EntityQuery = [this, Char](float Radius) -> TArray<FEntityInfo>
@@ -746,8 +912,8 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
         return 0.f;
     };
 
-    Ctx->HasSignalFn = [Signals](FName S) { return Signals->Contains(S); };
-    Ctx->BroadcastFn = [Signals](FName S) { Signals->Add(S); };
+    Ctx->HasSignalFn = [](FName S) { return GEventBusSignals.Contains(S); };
+    Ctx->BroadcastFn = [](FName S) { GEventBusSignals.Add(S); };
 
     Ctx->BattleStatFn = [this](FName Key) -> float
     {

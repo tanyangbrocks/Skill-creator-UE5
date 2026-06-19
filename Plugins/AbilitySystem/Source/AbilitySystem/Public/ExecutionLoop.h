@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "ExecutionContext.h"
+#include "SafetyGuard.h"
 
 // ══════════════════════════════════════════════════════════════════
 //  FExecutionLoop — 單步 VM 執行器
@@ -13,7 +14,7 @@ class FExecutionLoop
 public:
     // FExecutionLoop 內部預算（注意：FSafetyGuard 有同名但不同層次的常數；此處為單步 Execute 範圍限制）
     static constexpr int32 MaxOpcodeDispatchPerStep = 2000;  // 單步 Execute() 最大 opcode 分派數
-    static constexpr int32 MaxWhileLoopIterations   = 1000;  // RepeatWhile 最大迭代數（同 FSafetyGuard::MaxWhileIterations 但獨立計數）
+    static constexpr int32 MaxWhileLoopIterations   = FSafetyGuard::MaxWhileIterations;  // RepeatWhile 最大迭代數，直接引用避免雙源分裂（對應 Godot SafetyGuard.cs:10 = 500）
 
     void ResetTick() { ExecutionsThisTick = 0; }
 

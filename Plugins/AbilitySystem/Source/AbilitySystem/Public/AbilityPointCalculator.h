@@ -78,7 +78,11 @@ struct FAbilityPointCalculator
     }
 
     // ── 計算技能整構能力點總消耗（W-6）────────────────────────────
-    // = Σ(slot.AbilityPointCost + Σslot.LocalEngravings[i].Points) + Σ GlobalEngravings[i].Points
+    // = Σ(slot.AbilityPointCost + Σslot.LocalEngravings[i].TotalAbilityPointCost) + Σ GlobalEngravings[i].TotalAbilityPointCost
+    // 對應 Godot AbilityPointCalculator.cs:17-28（slot.AbilityPointCost 在 Godot 端已內含
+    // LocalEngravings 加總，UE5 的 Slot.AbilityPointCost 只存 Totem 基礎成本，故在此明確加總
+    // LocalEngravings，避免漏算；2026-06-20 Round3 C-10/D-13 修正：改用 TotalAbilityPointCost()
+    // 取代原本直接加 E.Points，原本的寫法漏算 BaseCost 與限制型刻印的負值語意）
     static int32 CalculateTotalCost(const FSpellArray& Spell)
     {
         int32 Total = 0;
@@ -87,10 +91,10 @@ struct FAbilityPointCalculator
             if (Slot.IsEmpty()) continue;
             Total += Slot.AbilityPointCost;
             for (const FEngraveData& E : Slot.LocalEngravings)
-                Total += E.Points;
+                Total += E.TotalAbilityPointCost();
         }
         for (const FEngraveData& E : Spell.GlobalEngravings)
-            Total += E.Points;
+            Total += E.TotalAbilityPointCost();
         return Total;
     }
 

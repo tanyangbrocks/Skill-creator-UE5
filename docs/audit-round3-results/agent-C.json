@@ -1,0 +1,107 @@
+{
+  "agent": "C",
+  "section": "§2 SpellRunner/ActionBus/SafetyGuard/EventBus/AbilityPointCalculator",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "C-1",
+      "topic": "SafetyGuard 全部常數數值核對",
+      "godot_ref": "SafetyGuard.cs:7(MaxExecutionsPerTick=50) :10(MaxWhileIterations=500) :13(MaxComboDepth=5) :16(MaxStepsPerCast=300) :19(MaxEntityCount=100) :22(MaxContainerDepth=3)",
+      "ue5_ref": "SafetyGuard.h:11-16",
+      "verdict": "✅ correct",
+      "detail": "逐一核對六個常數，UE5 FSafetyGuard 數值與 Godot 完全一致：MaxExecutionsPerTick=50, MaxWhileIterations=500, MaxComboDepth=5, MaxStepsPerCast=300, MaxEntityCount=100, MaxContainerDepth=3。TryProc/ResetProcMask（SafetyGuard.cs:30-37 vs SafetyGuard.h:23-29）、TryUseSpell/ResetSceneCounts（SafetyGuard.cs:42-51 vs SafetyGuard.h:33-41）、HasMp（SafetyGuard.cs:25 vs SafetyGuard.h:19）邏輯也都對應正確。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "C-2",
+      "topic": "issues.md 文件錯誤：MaxComboDepth『8 vs Godot 5』的稽核記錄與實際程式碼不符",
+      "godot_ref": "SafetyGuard.cs:13",
+      "ue5_ref": "SafetyGuard.h:13；docs/issues.md:205",
+      "verdict": "⚠️ partial",
+      "detail": "docs/issues.md:205 記載「SpellRunner.cs | Submit 參數完整性 / comboDepth | stub | FActiveEntry::ComboDepth | MaxComboDepth 8 vs Godot 5」，暗示 UE5 用了 8 這個錯誤數值。但實際讀取 SafetyGuard.h:13 為 `static constexpr int32 MaxComboDepth = 5;`，與 Godot 完全一致。全專案 grep 找不到任何「8」的 ComboDepth 設定，FSpellRunner.cpp:79 使用的也是 `FSafetyGuard::MaxComboDepth`（即 5）。這是文件本身過期/錯誤的紀錄，不是程式碼 bug，但會誤導後續開發者。此外 issues.md:206「TriggerCombo() stub：無智慧查找，由遊戲層建立 Context」也已不準確，見 C-3。",
+      "fix_suggestion": "更新 docs/issues.md:205，移除「MaxComboDepth 8 vs Godot 5」的錯誤描述，改為註記實際數值已一致（5=5）。"
+    },
+    {
+      "id": "C-3",
+      "topic": "issues.md 文件過期：TriggerCombo『無智慧查找』的描述已不符目前 UE5 實作",
+      "godot_ref": "SpellRunner.cs:194-213（TriggerCombo：在 Loadout 找名稱匹配的 SpellArray，檢查 MP，扣 MP，Submit 新 ActiveSpell）",
+      "ue5_ref": "FSpellRunner.cpp:75-91；USpellCaster.cpp（OnBuildComboContext 注入點）；docs/issues.md:206",
+      "verdict": "✅ correct",
+      "detail": "issues.md:206 稱「TriggerCombo() stub：無智慧查找，由遊戲層建立 Context」。實際檢視 FSpellRunner.cpp:75-91，PendingInvokeSpell 觸發時會檢查 ComboDepth < MaxComboDepth，再呼叫 OnBuildComboContext(NextSpell) 委派給遊戲層解析 Loadout 並建立新 Context——這正是 Godot TriggerCombo 邏輯（依名稱在 Loadout 找下一個 SpellArray、檢查/扣除 MP、Submit 新的 ActiveSpell）以 callback 形式拆分到遊戲層執行，功能對等，只是程式碼位置分散在 FSpellRunner（深度檢查/事件分派）與 USpellCaster（Loadout 查找/MP 扣除，遊戲層 callback）兩處。功能完整，不是 stub。",
+      "fix_suggestion": "更新 docs/issues.md:206，移除『stub / 無智慧查找』描述，標記為已實作（callback 拆分但功能對等）。"
+    },
+    {
+      "id": "C-4",
+      "topic": "SpellRunner.Advance 跨幀核心邏輯逐項比對（Wait 狀態 / PendingInvokeTotem / PendingInvokeSpell / PendingEntityDamage / PendingEntityMove）",
+      "godot_ref": "SpellRunner.cs:141-190（Advance 方法）",
+      "ue5_ref": "SpellRunner.cpp:46-110（FSpellRunner::Advance）",
+      "verdict": "✅ correct",
+      "detail": "逐項核對：(1) 安全步數迴圈：Godot `safety++ < SafetyGuard.MaxStepsPerCast`（SpellRunner.cs:146）對應 UE5 `Safety < FSafetyGuard::MaxStepsPerCast`（SpellRunner.cpp:54），數值皆為 300。(2) 五種等待狀態檢查：Godot Waiting/WaitingSignal/WaitingCondition/WaitingRisingEdge/WaitingFallingEdge（SpellRunner.cs:152-156）vs UE5 多加一個 WaitingFrames（SpellRunner.cpp:60-65）——UE5 多檢查了一種狀態，屬於擴充非缺失。(3) PendingInvokeTotem：Godot 呼叫 SpellCaster.ConsumeInvokeTotem 處理 ForEach 定位覆蓋（SpellRunner.cs:159-163）vs UE5 透過 InvokeTotemFn/OnInvokeTotem callback（SpellRunner.cpp:67-73），邏輯對等但細節（EffectOriginOverride/atHitPoint 處理）委派給遊戲層 USpellCaster 實作（已在 Agent B 範圍核實）。(4) PendingInvokeSpell 連段：兩邊都先清空 pending 再呼叫 TriggerCombo/OnBuildComboContext，再 continue（SpellRunner.cs:166-172 vs SpellRunner.cpp:75-91）。(5) PendingEntityDamageId/PendingEntityMoveId 消費：兩邊都檢查 >=0 才處理，處理後清空再 continue（SpellRunner.cs:174-186 vs SpellRunner.cpp:93-108）。整體跨幀推進骨架完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "C-5",
+      "topic": "SpellRunner.PruneAfter：UE5 用『經過時間』取代 Godot『提交時間戳』比對，且未退還 MP",
+      "godot_ref": "SpellRunner.cs:111-122（PruneAfter(float anchorTimestamp)：移除 SubmittedAt > anchorTimestamp 的技能整構，並退還其 MpCost 給 Player.Mp）",
+      "ue5_ref": "SpellRunner.h:30,SpellRunner.cpp:23-30（PruneAfter(float MaxAgeSeconds)：移除 ElapsedTime >= MaxAgeSeconds 的條目，無 MP 退還）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 版本語意是『回滾到某個 Anchor 時間點之後提交的技能整構全部移除，並退還已扣的 MP』（用於 S-9 Anchor/Rollback 積木：取一個快照時間戳，事後可以撤銷時間點之後新提交的施法並拿回 MP）。UE5 版本簽名與語意改變為『移除已執行超過 MaxAgeSeconds 的技能整構』（用 ElapsedTime，即『跑了多久』而非『何時被提交』），且完全沒有 MP 退還機制（FActiveEntry 沒有 MpCost 欄位，FSpellRunner::PruneAfter 也沒有任何 Player.Mp 操作）。兩者語意已經不同：Godot 是『撤銷在某時間點之後的施放』，UE5 是『清除執行太久的施放』。如果 UE5 端的 Anchor/Rollback 積木呼叫此函式期望恢復 MP 並撤銷『時間點之後提交』的技能整構，目前實作無法達成該效果。",
+      "fix_suggestion": "若 UE5 的 Anchor/Rollback 積木（W系列快照機制）仍依賴 PruneAfter 達成『撤銷某時間點後施放並退 MP』效果，需要：(1) FActiveEntry 增加 SubmittedAt（提交時的累計時間）與 MpCost 欄位；(2) PruneAfter 比對邏輯改為 SubmittedAt > AnchorTimestamp；(3) 移除時呼叫遊戲層回呼把 MpCost 加回玩家 MP（類似 OnEntityDamage 的 callback 模式）。若該功能在 UE5 端確實改走別的快取機制（例如 SnapshotManager 完全側接管 MP 還原），則應在文件中明確標註此處是『刻意簡化／改道』而非單純缺失，並核實是否真的有路徑能還原 MP。"
+    },
+    {
+      "id": "C-6",
+      "topic": "ActionBus：敵人（Enemy）傷害未走過濾管線，僅玩家傷害/死亡受 DamageShield/DeathGuard 攔截",
+      "godot_ref": "Enemy.cs:422-429（TakeDamage 透過 ActionBus.Dispatch(new EntityDamageAction(Id, modified)) 讓敵人傷害也能被攔截/替代）；GameAction.cs:15（EntityDamageAction 定義）",
+      "ue5_ref": "AEnemy.cpp:56（TakeDamageAmount，全文無 ActionBus 呼叫）；ActionBus.h僅有 DispatchPlayerDamage/DispatchPlayerDeath 兩個 API，無 DispatchEntityDamage 對應",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot ActionBus 是泛用攔截匯流排：GameAction 基底類別下有 EntityDamageAction（敵人受傷，Enemy.cs:425 呼叫）、PlayerDamageAction（玩家受傷，PlayerController.cs:162）、PlayerDeathAction（玩家死亡，PlayerController.cs:177）三種動作都走同一個 Dispatch 管線，任何 Totem/積木都可以註冊 Filter 攔截『下一次敵人受傷』（例如反傷盾、敵人免傷護甲等效果）。UE5 的 FActionBus 結構被窄化成只服務玩家：成員只有 DispatchPlayerDamage()/DispatchPlayerDeath()，FActionFilterEntry::FilterType 只用到 \"DamageShield\"/\"DeathGuard\" 兩種字串且邏輯路徑都掛在 ASkillCreatorCharacter::TakeDirectDamage（ASkillCreatorCharacter.cpp:308,327）。AEnemy::TakeDamageAmount（AEnemy.cpp:56）完全沒有任何 ActionBus 呼叫，敵人身上目前不可能套用任何傷害攔截/替代邏輯。這代表『對敵人套用傷害護盾/反制』類效果在架構上完全缺失，不是參數錯誤而是整條管線缺一段。",
+      "fix_suggestion": "1) ActionBus.h 的 FActionBus 增加 DispatchEntityDamage(int32 EntityId, float Damage) 介面，過濾規則類似 DispatchPlayerDamage 但比對 EntityId；或者讓 AEnemy 自己持有一個 FActionBus 成員（類似 ASkillCreatorCharacter::ActionBus）。2) AEnemy::TakeDamageAmount 改為先過 ActionBus.DispatchEntityDamage() 取得修正後傷害再扣血，對應 Godot Enemy.cs:425-428 的 Dispatch→null 取消／否則套用 result.Amount 流程。3) 若目前設計刻意決定『敵人不需要被動防護判定』，應在文件明確記錄這是設計取捨而非疏漏。"
+    },
+    {
+      "id": "C-7",
+      "topic": "EventBus 架構差異：UE5 per-cast 局部 TSet 取代 Godot 全域靜態 HashSet，確認存在跨技能廣播缺口",
+      "godot_ref": "EventBus.cs:6-24（全域 static class，_active 為 static readonly HashSet<string>，跨所有技能整構共享；Main._Process 每幀開頭呼叫 ClearFrame() 清空，讓同幀內任何技能 Broadcast 的訊號可被同幀內任何其他技能的 OnReceive/WaitingSignal 接收）",
+      "ue5_ref": "USpellCaster.cpp:698,749-750（BuildContextDelegates 內 `auto Signals = MakeShared<TSet<FName>>()`；Ctx->HasSignalFn/BroadcastFn 都 capture 這個 per-call 建立的 Signals 集合）；ExecutionContext.h:72-73（HasSignalFn/BroadcastFn 型別宣告）",
+      "verdict": "❌ wrong/missing",
+      "detail": "核實 docs/audit-round3-2026-06-19.md 與 docs/issues.md:214 對 EventBus 的結論：『per-cast 局部 vs Godot 全域靜態』描述準確，且問題比『架構不同』更嚴重——這不只是實作方式差異，是功能性缺口。Godot 的 _active HashSet 是 static，所有技能整構共享同一份；玩家同時施放技能A（Broadcast 'combo_ready'）與技能B（OnReceive 等待 'combo_ready'）時，技能B 可以在同一幀內收到技能A 廣播的訊號（因為兩者讀寫同一個全域 HashSet）。UE5 每次 BuildContextDelegates 被呼叫（即每次 SpellCaster 施放/SpellRunner Submit 一個新 ActiveSpell）都會建立一個全新獨立的 TSet，技能A 的 BroadcastFn 寫入的是技能A 專屬的 Signals 集合，技能B 的 HasSignalFn 讀取的是技能B 專屬的另一個集合——兩者完全不相通，跨技能廣播在 UE5 端物理上不可能發生。另外 Godot 有 ClearFrame()（每幀開頭清空，訊號只在當幀有效）和 ClearAll()（場景重啟清空）兩層生命週期管理，UE5 的 per-cast Signals 既沒有『每幀清空』也沒有共享，訊號只會跟著該次施放的 Context 存活到該 Context Finished 為止（透過 TSharedPtr 引用計數，Context 銷毀才釋放），語意已經從『全域以幀為單位』變成『單次施放內部以施放生命週期為單位的私有狀態』，本質上把 Broadcast/OnReceive 積木從『跨技能訊號系統』降級成『同一個施放內部的自我訊號』，使用場景被嚴重限縮。",
+      "fix_suggestion": "在遊戲層（例如 USpellCaster 所屬 Actor 或一個新的 UEventBusSubsystem）維護一個跨所有施放共享的全域 TSet<FName>，每幀 Tick 開頭呼叫等同 ClearFrame 的清空（在 SpellRunner::Tick 或角色 Tick 最前面），BuildContextDelegates 裡的 HasSignalFn/BroadcastFn 改成指向這個全域集合而不是各自 MakeShared 的局部集合，使得跨技能 Broadcast/OnReceive 場景（連段間訊號傳遞、被動圖騰偵測其他技能的廣播等）可以正常運作，行為才能對齊 Godot EventBus 的全域語意。"
+    },
+    {
+      "id": "C-8",
+      "topic": "ActionBus 過濾邏輯三種 Mode（cancel/halve/cap）核對",
+      "godot_ref": "ExecutionLoop.cs:922-955（RegisterFilter opcode handler：damageShield 子分支讀 mode/threshold/capValue 三參數，mode switch 出 \"cancel\"=>null（全免傷）/ \"halve\"=>Amount*0.5f / \"cap\"=>Min(Amount,capValue) / 預設=>null；deathGuard 子分支永遠回傳 null 取消死亡）",
+      "ue5_ref": "ActionBus.cpp:29-52（DispatchPlayerDamage：Mode==\"Halve\"=>*0.5f；Mode==\"Cancel\"=>0；else（含 \"cap\" 或未知字串）=> CapValue<=0?0:Min(Damage,CapValue)）；ActionBus.cpp:54-64（DispatchPlayerDeath：找到 DeathGuard 一律移除並回傳 true）",
+      "verdict": "✅ correct",
+      "detail": "三種模式語意核對一致：cancel→全免傷（UE5 對應 Mode==Cancel 分支，回傳 0）；halve→傷害減半（UE5 Mode==Halve 分支，*0.5f，與 Godot pda.Amount*0.5f 一致）；cap→傷害封頂於 capValue（UE5 落入 else 分支，CapValue<=0 全擋／否則 Min(Damage,CapValue)，與 Godot \"cap\"=>Min(Amount,capValue) 邏輯等價；Godot 預設情況（無 mode 匹配）也是 null 全免傷，UE5 預設情況落入『CapValue<=0 時全擋』分支，當 CapValue 預設為 0 時行為一致）。FName 比較在 UE5 預設為大小寫不敏感（ENameCase::IgnoreCase），因此 Godot 積木產生的小寫 \"cancel\"/\"halve\"/\"cap\" 與 UE5 程式碼中 TEXT(\"Halve\")/TEXT(\"Cancel\") 的大小寫差異不影響比對結果，非真實 bug。DeathGuard 永遠 one-shot 移除並取消死亡的邏輯（Godot ExecutionLoop.cs:943-951, ActionBus.cpp:54-64）完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "C-9",
+      "topic": "ActionBus 計時機制差異：Godot per-filter oneShot 預設行為 vs UE5 DeltaTime 倒數計時",
+      "godot_ref": "ActionBus.cs:18-24,37-52（FilterEntry 無計時欄位，過濾器透過 closure 自行用 Godot.Time.GetTicksMsec() 比對到期時間，例如 SpellCaster.cs:316-323 green_invincible 用 expiryMs 手動判斷；oneShot 純粹代表『觸發一次後從 _filters 移除』，與『是否計時』無關，兩者是獨立概念）",
+      "ue5_ref": "ActionBus.h:8-16（FActionFilterEntry 內建 Remaining 倒數計時欄位，bOneShot=true 時 Remaining 設為 -1 不計時；ActionBus.cpp:17-27 Update(DeltaTime) 每幀遞減 Remaining，到期自動移除）",
+      "verdict": "✅ correct",
+      "detail": "UE5 把『計時到期自動移除』內建到 FActionBus 結構本身（Remaining 倒數 + Update()），取代 Godot 用 closure 捕捉到期時間自行判斷的寫法（如 SpellCaster.cs green_invincible 範例）。這是實作手法不同但功能對等的重構：Godot 用『各 filter 自帶到期邏輯』，UE5 用『ActionBus 統一管理到期』。兩者效果一致（DamageShield 持續 duration 秒後失效），且 UE5 版本用 DeltaTime 累加（ActionBus.cpp 註解：pause-aware，遊戲暫停時 DeltaTime=0 計時自動停止），比 Godot 用 wall-clock Time.GetTicksMsec() 更穩定（不受暫停影響）。功能正確對應，屬於合理的架構優化非缺陷。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "C-10",
+      "topic": "AbilityPointCalculator 公式全項核對",
+      "godot_ref": "AbilityPointCalculator.cs:9-14(MpMultiplier: Instant=0.8/Declare=1.0/Sustained=1.5) :17-28(CalculateTotalCost=Σslot.AbilityPointCost+ΣGlobalEngravings.TotalAbilityPointCost) :31-35(CalculateMpCost=BaseMpCost×multiplier) :38-39(HyperbolicEffect=1-1/(1+a*x)) :42-43(LinearEffect=base+x*k) :51-74(CalculateSlotCostByType：依 ManaTypeKey 比例分攤，跳過 IsEmpty 與 Totem.Type==Passive 與 ManaTypeKey is null 的 slot)",
+      "ue5_ref": "AbilityPointCalculator.h:11-20(GetMpMultiplier 同三值) :23-26(HyperbolicEffect 同公式) :29-32(LinearEffect 同公式) :35-38(CalculateMpCost 同公式) :42-65(CalculateSlotCostByType 同分攤規則，跳過條件一致) :82-95(CalculateTotalCost)",
+      "verdict": "⚠️ partial",
+      "detail": "MpMultiplier/CalculateMpCost/HyperbolicEffect/LinearEffect/CalculateSlotCostByType 五項公式與分支條件逐一核對皆與 Godot 完全一致（含 ManaTypeKey 為 None/Totem 為 Passive 時跳過分攤的條件）。唯一不一致的是 CalculateTotalCost：Godot 版本（AbilityPointCalculator.cs:17-28）只加總 `slot.AbilityPointCost`（這個屬性本身已經內含該 slot 的 LocalEngravings 加總，見 SpellSlot.cs:21-29：`AbilityPointCost => Totem.BaseAbilityPointCost + LocalEngravings.Sum(e.TotalAbilityPointCost)`），再加上 `spell.GlobalEngravings` 的 TotalAbilityPointCost。但 UE5 版本（AbilityPointCalculator.h:82-95）在迴圈裡是 `Total += Slot.AbilityPointCost; for (LocalEngravings) Total += E.Points;`——也就是說 UE5 把 Slot 的 LocalEngravings 點數加了兩次：一次隱含在 Slot.AbilityPointCost 內（如果 FSpellSlot::AbilityPointCost 的 getter 也是 BaseAbilityPointCost+LocalEngravings 加總的話），一次又在 CalculateTotalCost 的迴圈中明確加總 E.Points。需要進一步確認 FSpellSlot::AbilityPointCost 的實際定義（本次任務範圍未涵蓋 SpellSlot.h，建議由負責 AbilitySystem 資料型別的 Agent D 核實），但若 FSpellSlot.AbilityPointCost 的 getter 與 Godot SpellSlot.cs 一樣『已經內含 LocalEngravings』，則 UE5 CalculateTotalCost 存在雙重計算 bug，會讓技能整構的能力點消耗虛高（從而更早觸碰 TierApCap 上限，影響玩家可設計的技能複雜度）。",
+      "fix_suggestion": "需要 Agent D（或本人）讀取 FSpellSlot::AbilityPointCost 的實際 getter 實作（推測在 Plugins/AbilitySystem/Source/AbilitySystem/Public/SpellArray.h 或 SpellSlot.h）。若該 getter 已經把 LocalEngravings 算進去，則 FAbilityPointCalculator::CalculateTotalCost 應移除迴圈內重複的 `for (LocalEngravings) Total += E.Points;`，只留 `Total += Slot.AbilityPointCost;`，與 Godot AbilityPointCalculator.cs:22 行為一致。"
+    },
+    {
+      "id": "C-11",
+      "topic": "GameAction 型別系統：UE5 無對應的 GameAction/EntityDamageAction/PlayerDamageAction/PlayerDeathAction record 型別",
+      "godot_ref": "GameAction.cs:12-25（abstract record GameAction 基底；EntityDamageAction(int EntityId, float Amount)；PlayerDamageAction(float Amount)；PlayerDeathAction()，三種具體動作型別，供 ActionBus.Dispatch<GameAction> 泛型管線使用）",
+      "ue5_ref": "（全專案 Glob 找不到 GameAction.h 對應檔案；UE5 ActionBus 改用具名方法 DispatchPlayerDamage(float)/DispatchPlayerDeath() 取代泛型 Dispatch(GameAction) 管線）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 的 ActionBus 設計成『泛型動作匯流排』：GameAction 是開放的型別階層，任何人都可以定義新的 GameAction 子型別並透過 ActionBus.Dispatch 送進同一條管線，Filter 簽章是 `Func<GameAction, GameAction?>`，可以用 pattern matching（`action is PlayerDamageAction pda`）篩選關心的型別，其他型別直接放行。這個設計天生可擴充：要新增『道具使用攔截』『MP消耗攔截』只需要新增一個 GameAction 子型別，不需要改 ActionBus 本身。UE5 的 FActionBus 改成寫死兩個具名方法 DispatchPlayerDamage(float)/DispatchPlayerDeath()，外加 FActionFilterEntry::FilterType 用字串區分『DamageShield』/『DeathGuard』兩種已知類型——這不是型別系統而是字串標籤系統，且只服務這兩種寫死的場景。配合 C-6 的發現（敵人傷害完全沒有對應的 Dispatch 路徑），可以看出 UE5 版本是『只移植了目前用到的兩個具體案例，沒有移植泛型管線架構本身』。短期內功能等價（因為目前只有 DamageShield/DeathGuard 兩種用法），但喪失了 Godot 設計的可擴充性，且直接導致 C-6 的『敵人傷害攔截缺失』——如果有泛型 GameAction 管線，加 EntityDamageAction 只是多一個 record + 多一個 pattern match 分支；現在要加等於要新增一整個 DispatchEntityDamage 方法。",
+      "fix_suggestion": "短期：依 C-6 建議直接加 DispatchEntityDamage 方法即可滿足目前需求，不必重構整個架構。長期：若未來會新增更多種可攔截動作（道具使用、MP消耗、位移等），建議考慮把 FActionBus 改造成接受一個輕量 variant/tagged-union 或繼續用字串 FilterType+額外 payload 的方式擴充，避免每加一種動作都要新增一個 Dispatch*() 方法。"
+    }
+  ],
+  "summary": "本次核實 11 項，其中 ✅正確對應 5 項（SafetyGuard 全部常數、SpellRunner.Advance 跨幀骨架、ActionBus 三種 Mode 過濾邏輯、ActionBus 計時機制重構、TriggerCombo callback 拆分）、⚠️部分不符 4 項（issues.md 對 MaxComboDepth 的錯誤記錄、SpellRunner.PruneAfter 語意改變且無 MP 退還、AbilityPointCalculator.CalculateTotalCost 疑似雙重計算 LocalEngravings、GameAction 泛型管線退化為具名方法）、❌缺失 2 項。最嚴重的兩個 ❌ 問題：(1) C-6 敵人傷害完全沒有走 ActionBus 攔截管線（AEnemy::TakeDamageAmount 無任何 Dispatch 呼叫），導致『對敵人的傷害護盾/反制』類效果在架構上不可能實現；(2) C-7 證實並深化了既有的 EventBus 架構差異記錄——UE5 用 per-cast 局部 TSet 取代 Godot 全域靜態 HashSet，不只是『架構不同』，是真實功能缺口：跨技能廣播（技能A 的 Broadcast 被技能B 的 OnReceive 收到）在 UE5 端物理上不可能發生，且缺少 Godot 的『每幀清空』語意。另需後續核實 C-10（CalculateTotalCost 是否真的雙重計算，需配合 Agent D 確認 FSpellSlot::AbilityPointCost 定義）。"
+}

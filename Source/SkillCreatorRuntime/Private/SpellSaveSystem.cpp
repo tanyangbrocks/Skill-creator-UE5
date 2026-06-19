@@ -1,6 +1,7 @@
 #include "SpellSaveSystem.h"
 #include "FBlockNodeSaveData.h"
 #include "JsonObjectConverter.h"
+#include "ManaTypeRegistry.h"
 
 // 將一個 FSpellArray 的 Blocks（執行期 AST）寫入 BlocksJson（UPROPERTY，FJsonObjectConverter 可序列化）
 static void PopulateBlocksJson(FSpellArray& S)
@@ -26,6 +27,23 @@ static void RestoreBlocksFromJson(FSpellArray& S)
     TArray<TUniquePtr<FBlockNode>> Blocks = FBlockTreeSaveData::ToBlocks(Tree);
     if (!Blocks.IsEmpty())
         S.SetBlocks(MoveTemp(Blocks));
+}
+
+// 清除未知 ManaTypeKey（對應 Godot SaveSystem.cs:282-287：還原時若 ManaTypeRegistry.Get()
+// 找不到對應 key，清空並警告，避免已移除/拼錯的 MP 類型 key 無聲流入遊戲邏輯）
+// 2026-06-20 Round3 D-11 修正：原本完全沒有此防禦邏輯。
+static void ValidateManaTypeKeys(FSpellArray& S)
+{
+    for (FSpellSlot& Slot : S.Slots)
+    {
+        if (Slot.ManaTypeKey.IsNone()) continue;
+        if (!FManaTypeRegistry::Get().Find(Slot.ManaTypeKey))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[SpellSaveSystem] 未知 ManaTypeKey '%s'，已清除"),
+                   *Slot.ManaTypeKey.ToString());
+            Slot.ManaTypeKey = NAME_None;
+        }
+    }
 }
 
 static void ForEachSpellArray(FSpellGroup& Group, TFunctionRef<void(FSpellArray&)> Fn)
@@ -56,6 +74,7 @@ bool FSpellSaveSystem::LoadGroupFromString(const FString& Json, FSpellGroup& Out
         return false;
 
     ForEachSpellArray(Parsed, &RestoreBlocksFromJson);
+    ForEachSpellArray(Parsed, &ValidateManaTypeKeys);
 
     OutGroup = MoveTemp(Parsed);
     return true;

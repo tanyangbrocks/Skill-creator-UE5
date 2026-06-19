@@ -161,10 +161,7 @@ bool FExecutionLoop::Step(FExecutionContext& Ctx, float DeltaTime)
         else if (Ctx.PlayerStatsQuery)
             bMet = Ctx.PlayerStatsQuery(Key) < Ctx.WaitingConditionThreshold;
         else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[SpellRunner] WaitCondition: PlayerStatsQuery 未注入，條件 '%s' 永遠不成立"), *Key.ToString());
-            bMet = false;  // 無代理時條件不成立，防止靜默跳過
-        }
+            bMet = true;  // 無代理（同步路徑）→ 直接通過，對應 Godot ExecutionLoop.cs:65
 
         if (!bMet) return true;
         Ctx.WaitingConditionKey = NAME_None;

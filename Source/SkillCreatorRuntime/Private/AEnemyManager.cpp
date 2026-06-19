@@ -61,6 +61,7 @@ void AEnemyManager::Tick(float DeltaTime)
             for (AEnemy* E : Enemies)
             {
                 if (!IsValid(E) || !E->IsAlive()) continue;
+                E->ActionBus.Update(DeltaTime);  // DamageShield 倒數計時，對應 C-6 修正
                 EMaterialType Mat = static_cast<EMaterialType>(
                     TW->GetTile(E->GridPosition.X, E->GridPosition.Y, E->GridPosition.Z));
                 float Dps = 0.f;

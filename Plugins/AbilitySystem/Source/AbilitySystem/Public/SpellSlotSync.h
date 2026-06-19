@@ -3,6 +3,7 @@
 #include "SpellArray.h"
 #include "FBlockNode.h"
 #include "Instruction.h"
+#include "AbilityPointCalculator.h"
 
 // ══════════════════════════════════════════════════════════════════
 //  FSpellSlotSync — 從積木樹掃描 Totem/Engraving 積木，重建
@@ -22,13 +23,14 @@ struct FSpellSlotSync
 {
     // ── Container 推導（對應 Godot TotemToContainer，line 1229-1237）──
     // 優先序：Projectile > Summon > 其他（= DirectCast）。
-    // Summon 依 TotemId 細分：UE5 無 ContainerType.SummonMinion/Turret/Guardian
-    // 區分（EContainerType 只有單一 Summon 值），故統一對應 Summon。
+    // EContainerType 已補回 SummonMinion/Turret/Guardian 三個獨立值（2026-06-20 Round3 D-4），
+    // 但 FTotemBlockArgs 目前只有單一 ETotemType::Summon 分類（無法區分精靈/砲台/護衛），
+    // 故統一映射到 SummonMinion，待技能因子資料層補上更細分類後再精確對應。
     static EContainerType TotemToContainer(const FTotemBlockArgs* Totem)
     {
         if (!Totem) return EContainerType::DirectCast;
         if (Totem->TotemType == ETotemType::Projectile) return EContainerType::Projectile;
-        if (Totem->TotemType == ETotemType::Summon)      return EContainerType::Summon;
+        if (Totem->TotemType == ETotemType::Summon)      return EContainerType::SummonMinion;
         return EContainerType::DirectCast;
     }
 

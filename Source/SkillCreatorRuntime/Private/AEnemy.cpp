@@ -56,6 +56,10 @@ void AEnemy::BeginPlay()
 void AEnemy::TakeDamageAmount(float Amount)
 {
     float Modified = Amount * (1.f + AuraComp->DamageTakenBonus) * (1.f + AuraComp->DefensePenalty);
+
+    // 傷害護盾攔截（對應 Godot Enemy.cs:425 ActionBus.Dispatch(EntityDamageAction)）
+    Modified = ActionBus.DispatchPlayerDamage(Modified);
+
     Hp = FMath::Max(0.f, Hp - Modified);
 
     if (Modified > 0.f)

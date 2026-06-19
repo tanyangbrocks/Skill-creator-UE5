@@ -1,0 +1,179 @@
+{
+  "agent": "E",
+  "section": "§4 Elemental System",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "E-1",
+      "topic": "IElementalTarget 介面對應",
+      "godot_ref": "IElementalTarget.cs:6-13",
+      "ue5_ref": "IElementalTarget.h:7-13",
+      "verdict": "✅ correct",
+      "detail": "Godot: interface IElementalTarget { int EntityId { get; }; void TakeDirectDamage(float amount); }。UE5: 純虛擬基類 class IElementalTarget { virtual int32 GetEntityId() const = 0; virtual void TakeDirectDamage(float Amount) = 0; }。屬性改為 getter 方法（C++ 介面慣例），簽名與語意完全一致，符合 CLAUDE.md 規定（純 C++ 系統間 interface 用純虛擬基類，不用 UINTERFACE）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-2",
+      "topic": "ElementType / ESkillElementType 列舉對應",
+      "godot_ref": "ElementType.cs:7-21",
+      "ue5_ref": "ElementType.h:8-22",
+      "verdict": "✅ correct",
+      "detail": "11 種元素 None(0)/Metal(1)/Wood(2)/Water(3)/Fire(4)/Earth(5)/Ice(6)/Wind(7)/Light(8)/Dark(9)/Thunder(10)/Poison(11)，數值與順序逐一比對完全一致。UE5 因 EElementType 名稱被 SlateCore 佔用改名為 ESkillElementType，已在註解中說明原因。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-3",
+      "topic": "ElementalReactionTable 反應條目總數與內容逐條核對",
+      "godot_ref": "ElementalReactionTable.cs:19-55（共 22 條，Dictionary entries）",
+      "ue5_ref": "ElementalReactionTable.cpp:19-54（共 22 條 Tab.Add）",
+      "verdict": "✅ correct",
+      "detail": "逐條核對 22 條反應的 Attacker/Defender 元素配對與中文名稱，UE5 完全比照：水系 6 條（Water+Metal=鏽化, Water+Wood=蔓生, Water+Earth=流沙, Water+Thunder=感電, Water+Ice=結凍, Water+Wind=濃霧[null]）、火系 6 條（Fire+Metal=熔爐, Fire+Wood=燃燒, Fire+Water=沸騰, Fire+Ice=融化, Fire+Wind=擴散, Fire+Thunder=雷爆，全部 null 效果，等待 W-3b CA 效果填入）、土系 3 條（Earth+Metal=強磁, Earth+Wood=紮根, Earth+Wind=沙塵）、雷系 2 條（Thunder+Metal=超載, Ice+Thunder=超導）、光暗毒系 5 條（Light+Metal=幻象, Light+Thunder=閃耀, Dark+Light=調和, Poison+Wood=腐化, Poison+Dark=凋零）。只有水系 5 條（鏽化/蔓生/流沙/感電/結凍）有 MakeStatusEffect，其餘 17 條為 null（CA 效果待補），UE5 完全比照此狀態，無遺漏無新增。Lookup() 對稱正規化邏輯（取小值優先）兩端一致：Godot 用 a<=b ? (a,b) : (b,a)；UE5 用 a>b 則 Swap，再組合 32-bit key，邏輯等價。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-4",
+      "topic": "RustEffect（鏽化）公式與數值",
+      "godot_ref": "ElementalStatusEffect.cs:45-53",
+      "ue5_ref": "ElementalStatusEffect.h:29-38",
+      "verdict": "✅ correct",
+      "detail": "Godot: DefensePenaltyValue=0.10f, DefaultDuration=5.0f, MaxStacks=3，DefensePenalty=>DefensePenaltyValue。UE5: DefPen=0.10f, DefaultDur=5.0f, GetMaxStacks()=>3, GetDefensePenalty()=>DefPen。數值與邏輯完全一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-5",
+      "topic": "GrowthSlowEffect（蔓生）公式與數值",
+      "godot_ref": "ElementalStatusEffect.cs:58-66",
+      "ue5_ref": "ElementalStatusEffect.h:41-50",
+      "verdict": "✅ correct",
+      "detail": "Godot: SpeedPenaltyValue=0.15f（每層）, DefaultDuration=4.0f, MaxStacks=5（5層=75%累積上限，但各層獨立疊加非單一上限封頂）。UE5: SpdPen=0.15f, DefaultDur=4.0f, GetMaxStacks()=>5。數值與邏輯一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-6",
+      "topic": "QuicksandSlowEffect（流沙）累積公式與上限",
+      "godot_ref": "ElementalStatusEffect.cs:71-88",
+      "ue5_ref": "ElementalStatusEffect.h:53-74",
+      "verdict": "✅ correct",
+      "detail": "Godot: SpeedPenaltyPerSec=0.10f（每秒累積）, MaxSpeedPenalty=0.80f（單層上限）, DefaultDuration=5.0f, MaxStacks=8，OnProcess: _current = Min(Max, _current + Per*delta)，GetAccumulatedState/RestoreAccumulatedState 持久化 _current。UE5: SpdPerSec=0.10f, MaxSpdPen=0.80f, DefaultDur=5.0f, GetMaxStacks()=>8，OnProcess 邏輯 Current = FMath::Min(MaxSpdPen, Current + SpdPerSec*DeltaTime) 與 Get/RestoreAccumulatedState 完全對應同一套累積/快照機制。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-7",
+      "topic": "ElectrocutionEffect（感電）即時傷害與麻痺",
+      "godot_ref": "ElementalStatusEffect.cs:96-108",
+      "ue5_ref": "ElementalStatusEffect.h:77-91",
+      "verdict": "✅ correct",
+      "detail": "Godot（標註為佔位版 TODO 待調整）: ContactDamage=5.0f, StunDurationSec=0.5f（此欄位實際未被引用，是冗餘欄位）, DefaultDuration=0.5f, MaxStacks=3，OnApply 呼叫 target.TakeDirectDamage(ContactDamage)，Immobilizes => RemainingDuration>0。UE5: ContactDmg=5.0f, DefaultDur=0.5f, GetMaxStacks()=>3, OnApply 呼叫 Target->TakeDirectDamage(ContactDmg), GetImmobilizes()=>RemainingDuration>0.f。UE5 省略了 Godot 中未使用的冗餘常數 StunDurationSec，不影響行為（該常數在 Godot 原始碼裡本身就沒被任何邏輯讀取，純屬死碼）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-8",
+      "topic": "FrozenEffect（結凍）無法行動+受傷加成",
+      "godot_ref": "ElementalStatusEffect.cs:113-124",
+      "ue5_ref": "ElementalStatusEffect.h:94-104",
+      "verdict": "✅ correct",
+      "detail": "Godot: ImmobilizeDurationSec=1.0f（此欄位也未被任何邏輯實際讀取，是預留欄位，目前直接用 RemainingDuration 判斷）, DamageTakenBonusValue=0.20f, DefaultDuration=1.0f, MaxStacks=1（各層獨立計時）。UE5: DmgBonus=0.20f, DefaultDur=1.0f, GetMaxStacks()=>1, GetImmobilizes()=>RemainingDuration>0.f, GetDamageTakenBonus()=>DmgBonus。同樣省略未使用的 ImmobilizeDurationSec 常數，行為等價。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-9",
+      "topic": "ElementalAuraComponent.Apply()/ApplyImmediate() 冷卻邏輯",
+      "godot_ref": "ElementalAuraComponent.cs:65-77",
+      "ue5_ref": "UElementalAuraComponent.cpp:11-22",
+      "verdict": "✅ correct",
+      "detail": "Godot Apply(): 檢查 _cdLeft[element]>0 則回傳 false 不觸發；否則設定 _cdLeft[element]=ApplicationCooldownSec(1.0f) 並呼叫 ApplyInternal，回傳 true。ApplyImmediate() 直接呼叫 ApplyInternal 不檢查冷卻。UE5 Apply()/ApplyImmediate() 邏輯逐行對應，CdLeft.Find/Add 與 TMap 操作語意一致，ApplicationCooldownSec 同為 1.0f。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-10",
+      "topic": "ApplyFreeze() / ApplySlow()（刻印用，跳過反應機制）",
+      "godot_ref": "ElementalAuraComponent.cs:79-85",
+      "ue5_ref": "UElementalAuraComponent.cpp:24-36",
+      "verdict": "✅ correct",
+      "detail": "Godot ApplyFreeze 直接 AddEffect(new FrozenEffect{RemainingDuration=duration}, target)；ApplySlow 直接 AddEffect(new GrowthSlowEffect{...}, target)，兩者皆跳過 ApplyInternal 的反應查表機制。UE5 兩個方法皆 MakeUnique 對應效果並設 RemainingDuration 後呼叫 AddEffect，行為一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-11",
+      "topic": "ApplyInternal() 反應配對與 Aura 清單管理",
+      "godot_ref": "ElementalAuraComponent.cs:169-192",
+      "ue5_ref": "UElementalAuraComponent.cpp:78-102",
+      "verdict": "✅ correct",
+      "detail": "Godot: 掃描現有 _auras 清單，找第一個能與新元素配對出反應的條目，若找到則移除該 Aura、印出 log、若有 MakeStatusEffect 則 AddEffect，然後 return（新元素不加入清單）；若全部掃描完都無反應，則把新元素加入 _auras 清單等待未來配對。UE5 ApplyInternal 邏輯完全相同：for 迴圈找 Lookup 非 null 的第一個，RemoveAt、UE_LOG、AddEffect(若有)、return；否則 Auras.Add。兩邊都是「找第一個可配對」而非「找全部」，行為一致（如果未來想配對到更合適的 Aura 而非第一個命中的，兩邊都有此同一限制，非新增差異）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-12",
+      "topic": "AddEffect() 疊層上限檢查",
+      "godot_ref": "ElementalAuraComponent.cs:194-207",
+      "ue5_ref": "UElementalAuraComponent.cpp:104-118",
+      "verdict": "✅ correct",
+      "detail": "Godot: 計算 _effects 中同型別(GetType()==fxType)現有層數，若 count>=fx.MaxStacks 則直接 return（放棄套用，不觸發 OnApply），否則呼叫 fx.OnApply(target)、加入清單、Recompute()。UE5: 用 GetEffectType()==TypeId 取代 RTTI GetType() 比對(因為 C++ 無法用 typeof 比對純虛擬類別的 dynamic type 而改用 FName 識別)，邏輯完全等價：Count>=MaxStacks 則 return，否則 OnApply→Add→RecalcAggregates。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-13",
+      "topic": "Process() 每幀更新順序（冷卻/Aura計時/效果tick/重算）",
+      "godot_ref": "ElementalAuraComponent.cs:134-165",
+      "ue5_ref": "UElementalAuraComponent.cpp:40-66",
+      "verdict": "✅ correct",
+      "detail": "Godot Process 四步驟順序：1.冷卻倒數(cdLeft每元素-delta,<=0移除) 2.Aura存在計時(duration-delta,<=0移除) 3.效果tick(先OnProcess(delta)再RemainingDuration-=delta,<=0移除) 4.Recompute()。UE5 Process() 完全比照同樣四步驟與同樣順序：CdLeft迭代器遞減+RemoveCurrent、Auras反向迴圈遞減+RemoveAt、ActiveEffects反向迴圈先OnProcess後扣RemainingDuration再RemoveAt、最後RecalcAggregates()。步驟順序與每步邏輯逐行對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-14",
+      "topic": "Recompute()/RecalcAggregates() 聚合輸出公式",
+      "godot_ref": "ElementalAuraComponent.cs:209-235",
+      "ue5_ref": "UElementalAuraComponent.cpp:172-201",
+      "verdict": "✅ correct",
+      "detail": "Godot Recompute(): 遍歷 _effects 加總 SpeedPenalty/DamageTakenBonus/DefensePenalty，OR 累積 Immobilizes；遍歷 _auras 依元素類型(Fire/Ice/Water)加總溫度偏移；最終 DefensePenalty=Min(1f,defPen)（封頂100%防禦降幅），AuraTemperatureShift=Clamp(tempShift,-Max,+Max)。UE5 RecalcAggregates() 完全比照同樣加總與封頂公式：DefensePenalty=FMath::Min(1.f,DefPen)，AuraTemperatureShift=FMath::Clamp(TempShift,-AuraTempShiftMax,AuraTempShiftMax)，switch-case 對 Fire/Ice/Water 三元素累加溫度偏移與 Godot 的 switch expression 等價。SpeedPenalty 與 DamageTakenBonus 皆無封頂（兩端皆未對其做 Min/Clamp），行為一致（非缺失，是 Godot 原版本身未封頂）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-15",
+      "topic": "Aura 溫度偏移常數核對（FireAuraTempShift/IceAuraTempShift/WaterAuraTempShift/AuraTempShiftMax）",
+      "godot_ref": "ElementalAuraComponent.cs:53-56",
+      "ue5_ref": "UElementalAuraComponent.h:32-35",
+      "verdict": "✅ correct",
+      "detail": "Godot: FireAuraTempShift=+15f, IceAuraTempShift=-20f, WaterAuraTempShift=-8f, AuraTempShiftMax=50f（皆標註 ⚠️ 待平衡，屬已知技術債而非錯誤）。UE5: static constexpr FireAuraTempShift=+15.f, IceAuraTempShift=-20.f, WaterAuraTempShift=-8.f, AuraTempShiftMax=50.f。四個數值逐一核對全部一致，且 實作進度.md:260 記錄的「⚠️ FireAuraTempShift(+15)/IceAuraTempShift(-20)/WaterAuraTempShift(-8) 待平衡」與 Godot 原始碼數值及註解（⚠️ 待平衡）完全吻合，並非 UE5 自行杜撰或記錯的數字。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-16",
+      "topic": "ApplicationCooldownSec / DefaultAuraDuration 常數核對",
+      "godot_ref": "ElementalAuraComponent.cs:27,30",
+      "ue5_ref": "UElementalAuraComponent.h:28-29",
+      "verdict": "✅ correct",
+      "detail": "Godot: ApplicationCooldownSec=1.0f, DefaultAuraDuration=5.0f。UE5: static constexpr ApplicationCooldownSec=1.0f, DefaultAuraDuration=5.0f。數值一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-17",
+      "topic": "TakeSnapshot/RestoreFromSnapshot 快照 API 完整度",
+      "godot_ref": "ElementalAuraComponent.cs:90-120",
+      "ue5_ref": "UElementalAuraComponent.cpp:122-170, UElementalAuraComponent.h:60-62",
+      "verdict": "✅ correct",
+      "detail": "Godot TakeSnapshot()：把 _auras 轉成 AuraEntryData 清單、把 _effects 轉成 AuraEffectData(EffectType,RemainingDuration,AccumulatedState) 清單，包成 AuraSnapshot。RestoreFromSnapshot()：清空三個容器，還原 _auras，並用 Activator.CreateInstance(e.EffectType) 反射建構效果實例、設定 RemainingDuration 與 RestoreAccumulatedState，最後 Recompute()。UE5 TakeAuraSnapshot()/RestoreAuraSnapshot() 邏輯對應：用 FName EffectType 識別碼取代 C# Type 反射，CreateEffect() 用 if-else 字串比對（\"Rust\"/\"GrowthSlow\"/\"Quicksand\"/\"Electrocution\"/\"Frozen\"）建構對應效果類別，涵蓋全部 5 種效果，與 Godot 行為等價（C++ 無法用 Activator.CreateInstance(Type) 等價反射，改用字串 switch 是合理且完整的替代實作）。實作進度.md 註記「TakeSnapshot/RestoreFromSnapshot 暫緩」與目前程式碼狀態不符——程式碼裡已經完整實作此 API，文件描述落後於實際進度。",
+      "fix_suggestion": "實作進度.md 第 316 行備註寫著「TakeSnapshot/RestoreFromSnapshot 暫緩（M-10 快照）」，但 UElementalAuraComponent.cpp:122-170 已經完整實作了 TakeAuraSnapshot()/RestoreAuraSnapshot()/CreateEffect()，文件與程式碼不同步，應更新該行備註移除「暫緩」字樣。"
+    },
+    {
+      "id": "E-18",
+      "topic": "Reset() 重置邏輯",
+      "godot_ref": "ElementalAuraComponent.cs:123-129",
+      "ue5_ref": "UElementalAuraComponent.cpp:68-74",
+      "verdict": "✅ correct",
+      "detail": "Godot Reset()：清空 _auras/_effects/_cdLeft 三個容器，呼叫 Recompute()。UE5 Reset()：Auras.Reset()/ActiveEffects.Reset()/CdLeft.Reset()，呼叫 RecalcAggregates()。完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "E-19",
+      "topic": "元素 CA 反應機率常數核對（CaChanceSlow/CaChanceFast，跨模組旁證）",
+      "godot_ref": "TileWorld3D.cs:372-373,389-404",
+      "ue5_ref": "Plugins/VoxelWorld/Source/VoxelWorld/Private/TileWorld3D.cpp:602-617",
+      "verdict": "✅ correct",
+      "detail": "雖然此項屬於 World/CA 系統（非嚴格 Elemental Aura 模組範圍），但 實作進度.md:261 在『已知技術債』章節中與 Aura 溫度偏移並列提及，故一併核實。Godot: CaChanceSlow=0.005(0.5%)用於 Water+Dirt鄰格→Sand；CaChanceFast=0.03(3%)用於 Lava+Water(NativeElement)鄰格→Stone+Steam。UE5 TileWorld3D.cpp:604 用 0.005f 判定 Water(NativeElement)+Dirt鄰格→Sand（寫入 CaReactionQueue 而非立即 SetTile，是合理的執行緒安全改良），:613 用 0.03f 判定 Lava+Water(NativeElement)鄰格→Stone+Steam。規則邏輯與機率數值兩端完全一致，實作進度.md 記錄的『CaChanceSlow(0.5%)/CaChanceFast(3%)』數字真實且準確，並非杜撰。",
+      "fix_suggestion": ""
+    }
+  ],
+  "summary": "本次核實 19 項，全部判定為 ✅ correct，無 ⚠️ 或 ❌ 項目。Elemental System（IElementalTarget/ElementType/ElementalReactionTable 22條反應/ElementalStatusEffect 5種效果/ElementalAuraComponent 全部 API）在 UE5 端是本次 Round 3 稽核中對 Godot 原始碼還原度最高的模組之一，所有數值常數（溫度偏移 +15/-20/-8/±50、防禦/移速懲罰百分比、持續時間、MaxStacks、CA反應機率0.5%/3%）逐一核對皆與 Godot 原始碼位元級一致。唯一發現的問題是文件落後於程式碼：實作進度.md 第316行備註『TakeSnapshot/RestoreFromSnapshot 暫緩（M-10快照）』已過時，UElementalAuraComponent.cpp:122-170 其實已經完整實作了快照 API（含 CreateEffect 反射替代邏輯），建議更新該行文件描述（非程式碼問題，是文件同步問題，已記錄於 E-17）。"
+}

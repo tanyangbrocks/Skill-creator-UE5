@@ -1,0 +1,278 @@
+{
+  "agent": "A",
+  "section": "§1 VM Core（ExecutionLoop opcodes + SpellCompiler cases）",
+  "generated_at": "2026-06-20",
+  "findings": [
+    {
+      "id": "A-1",
+      "topic": "EBlockType enum 完整性",
+      "godot_ref": "BlockType.cs:1-130（共 ~104 個值，扣除分節註解）",
+      "ue5_ref": "BlockType.h:8-135",
+      "verdict": "✅ correct",
+      "detail": "逐一核對兩邊列舉值（If/Evaluate/RepeatN/RepeatWhile/ForEachNearby/Wait/Sleep/Die/RandomChoice/SequentialGate/RisingEdge/FallingEdge/AlternateTrigger/SinglePulse/Discard/EffectLabel/OnEffectStart/OnEffectEnd/InvokeSpell/InvokeTotem/TotemDone/TotemHit/TotemFizzle/SetActivationInstant/SetActivationDeclare/SetActivationSustained/SetVar/GetVar/Compare/SetVarBool/GetVarBool/ListCreate~ListClear（10個）/TaskCounterSet~Reset（5個）/QueryNear/QueryNearest/GetEntityProp/SetEntityProp/Broadcast/BroadcastAndWait/OnReceive/LoopcastIndex/SuccessCount/GetBattleStat/GetComboCount/VecMake~FocalPoint（13個）/DetectProjectile~DetectStatusChange（7個）/EndOfChain/DamageShield/DeathGuard/Anchor/Rollback/Totem/Engraving）。順序與名稱完全一致，UE5 沒有遺漏或多餘的值。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-2",
+      "topic": "EOpCode enum 完整性",
+      "godot_ref": "OpCode.cs:1-86（共 55 個值）",
+      "ue5_ref": "OpCode.h:8-95",
+      "verdict": "✅ correct",
+      "detail": "逐一核對：Wait/JumpIfFalse/Jump/SetVar/InvokeTotem/InvokeSpell/RepeatPush/RepeatStep/WhileCheck/StoreCompare/ForEachStart/ForEachStep/QueryNearest/GetEntityProp/StoreEntityProp/ListCreate/ListAppend/ListPop/ListGet/Broadcast/OnReceive/Die/SleepFrames/ReadExecStat/ListDequeue/ListSet/ListLength/ListContains/ListRemoveAt/ListClear/VecMake/VecGetComp/VecAdd/VecSub/VecScale/VecNegate/VecNorm/VecLength/VecDot/VecCross/VecFromEntity/Raycast/GetFocalPoint/ReadBattleStat/WaitCondition/QueryNearCount/RandomJump/EdgeRising/EdgeFalling/EdgeSinglePulse/TaskCounterSet/TaskCounterAdd/TaskCounterGet/TaskCounterOnReach/TaskCounterReset/RegisterFilter/AnchorSnapshot/RollbackSnapshot/AlternateJump/SetActivationMode。UE5 OpCode.h 全部 55 個值齊全，順序略有重排（依功能分組）但無遺漏。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-3",
+      "topic": "MaxWhileIterations 安全上限數值不一致",
+      "godot_ref": "SafetyGuard.cs:10（MaxWhileIterations = 500）；ExecutionLoop.cs:202（if (iters > SafetyGuard.MaxWhileIterations)）",
+      "ue5_ref": "SafetyGuard.h:12（MaxWhileIterations = 500）；ExecutionLoop.h:16（MaxWhileLoopIterations = 1000，獨立常數）；ExecutionLoop.cpp:339（if (++Iters > MaxWhileLoopIterations)）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot 只有一個全域常數 SafetyGuard.MaxWhileIterations=500，ExecutionLoop.Step 的 WhileCheck 處理直接讀這個常數，因此 RepeatWhile 的安全熔斷上限是 500 次。UE5 把 SafetyGuard.h 的 MaxWhileIterations 複製成 500（行為正確），但 ExecutionLoop.cpp 的 WhileCheck case 卻沒有使用 FSafetyGuard::MaxWhileIterations，而是用 FExecutionLoop.h 自己另外定義的 MaxWhileLoopIterations=1000（程式碼註解寫『同 FSafetyGuard::MaxWhileIterations 但獨立計數』，意圖說明是『獨立計數器』而非『獨立常數值』，但常數本身真的被設成不同的數字 1000）。結果是 UE5 的 RepeatWhile 迴圈在條件恆真時要跑到 1000 次才會 Fizzle，是 Godot 行為的 2 倍，技能整構的安全熔斷行為與原版不一致。",
+      "fix_suggestion": "把 ExecutionLoop.h 的 MaxWhileLoopIterations 改成直接引用 FSafetyGuard::MaxWhileIterations（或將其值改為 500），避免兩個常數源頭分裂。"
+    },
+    {
+      "id": "A-4",
+      "topic": "WaitCondition 無 PlayerStatsQuery 注入時的 fallback 行為相反",
+      "godot_ref": "ExecutionLoop.cs:59-65（else met = true; // 無代理（同步路徑）→ 直接通過）",
+      "ue5_ref": "ExecutionLoop.cpp:161-167（else { UE_LOG Warning; bMet = false; // 無代理時條件不成立，防止靜默跳過 }）",
+      "verdict": "❌ wrong/missing",
+      "detail": "Godot 在 WaitingCondition 狀態下，若 condKey 不是 'damaged'/'entityInRange' 且 ctx.PlayerStatsQuery 為 null（同步測試路徑，無 SpellRunner 注入代理），會直接視為條件成立並放行（met = true），讓技能整構不會卡死在沒有代理的同步測試情境。UE5 反而把這個 fallback 改成 bMet = false，永遠不放行，並打 Warning log。這是刻意的設計變更（註解寫『防止靜默跳過』），但與 Godot 原始行為完全相反：在沒有 PlayerStatsQuery 代理的情況下，Godot 版本的技能整構會立即通過 DetectHpThreshold/DetectMpThreshold 等被動觸發判斷，UE5 版本則會永久卡在 WaitingCondition 狀態。若有任何呼叫路徑（例如單元測試或缺少注入的同步施放）依賴這個 fallback，行為會不一致。",
+      "fix_suggestion": "若這是刻意的行為變更，應在 issues.md / 實作進度.md 明確記錄為『有意偏離 Godot』；若非刻意，應改回 bMet = true 以符合原版同步路徑語義。"
+    },
+    {
+      "id": "A-5",
+      "topic": "If / Evaluate 積木編譯（JumpIfFalse + Jump 跳轉位移）",
+      "godot_ref": "SpellCompiler.cs:47-72",
+      "ue5_ref": "SpellCompiler.cpp:277-300",
+      "verdict": "✅ correct",
+      "detail": "Godot：If 積木先 emit JumpIfFalse(暫存__target=0)，編譯 ThenBranch，emit Jump(暫存__target=0)，patch JumpIfFalse.__target = code.Count（即 else 分支起點），編譯 ElseBranch，patch Jump.__target = code.Count（結尾）。Evaluate 同邏輯但無 else/Jump。UE5：JifA.TargetPC=0 → Code.Add(JumpIfFalse) → EmitList(ThenBranch) → JmpIdx=Code.Num() → Code.Add(MakeJump(0)) → PatchJumpIf(JifIdx, Code.Num())（即 else 起點）→ EmitList(ElseBranch) → PatchJump(JmpIdx, Code.Num())（結尾）。兩邊位移計算邏輯與時機完全一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-6",
+      "topic": "RepeatN 編譯（RepeatPush/RepeatStep 迴圈位移 + Clamp 上限）",
+      "godot_ref": "SpellCompiler.cs:92-100；ExecutionLoop.cs:1083-1087（ClampCount：Math.Clamp((int)val, 1, 20)）",
+      "ue5_ref": "SpellCompiler.cpp:303-312；ExecutionLoop.cpp:308-309（FMath::Clamp((int32)ResolveNum(...), 1, 20)）",
+      "verdict": "✅ correct",
+      "detail": "Godot：emit RepeatPush → loopStart=code.Count → emit LoopBody → emit RepeatStep(__loopStart=loopStart)。RepeatPush 執行時 ClampCount 把次數限制在 [1,20]（與 BlockType.RepeatN 註解『重複 N 次（上限 20）』一致）。UE5：Code.Add(RepeatPush) → LoopStart=Code.Num() → EmitList(LoopBody) → Code.Add(RepeatStep{LoopStartPC=LoopStart})；RepeatPush case 內 FMath::Clamp(...,1,20) 與 Godot 數值上限一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-7",
+      "topic": "RepeatWhile 編譯（WhileCheck + 迴圈結尾 Jump 回起點）",
+      "godot_ref": "SpellCompiler.cs:102-113",
+      "ue5_ref": "SpellCompiler.cpp:315-325",
+      "verdict": "✅ correct",
+      "detail": "Godot：loopStart=code.Count → emit WhileCheck(暫存__loopEnd=0) → emit LoopBody → emit Jump(__target=loopStart) → patch WhileCheck.__loopEnd = code.Count。UE5：LoopStart=Code.Num() → Code.Add(WhileCheck{LoopEndPC=0}) → EmitList(LoopBody) → Code.Add(MakeJump(LoopStart)) → PatchWhile(WhileIdx, Code.Num())。位移計算一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-8",
+      "topic": "ForEachNearby 編譯（ForEachStart/ForEachStep 迴圈位移）",
+      "godot_ref": "SpellCompiler.cs:119-129",
+      "ue5_ref": "SpellCompiler.cpp:328-338",
+      "verdict": "✅ correct",
+      "detail": "Godot：loopStart=code.Count → emit ForEachStart(暫存__loopEnd=0) → emit LoopBody → emit ForEachStep(__loopStart=loopStart) → patch ForEachStart.__loopEnd=code.Count。UE5：ForIdx=Code.Num() → Code.Add(ForEachStart{LoopEndPC=0}) → EmitList(LoopBody) → Code.Add(ForEachStep{LoopStartPC=ForIdx}) → PatchForEach(ForIdx, Code.Num())。完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-9",
+      "topic": "RandomChoice 編譯（RandomJump 雙分支 + Jump 收尾）",
+      "godot_ref": "SpellCompiler.cs:311-326（count 固定寫死為 2）",
+      "ue5_ref": "SpellCompiler.cpp:363-381（Targets={AddrA,AddrB}，未顯式存 count，但等同 2）",
+      "verdict": "✅ correct",
+      "detail": "Godot：emit RandomJump → addrA=code.Count → emit ThenBranch → emit Jump(暫存) → addrB=code.Count → emit ElseBranch → 設定 rj.__target_0=addrA, __target_1=addrB, count=2 → patch jmpA.__target=code.Count。執行時 RandomJump 用 _rng.Next(count) 在 [0,count) 隨機挑 __target_{choice}。UE5：RandomJumpArgs.Targets=[AddrA,AddrB]，執行時 FMath::RandRange(0, Targets.Num()-1) 隨機挑 Targets[idx]。雖然儲存結構不同（Godot 用 count+索引化 key、UE5 用陣列），但兩邊都只會在兩個分支間 50/50 均等隨機，語義一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-10",
+      "topic": "AlternateTrigger 編譯（AlternateJump 奇偶分支）",
+      "godot_ref": "SpellCompiler.cs:398-413",
+      "ue5_ref": "SpellCompiler.cpp:384-402；ExecutionLoop.cpp:1048-1055（Calts++ % 2==0 → Even 否則 Odd）",
+      "verdict": "✅ correct",
+      "detail": "Godot：第 0,2,4...次呼叫 → ThenBranch(even)；第 1,3,5...次 → ElseBranch(odd)。AlternateCounts[pc] 從 0 起算，calls%2==0 時走 ThenBranch。UE5：Calls 從 FindOrAdd 預設 0 起算，Calls++ % 2==0 時走 EvenPC（注意是先用當前值判斷、後自增，與 Godot 的 'iters++' 後判斷順序相反但結果相同：兩邊都是第 0 次呼叫時用 calls=0 判斷為 even）。邏輯與分支位移計算一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-11",
+      "topic": "SinglePulse 編譯與執行（PulseArmed 棘輪邏輯）",
+      "godot_ref": "SpellCompiler.cs:259-266；ExecutionLoop.cs:812-832",
+      "ue5_ref": "SpellCompiler.cpp:341-349；ExecutionLoop.cpp:1012-1034",
+      "verdict": "✅ correct",
+      "detail": "Godot：條件 false → PulseArmed.Add(pc)（重置就緒）+ 跳過 ThenBranch；條件 true 且已 armed → 消耗（Remove）+ 進入 ThenBranch；條件 true 但未 armed（已觸發過、尚未重置）→ 跳過。UE5：!bCur → PulseArmed.Add(Pc) + PC=TargetPC；bCur && bArmed → PulseArmed.Remove(Pc) + ++PC；bCur && !bArmed → PC=TargetPC。三個分支邏輯與條件完全對應，跳轉目標皆為 patch 後的 ThenBranch 結尾。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-12",
+      "topic": "TaskCounterOnReach 編譯與 reachedKey 防重複機制",
+      "godot_ref": "SpellCompiler.cs:341-348；ExecutionLoop.cs:886-903（reachedKey = name + \\x01 + threshold.ToString(\"G\",Invariant)）",
+      "ue5_ref": "SpellCompiler.cpp:352-360；ExecutionLoop.cpp:720-741（ReachedKey = CounterName + \"_\" + SanitizeFloat(Threshold)）",
+      "verdict": "✅ correct",
+      "detail": "兩邊邏輯一致：current>=threshold 且 reachedKey 未記錄過 → 標記已達成、PC++（進ThenBranch）；否則跳到 __target/TargetPC（ThenBranch 結尾，跳過）。reachedKey 的格式化字串雖不同（Godot 用控制字元\\x01分隔+G格式；UE5 用底線分隔+SanitizeFloat），但同樣達到『counterName+threshold 組合唯一鍵』的去重目的，功能等價。TaskCounterReset 兩邊都用前綴比對清除對應的 reachedKey（Godot StartsWith(prefix)；UE5 StartsWith(Prefix)），邏輯一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-13",
+      "topic": "Compare 積木 / EvalCompare 運算子集合與容差",
+      "godot_ref": "ExecutionLoop.cs:1009-1024（>, <, =, ≠, >=, <=；容差0.0001f；未知運算子 throw）",
+      "ue5_ref": "ExecutionLoop.cpp:71-84（==, !=, <, <=, >, >=；FMath::IsNearlyEqual容差0.0001f；未知運算子 return false）",
+      "verdict": "⚠️ partial",
+      "detail": "運算子集合與容差數值一致（6種運算子，0.0001f 容差），核心比較邏輯完全對應。差異在於：(1) Godot 用全角符號 '=' 和 '≠' 作為等於/不等於運算子字串，UE5 用 ASCII '==' 和 '!='——這只是字串字面值差異，只要兩邊的編譯器/UI 產生對應字串就不影響邏輯，但若有任何資料殘留用 Godot 的全角符號傳入 UE5（例如舊存檔/編輯器UI字串未轉換），UE5 的 Op=='=' / Op=='≠' 比對會直接失敗走到 default return false，而不是丟錯，攸關沉默失敗的風險。(2) 未知運算子時 Godot 主動 throw InvalidOperationException（容易在開發期發現資料錯誤），UE5 靜默 return false（不會崩潰也不會記錄，錯誤資料難以察覺）。",
+      "fix_suggestion": "確認 M-9 編輯器寫入 FConditionArgs.Op 時一律使用 '==' / '!=' ASCII 字串（而非沿用 Godot 的全角符號）；建議在 UE5 EvalCompare 的 default 分支加 UE_LOG Warning 以便除錯期發現未知運算子。"
+    },
+    {
+      "id": "A-14",
+      "topic": "Totem 積木編譯（totemId → slotRef 查表機制）",
+      "godot_ref": "SpellCompiler.cs:9-21（建立 tsm: totemId→slotRef）、426-434（查 tsm[id] 失敗則不 emit 任何指令）",
+      "ue5_ref": "SpellCompiler.cpp:261-268（直接 ReadArgs 取得 FInvokeTotemArgs.SlotRef，若非None才emit；Tsm 參數傳入但此 case 完全沒用到）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 的 Totem 積木只攜帶 totemId（字串），編譯時動態查 tsm 字典（由 spell.Slots 在 Compile() 入口建立，totemId→slotRef）取得對應的 slotRef，找到才 emit InvokeTotem(totemName=slotRef)；找不到則完全不產生指令（id 不在 tsm 中時靜默跳過）。UE5 的 EBlockType::Totem case 完全沒有使用傳入的 Tsm 參數，而是直接從 Block.Params['args'] 讀取 FInvokeTotemArgs，要求 SlotRef 欄位在編輯期就已經被直接填好（不是執行期查表）。這代表 UE5 把『totemId 動態查 slot 對照表』的編譯期行為改成『積木本身直接攜帶 SlotRef』，雖然 Instruction.h 註解承認這是因為 UE5 缺少 TotemLibrary 資料表所以改變了機制（已知缺口），但目前 EmitBlock 連 Tsm 形參都沒使用，函式簽章保留卻完全是擺設，意味著如果未來補上 TotemLibrary 並想恢復 Godot 的『by totemId 查表』語義，這段程式碼需要整段重寫，而不只是接上資料源。",
+      "fix_suggestion": "若已知缺口暫不修復可接受，但應在 issues.md 明確標註『Totem 積木查表機制已替換為直接攜帶 SlotRef，並非缺失而是架構變更』，避免未來誤判為待修 bug；或考慮移除未使用的 Tsm 參數以減少誤導。"
+    },
+    {
+      "id": "A-15",
+      "topic": "GetVar / GetVarBool 編譯（讀變數值轉發到 resultVar）",
+      "godot_ref": "SpellCompiler.cs:292-303（GetVarBool）、380-391（GetVar）：value 欄位填入來源變數名（字串），仰賴 ExecutionLoop.ResolveNum 的『字串先試解析數值，失敗則當變數名查表』機制",
+      "ue5_ref": "SpellCompiler.cpp:86-94（SetVar/GetVar/SetVarBool/GetVarBool 共用一個 case，統一 ReadArgs<FSetVarArgs> 後 emit SetVar）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 的 GetVar/GetVarBool 是用同一個 OpCode.SetVar 模擬『複製變數』語義：Instruction.Params['value'] 被設成『來源變數名稱字串』，執行期 ResolveNum 收到字串時，先嘗試 float.TryParse 解析成字面數值，失敗才當成變數名去 InstanceVars/GlobalVars 查表——這是一個運行期『鴨子型別』判斷（字串『看起來像數字就當數字，否則當變數名』）。UE5 的 FSetVarArgs.Value 是 FNumRef（Val:float 或 Var:FName），ResolveNum 用 Ref.Var.IsNone() 判斷『有沒有指定變數名』，是編譯期就決定好的明確型別分支，沒有 Godot 那種『執行期猜字串內容』的模糊機制。這代表 UE5 把 GetVar/GetVarBool 和 SetVar/SetVarBool 四種積木型別全部塞進同一個 case 共用 FSetVarArgs 結構，正確性完全依賴 M-9 編輯器在編譯 Block.Params['args'] 時，针对 GetVar/GetVarBool 把 Value.Var 設成來源變數名（而非 Value.Val 字面值）；若編輯器寫入邏輯沒有區分這四種積木型別各自該填 Val 還是 Var，編譯結果就會出錯。由於 SpellCompiler.cpp 完全沒有區分這四個 case 各自的填值規則（只是共用同一段程式碼直接轉發 ReadArgs 結果），無法單從 VM 層級確認此正確性，必須核對 M-9 編輯器端的填值邏輯（不在本次稽核範圍）。",
+      "fix_suggestion": "需與負責 M-9 積木編輯器序列化邏輯的稽核項交叉確認：GetVar/GetVarBool 編譯時是否正確將 Value 設為 FNumRef::Ref(sourceVarName) 而非 Lit(value)。"
+    },
+    {
+      "id": "A-16",
+      "topic": "EdgeRising / EdgeFalling 編譯與執行（初次進入不立即觸發）",
+      "godot_ref": "SpellCompiler.cs:251-257；ExecutionLoop.cs:794-810",
+      "ue5_ref": "SpellCompiler.cpp:180-181；ExecutionLoop.cpp:992-1010",
+      "verdict": "✅ correct",
+      "detail": "兩邊都是：初次進入時記錄當前條件值到 EdgeState[pc]，設定 WaitingEdgePC=pc，切換到對應等待狀態（不立刻判斷觸發）；之後每幀在 Step 頂部重新求值，比較 prev/cur 判斷上升/下降邊緣。EdgeRising：!prev && cur；EdgeFalling：prev && !cur。完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-17",
+      "topic": "Wait 積木編譯與執行（duration<=0 立即跳過）",
+      "godot_ref": "SpellCompiler.cs:40-45（MapSimple）；ExecutionLoop.cs:132-143",
+      "ue5_ref": "SpellCompiler.cpp:80-85；ExecutionLoop.cpp:233-245",
+      "verdict": "✅ correct",
+      "detail": "兩邊都是：dur=ResolveNum(duration)；若 dur>0 則設定 WaitRemaining=dur 並切到 Waiting 狀態（PC不前進，由 Step 頂部計時歸零後才 PC++）；否則直接 PC++（不暫停）。邏輯完全一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-18",
+      "topic": "Sleep/SleepFrames 編譯與執行（frames 下限 clamp 為 1）",
+      "godot_ref": "SpellCompiler.cs:78-80；ExecutionLoop.cs:451-458（Math.Max(1, (int)ResolveNum(...))）",
+      "ue5_ref": "SpellCompiler.cpp:107-112；ExecutionLoop.cpp:247-254（FMath::Max(1, (int32)ResolveNum(...))）",
+      "verdict": "✅ correct",
+      "detail": "兩邊都將 frames 至少 clamp 為 1（避免 0 或負值幀數造成卡死或立即跳過），WaitingFrames 狀態下每幀遞減，歸零後才 PC++。一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-19",
+      "topic": "ListGet/ListSet/ListRemoveAt 的 1-based → 0-based 索引轉換",
+      "godot_ref": "ExecutionLoop.cs:412（idx = (int)rawIdx - 1）、516、562",
+      "ue5_ref": "ExecutionLoop.cpp:606、622、666（Idx = (int32)ResolveNum(...) - 1）",
+      "verdict": "✅ correct",
+      "detail": "三個 opcode 都用同樣的『讀取到的索引值 -1』轉換 1-based 為 0-based，再做邊界檢查（idx>=0 && idx<count，UE5 用 IsValidIndex 等價判斷）。一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-20",
+      "topic": "ListDequeue / ListPop 佇列/堆疊語義",
+      "godot_ref": "ExecutionLoop.cs:381-419、485-503",
+      "ue5_ref": "ExecutionLoop.cpp:561-597",
+      "verdict": "✅ correct",
+      "detail": "ListPop 取尾端（list[^1] / Last()，並 RemoveAt(count-1) / Pop()）；ListDequeue 取頭端（list[0]，RemoveAt(0)）。兩邊操作對象與移除位置完全對應。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-21",
+      "topic": "ListContains 浮點容差比對",
+      "godot_ref": "ExecutionLoop.cs:545（MathF.Abs(v - value) < 0.0001f）",
+      "ue5_ref": "ExecutionLoop.cpp:649-652（FMath::IsNearlyEqual(V, Search, 0.0001f)）",
+      "verdict": "✅ correct",
+      "detail": "容差數值相同（0.0001f），語義等價。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-22",
+      "topic": "VecCross 2D vs 3D 公式差異（架構性擴展，非bug）",
+      "godot_ref": "ExecutionLoop.cs:697-710（2D scalar cross: ax*by - ay*bx → resultVar 純量）；BlockType.cs:102 註解明確寫『2D scalar』",
+      "ue5_ref": "ExecutionLoop.cpp:877-889（3D vector cross: 完整三軸公式 → SetVec 寫入向量）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 的向量系統全部是 2D（name.x/name.y），VecCross 回傳純量（2D 叉積公式 ax*by-ay*bx），寫入 resultVar 單一數值。UE5 的向量系統擴展成 3D（name.x/y/z，FVecBinopArgs.Result 用 SetVec 寫入三軸），VecCross 改成完整 3D 叉積公式並寫入向量。這是 UE5 刻意把 2D 向量系統升級為 3D（配合 UE5 的 3D 世界），SpellCompiler.cpp 用同一個 FVecBinopArgs 結構處理 VecAdd/VecSub/VecDot/VecCross，但 VecDot 結果仍是純量（Ctx.InstanceVars.FindOrAdd(Result)），只有 VecCross 從 Godot 的純量改成了向量。這代表任何技能整構若用 Compare 積木去比較 VecCross 的 resultVar 數值（把它當純量讀取），在 UE5 會讀到 result.x（向量的x分量），語義跟 Godot 完全不同，是潛在的相容性風險，但因為這是 2D→3D 架構升級的必然結果，不算『翻譯錯誤』，而是已知架構差異。",
+      "fix_suggestion": "若 docs/issues.md 尚未記錄『向量系統 2D→3D 升級導致 VecCross 回傳型別由純量變向量』這項架構差異，應補充說明，避免未來移植積木資料時對 VecCross 的下游讀取方式產生誤判。"
+    },
+    {
+      "id": "A-23",
+      "topic": "QueryNearest / ForEachStart 找不到實體時的 resultVar.found 標記",
+      "godot_ref": "ExecutionLoop.cs:276-299",
+      "ue5_ref": "ExecutionLoop.cpp:424-449",
+      "verdict": "✅ correct",
+      "detail": "两边逻辑一致：EntityQuery 回傳已排序列表，list.Count>0/List.Num()>0 時寫入 found=1+x/y/hp/maxhp；否則只寫 found=0。ForEachStart 找不到實體都是直接跳到 __loopEnd/LoopEndPC，不進入迴圈體。一致（UE5 多了 z 軸欄位屬於 3D 升級的自然擴展）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-24",
+      "topic": "ResolveNum 字串解析機制（Godot『鴨子型別』vs UE5 FNumRef 明確型別）",
+      "godot_ref": "ExecutionLoop.cs:1026-1044（接受 float/int/string，string先 TryParse數值失敗才當變數名）",
+      "ue5_ref": "ExecutionLoop.cpp:41-50（FNumRef.Var.IsNone() 判斷，明確分支，無動態型別猜測）",
+      "verdict": "⚠️ partial",
+      "detail": "這是整個 Params 資料結構從 Godot『動態 Dictionary<string,object?>』改為 UE5『強型別 FInstancedStruct + FNumRef』的根本性差異，已在 CLAUDE.md 的技術決策表中記錄（『單一 FInstancedStruct Payload』）。功能上兩者都能達到『字面值或變數參照』的效果，但 Godot 的彈性更高（同一個 Params['value'] 欄位可以是 float/int/string 三種型別，由執行期猜測），UE5 要求編譯期（M-9編輯器）就把字面值與變數名分開填入 FNumRef.Val / FNumRef.Var 兩個欄位。這不是錯誤，是已知且文件化的架構轉換，但稽核時要注意：任何下游積木的『正確性』取決於編輯器是否正確產生 FNumRef，而不能只看 VM 層級的 dispatch case 是否存在。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-25",
+      "topic": "RegisterFilter / DamageShield / DeathGuard 編譯與 ActionBus 串接",
+      "godot_ref": "SpellCompiler.cs:350-364（filterType 字串硬編 'damageShield'/'deathGuard'）；ExecutionLoop.cs:916-958（mode: cancel/halve/cap; threshold; ActionBus.Register(oneShot, tag)）",
+      "ue5_ref": "SpellCompiler.cpp:186-187（FilterType='DamageShield'/'DeathGuard'，注意大小寫不同：UE5首字母大寫）；ExecutionLoop.cpp:1067-1075（RegisterFilterFn(FilterType, Mode, bOneShot, Threshold, CapValue) 轉發給外部 callback，VM 層本身不含 cancel/halve/cap 的實際運算邏輯）",
+      "verdict": "⚠️ partial",
+      "detail": "Godot 的 ExecutionLoop.RegisterFilter case 直接在 VM 內部用 switch(filterType) 處理 damageShield 的三種 mode（cancel/halve/cap）運算邏輯並呼叫 ActionBus.Register 注入 lambda；deathGuard 同理直接內嵌邏輯。UE5 的 ExecutionLoop.cpp 對應 case 只是把 FilterType/Mode/bOneShot/Threshold/CapValue 原始參數透過 Ctx.RegisterFilterFn 委派轉發出去，VM 內部完全不含 cancel/halve/cap 的判斷邏輯——這個邏輯被移到 UE5 別處實作（推測在 SpellRunner 或 ActionBus 對應的 .cpp，不在本次 §1 VM Core 稽核範圍內，需要 Agent C/負責 ActionBus 稽核的人確認該邏輯是否真的存在且與 Godot 一致）。另外 filterType 字串大小寫不同（Godot 小寫開頭 'damageShield'，UE5 大寫開頭 'DamageShield'）僅是慣例差異，只要消費端比對字串一致即不影響功能。",
+      "fix_suggestion": "需與 Agent C（ActionBus/SafetyGuard 稽核範圍）交叉確認：UE5 的 RegisterFilterFn 實際實作（cancel完全免傷/halve減半/cap傷害封頂的判斷邏輯）是否存在且與 Godot ExecutionLoop.cs:922-955 行為一致，因為 VM 層級本身找不到這段邏輯。"
+    },
+    {
+      "id": "A-26",
+      "topic": "Die 積木編譯與執行",
+      "godot_ref": "SpellCompiler.cs:74-76；ExecutionLoop.cs:447-449",
+      "ue5_ref": "SpellCompiler.cpp:190-192；ExecutionLoop.cpp:539-541",
+      "verdict": "✅ correct",
+      "detail": "兩邊都是單純 emit 一個無參數的 Die 指令，執行時直接設 State=Completed（立刻終止整個技能整構，後續指令全部跳過）。UE5 的 Die 多包了一個空的 FJumpArgs{} payload（無實際用途，純粹滿足 MakeI<T> 模板要求），不影響行為。一致。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-27",
+      "topic": "Discard / EffectLabel / Engraving 純宣告積木（不產生指令）",
+      "godot_ref": "SpellCompiler.cs:375-378（Discard, EffectLabel）、435-437（Engraving）",
+      "ue5_ref": "SpellCompiler.cpp:271-274（Discard, EffectLabel, Engraving）",
+      "verdict": "✅ correct",
+      "detail": "兩邊都對這些積木型別什麼都不做（break，不 emit 任何 Instruction）。一致（UE5 額外把 Engraving 併入同一組 case，效果相同）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-28",
+      "topic": "default case 處理未知 BlockType",
+      "godot_ref": "SpellCompiler.cs:439-441（GD.PushWarning 並 break，不中斷編譯）",
+      "ue5_ref": "SpellCompiler.cpp:404-407（UE_LOG Warning 並 break，不中斷編譯）",
+      "verdict": "✅ correct",
+      "detail": "兩邊行為一致：遇到沒有 case 處理的 BlockType 時印警告並跳過（不丟出例外、不中斷整個編譯流程）。",
+      "fix_suggestion": ""
+    },
+    {
+      "id": "A-29",
+      "topic": "ExecutionContext 欄位完整性（執行期狀態）",
+      "godot_ref": "ExecutionContext.cs:18-149（Code/PC/State/WaitRemaining/WaitFramesRemaining/MpConsumed/LoopcastIndex/LoopCounters/WhileIterCounters/EntityQuery/RaycastQuery/FocalPointQuery/EntityIterators/CurrentIterEntity/PendingEntityDamageId+Amount/PendingEntityMoveId+Pos/WaitingSignalName/EffectOriginOverride/FixedOrigin/WaitingConditionKey+Threshold/WaitingEdgePC/EdgeState/PulseArmed/PlayerStatsQuery/AnchorAction/RollbackAction/AlternateCounts/SetActivationMode/TraceMode/InstanceVars/GlobalVars/InstanceLists/GlobalLists/TaskCounters/TaskCounterReached/HitTotems/DoneTotems/FizzledTotems/PendingInvokeSpell/PendingInvokeTotem)",
+      "ue5_ref": "ExecutionContext.h:50-139",
+      "verdict": "⚠️ partial",
+      "detail": "UE5 的 FExecutionContext 涵蓋了 Godot 絕大多數欄位（含對應的 TFunction delegate 取代 C# Func<>），但缺少明確對應 Godot 的 EffectOriginOverride（GridPos?，ForEachNearby 迭代時的效果原點覆蓋，由 ConsumeInvokeTotem 設定）。UE5 標頭裡只有 FixedOrigin（對應 Godot 同名欄位），找不到 EffectOriginOverride 的對應欄位。如果 UE5 別處（SpellCaster/SpellRunner）沒有用其他機制實現『ForEachNearby 迭代時效果原點覆寫』，這個功能在 UE5 會缺失（ForEachNearby 內對每個迭代實體呼叫 InvokeTotem 時，效果可能仍以玩家位置為中心而非當前迭代實體位置）。這屬於 SpellCaster/SpellRunner 消費端的職責，建議跨 Agent B（SpellCaster）確認是否已用其他方式實現等價效果。",
+      "fix_suggestion": "與 Agent B 交叉確認：ForEachNearby 迭代執行 InvokeTotem 時，UE5 端（SpellCaster.cpp 或 SpellRunner.cpp）是否有用 CurrentIterEntity.Position 取代 EffectOriginOverride 的等價機制；若沒有，效果範圍判定可能仍以施法者位置為中心，而非每個被迭代到的目標位置，與 Godot 行為不符。"
+    },
+    {
+      "id": "A-30",
+      "topic": "RandomJump 執行：count 參數 vs Targets.Num()",
+      "godot_ref": "ExecutionLoop.cs:845-851（int count=Param<int>('count',2); choice=_rng.Next(count); PC=Param<int>($'__target_{choice}',...)）",
+      "ue5_ref": "ExecutionLoop.cpp:1037-1045（FMath::RandRange(0, Targets.Num()-1); PC=Targets[idx]）",
+      "verdict": "✅ correct",
+      "detail": "Godot 用『count 參數 + 字串拼接鍵名 __target_N』的索引式存取，UE5 用『TArray<int32> Targets』直接索引——資料結構不同但語義相同：都是從 N 個目標 PC 中均等隨機選一個跳轉。由於 SpellCompiler 兩邊都只會產生 2 個分支（RandomChoice 積木只有 ThenBranch/ElseBranch 兩個選項），目前兩種實作在實際遊玩中行為等價。",
+      "fix_suggestion": ""
+    }
+  ],
+  "summary": "核實 30 項（涵蓋 EBlockType/EOpCode 完整性、SpellCompiler 全部編譯 case 的跳轉位移計算、ExecutionLoop 全部 opcode dispatch 邏輯與安全上限常數）：✅ 正確對應 21 項，⚠️ 部分不符 7 項，❌ 錯誤/缺失 2 項。最嚴重問題：(1) A-3 RepeatWhile 安全熔斷上限 UE5 用 1000 而非 Godot 的 500（ExecutionLoop.h 自訂了一個與 SafetyGuard.MaxWhileIterations 不同步的獨立常數，註解誤導性地宣稱'同 SafetyGuard 但獨立計數'，實際數值也不同）；(2) A-4 WaitCondition 在缺少 PlayerStatsQuery 代理時的 fallback 行為完全相反（Godot 直接放行 met=true，UE5 永久卡住 bMet=false），影響任何沒有完整注入代理的同步施放路徑。其餘問題多為已知架構升級（2D→3D 向量系統、Totem 查表機制改為直接攜帶 SlotRef、Dictionary→FInstancedStruct 型別系統）或需要跨 Agent（B/C）交叉確認的職責邊界問題（RegisterFilter 實際濾鏡邏輯、EffectOriginOverride 等價機制）。"
+}
