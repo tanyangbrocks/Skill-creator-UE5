@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "BlockType.h"
 #include "UBlockEditorWidget.generated.h"
 
 class UBorder;
@@ -23,6 +24,9 @@ class SKILLCREATORRUNTIME_API UBlockEditorWidget : public UUserWidget
 public:
     // 關閉請求（對應 Godot TryExitEditor，目前先直接通知，Phase 7 補未儲存確認）
     TDelegate<void()> OnCloseRequested;
+
+    // 玩家等級（鎖等級判斷用，Phase 8 由 PlayerController 帶入真實值）
+    int32 PlayerLevel = 1;
 
 protected:
     virtual void NativeConstruct() override;
@@ -52,4 +56,34 @@ private:
     UFUNCTION() void OnGroupDot2Clicked();
     UFUNCTION() void OnGroupDot3Clicked();
     UFUNCTION() void OnGroupDot4Clicked();
+
+    // ── Phase 2：左側 Palette（三主分頁：技能因子/積木/刻印）─────────
+    // 對應 Godot AbilityEditorUI.cs:419-836
+    int32 ActiveMainTab = 0;   // 0=技能因子, 1=積木, 2=刻印
+    int32 ActiveSubTab  = 0;
+
+    TObjectPtr<UButton>      MainTabButtons[3];
+    TObjectPtr<UVerticalBox> SubTabColumn;
+    TObjectPtr<UVerticalBox> PaletteContentList;
+
+    void BuildPalette();
+    void RebuildSubTabColumn();
+    void RebuildPaletteContent();
+    void RefreshMainTabHighlight();
+
+    UFUNCTION() void OnMainTab0Clicked();
+    UFUNCTION() void OnMainTab1Clicked();
+    UFUNCTION() void OnMainTab2Clicked();
+
+    UFUNCTION() void OnSubTab0Clicked();
+    UFUNCTION() void OnSubTab1Clicked();
+    UFUNCTION() void OnSubTab2Clicked();
+    UFUNCTION() void OnSubTab3Clicked();
+    UFUNCTION() void OnSubTab4Clicked();
+    UFUNCTION() void OnSubTab5Clicked();
+    UFUNCTION() void OnSubTab6Clicked();
+    UFUNCTION() void OnSubTab7Clicked();
+    UFUNCTION() void OnSubTab8Clicked();
+    UFUNCTION() void OnSubTab9Clicked();
+    UFUNCTION() void OnSubTab10Clicked();
 };
