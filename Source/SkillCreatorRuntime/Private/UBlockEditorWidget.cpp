@@ -1,6 +1,5 @@
 #include "UBlockEditorWidget.h"
 #include "Blueprint/WidgetTree.h"
-#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/SizeBox.h"
 #include "Components/Border.h"
 #include "Components/Overlay.h"
@@ -76,20 +75,13 @@ void UBlockEditorWidget::NativeConstruct()
 
 void UBlockEditorWidget::BuildLayout()
 {
-    // 根節點需明確、非零的 desired size（沿用 UGameFlowWidget::BuildLayout 同款做法，
-    // 避免 CanvasPanel/Border FullRect anchor 在某些情況下無法解析出可用空間導致整個
-    // overlay 不可見/不可點擊）
-    const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(this);
-
-    USizeBox* RootSize = WidgetTree->ConstructWidget<USizeBox>();
-    RootSize->SetWidthOverride(ViewportSize.X);
-    RootSize->SetHeightOverride(ViewportSize.Y);
-    WidgetTree->RootWidget = RootSize;
-
+    // 根節點直接用 UBorder（不再用 SizeBox + GetViewportSize）。
+    // PlayerController 呼叫端已設 SetAnchorsInViewport(0,0,1,1) + SetOffsetsInViewport(0,0,0,0)，
+    // viewport slot 等於整個螢幕，UBorder 填滿 slot 即可。
     // Godot AbilityEditorUI.cs:126 ColorRect(0.11,0.11,0.14)
     UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
     Background->SetBrushColor(FLinearColor(0.11f, 0.11f, 0.14f, 0.98f));
-    RootSize->SetContent(Background);
+    WidgetTree->RootWidget = Background;
 
     // Overlay 讓 Phase 6/7 的確認彈窗能疊在整個編輯器上層
     UOverlay* RootOverlay = WidgetTree->ConstructWidget<UOverlay>();

@@ -5,8 +5,6 @@
 #include "ASkillCreatorGameMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "Blueprint/WidgetTree.h"
-#include "Blueprint/WidgetLayoutLibrary.h"
-#include "Components/SizeBox.h"
 #include "Components/Border.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
@@ -43,20 +41,12 @@ static FCharacterSummaryInfo ToSummary(const FCharacterSaveData& D)
 
 void UGameFlowWidget::BuildLayout()
 {
-    // 根節點需要明確、非零的 desired size，否則 VerticalBox 裡的 Fill-size
-    // 子項（ScrollBox）無「可填滿的空間」可參照，整個選單可能變成不可見、不可
-    // 點擊。改用 SizeBox + 顯式 WidthOverride/HeightOverride：desired size
-    // 直接等於覆寫值，沒有任何依賴子項或 anchor 解析的模糊空間。
-    const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(this);
-
-    USizeBox* RootSize = WidgetTree->ConstructWidget<USizeBox>();
-    RootSize->SetWidthOverride(ViewportSize.X);
-    RootSize->SetHeightOverride(ViewportSize.Y);
-    WidgetTree->RootWidget = RootSize;
-
+    // 根節點直接用 UBorder（不再用 SizeBox + GetViewportSize）。
+    // GameMode 呼叫端已設 SetAnchorsInViewport(0,0,1,1) + SetOffsetsInViewport(0,0,0,0)，
+    // viewport slot 的大小等於整個螢幕，UBorder 填滿 slot 即可，不需要再問 viewport 尺寸。
     UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
     Background->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.65f));
-    RootSize->SetContent(Background);
+    WidgetTree->RootWidget = Background;
 
     // 角色畫面 / 世界畫面疊在同一位置，靠 ShowScreen() 切換可見性
     // （對應 Godot ShowScreen：同一時間只顯示一個 Panel）

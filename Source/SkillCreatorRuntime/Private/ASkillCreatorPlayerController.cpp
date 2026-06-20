@@ -138,6 +138,8 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
         BlockEditorWidget->OnSaveSpell.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorSave);
         BlockEditorWidget->OnCloseRequested.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorClosed);
         BlockEditorWidget->AddToViewport(20);
+        BlockEditorWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+        BlockEditorWidget->SetOffsetsInViewport(FMargin(0.f, 0.f, 0.f, 0.f));
     }
 
     if (!bBlockEditorOpen)

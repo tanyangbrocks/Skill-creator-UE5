@@ -47,9 +47,11 @@ void ASkillCreatorGameMode::BeginPlay()
         if (GameFlowWidget)
         {
             GameFlowWidget->AddToViewport(100);
-            // 確保 viewport slot 真的撐滿整個畫面（不依賴 AddToViewport 的隱含預設行為）。
+            // viewport slot 設成 anchor fill(0,0→1,1) + offset 全零 → slot 等於整個螢幕，
+            // Widget 根節點 UBorder 填滿 slot 即完整覆蓋畫面。
             GameFlowWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
             GameFlowWidget->SetAlignmentInViewport(FVector2D(0.f, 0.f));
+            GameFlowWidget->SetOffsetsInViewport(FMargin(0.f, 0.f, 0.f, 0.f));
             FInputModeUIOnly InputMode;
             InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
             PC->SetInputMode(InputMode);
