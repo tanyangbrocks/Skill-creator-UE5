@@ -26,6 +26,7 @@
 #include "ManaTypeRegistry.h"
 #include "SafetyGuard.h"
 #include "Instruction.h"
+#include "SpellGroup.h"
 #include "Components/ProgressBar.h"
 #include "Components/SpinBox.h"
 
@@ -153,6 +154,7 @@ UWidget* UBlockEditorWidget::BuildHeader()
     // 技能名稱輸入框（Godot AbilityEditorUI.cs:174-179，180×34）
     SpellNameBox = WidgetTree->ConstructWidget<UEditableTextBox>();
     SpellNameBox->SetHintText(FText::FromString(TEXT("輸入技能整構名稱（必填）")));
+    SpellNameBox->OnTextCommitted.AddDynamic(this, &UBlockEditorWidget::OnSpellNameCommitted);
     if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(SpellNameBox))
     {
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -266,15 +268,14 @@ void UBlockEditorWidget::OnBackClicked()
         RefreshHeaderState();
         return;
     }
-    // Phase 7 補：root 層時若 bIsDirty 要先彈確認對話框（對應 Godot TryExitEditor）
-    OnCloseRequested.ExecuteIfBound();
+    TryExitEditor();
 }
 
-void UBlockEditorWidget::OnGroupDot0Clicked() {}
-void UBlockEditorWidget::OnGroupDot1Clicked() {}
-void UBlockEditorWidget::OnGroupDot2Clicked() {}
-void UBlockEditorWidget::OnGroupDot3Clicked() {}
-void UBlockEditorWidget::OnGroupDot4Clicked() {}
+void UBlockEditorWidget::OnGroupDot0Clicked() { SwitchGroup(0); }
+void UBlockEditorWidget::OnGroupDot1Clicked() { SwitchGroup(1); }
+void UBlockEditorWidget::OnGroupDot2Clicked() { SwitchGroup(2); }
+void UBlockEditorWidget::OnGroupDot3Clicked() { SwitchGroup(3); }
+void UBlockEditorWidget::OnGroupDot4Clicked() { SwitchGroup(4); }
 
 // ══════════════════════════════════════════════════════════════════
 //  Phase 2：左側 Palette（對應 Godot AbilityEditorUI.cs:419-836）
@@ -542,12 +543,16 @@ void UBlockEditorWidget::SetEditingSpell(FSpellArray* InSpell)
     if (CurrentSpell && !CurrentSpell->Blocks.IsValid())
         CurrentSpell->SetBlocks({}); // 全新技能整構：先給空陣列，Palette 拖拉才有東西可插入
     CurrentBlocks = CurrentSpell ? CurrentSpell->Blocks.Get() : nullptr;
+    if (SpellNameBox)
+        SpellNameBox->SetText(FText::FromString(CurrentSpell ? CurrentSpell->Name : FString()));
     RebuildList();
+    bIsDirty = false; // 載入既有資料不算「使用者編輯」，RebuildList 內部會先設 true，這裡重置回乾淨狀態
     RefreshHeaderState();
 }
 
 void UBlockEditorWidget::RebuildList()
 {
+    bIsDirty = true; // 對應 Godot 幾乎每個編輯 callback 都設 _isDirty=true；SetEditingSpell 載入後會重置回 false
     if (!CenterList) return;
     CenterList->ClearChildren();
     if (!CurrentBlocks)
@@ -624,6 +629,19 @@ void UBlockEditorWidget::BuildStatsPanel()
         S->SetPadding(FMargin(6.f, 0.f));
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
     }
+
+    // 儲存按鈕（Phase 7，對應 Godot SaveSpell() 觸發點）
+    SaveButton = WidgetTree->ConstructWidget<UButton>();
+    SaveButton->SetBackgroundColor(FLinearColor(0.20f, 0.45f, 0.25f, 1.f));
+    {
+        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+        Txt->SetText(FText::FromString(TEXT("儲存技能整構")));
+        Txt->SetJustification(ETextJustify::Center);
+        SaveButton->AddChild(Txt);
+    }
+    SaveButton->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSaveButtonClicked);
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(SaveButton))
+        S->SetPadding(FMargin(6.f, 8.f));
 
     RefreshStatsPanel();
 }
@@ -805,17 +823,22 @@ void UBlockEditorWidget::ShowConfirmDialog(const FString& Title, const FString& 
     if (UHorizontalBoxSlot* S = BtnRow->AddChildToHorizontalBox(ConfirmBtn))
         S->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
 
-    UButton* CancelBtn = WidgetTree->ConstructWidget<UButton>();
-    CancelBtn->SetBackgroundColor(FLinearColor(0.30f, 0.20f, 0.20f, 1.f));
+    // CancelLabel 空字串 = 純確認型對話框（對應 Godot AcceptDialog，例如儲存失敗的錯誤訊息），
+    // 不需要第二顆按鈕
+    if (!CancelLabel.IsEmpty())
     {
-        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
-        Txt->SetText(FText::FromString(CancelLabel));
-        CancelBtn->AddChild(Txt);
+        UButton* CancelBtn = WidgetTree->ConstructWidget<UButton>();
+        CancelBtn->SetBackgroundColor(FLinearColor(0.30f, 0.20f, 0.20f, 1.f));
+        {
+            UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+            Txt->SetText(FText::FromString(CancelLabel));
+            CancelBtn->AddChild(Txt);
+        }
+        PendingDialogCancel = MoveTemp(OnCancel);
+        CancelBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnConfirmDialogCancelClicked);
+        BtnRow->AddChildToHorizontalBox(CancelBtn);
     }
     ConfirmOverlay->SetVisibility(ESlateVisibility::Visible);
-    PendingDialogCancel = MoveTemp(OnCancel);
-    CancelBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnConfirmDialogCancelClicked);
-    BtnRow->AddChildToHorizontalBox(CancelBtn);
 
     ConfirmOverlay->SetContent(DialogBox);
     ConfirmOverlay->SetHorizontalAlignment(HAlign_Center);
@@ -838,4 +861,103 @@ void UBlockEditorWidget::OnConfirmDialogCancelClicked()
     PendingDialogConfirm = nullptr;
     PendingDialogCancel  = nullptr;
     if (Callback) Callback();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Phase 7：儲存/驗證/未儲存確認/技能組切換（對應 Godot AbilityEditorUI.cs:
+//  231-327,1276-1345）
+// ══════════════════════════════════════════════════════════════════
+
+void UBlockEditorWidget::OnSpellNameCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+    if (!CurrentSpell) return;
+    CurrentSpell->Name = Text.ToString();
+    bIsDirty = true;
+    RefreshStatsPanel(); // 名稱也出現在技能摘要文字裡，對應 Godot RefreshDescription()
+}
+
+void UBlockEditorWidget::OnSaveButtonClicked()
+{
+    HandleSaveClicked();
+}
+
+void UBlockEditorWidget::HandleSaveClicked()
+{
+    // 對應 Godot SaveSpell()（AbilityEditorUI.cs:1276-1345）：先同步 Slots，5 項驗證
+    // 全過才真正廣播給 PlayerController 寫回 Loadout
+    if (!RootSpell) return;
+    TArray<TUniquePtr<FBlockNode>> EmptyBlocks;
+    TArray<TUniquePtr<FBlockNode>>* RootBlocks = RootSpell->Blocks.IsValid() ? RootSpell->Blocks.Get() : &EmptyBlocks;
+
+    FSpellSlotSync::SyncSlotsFromBlocks(*RootSpell);
+    const TArray<FString> Errors = FSpellSlotSync::ValidateSpell(*RootSpell, *RootBlocks, PlayerLevel);
+    if (Errors.Num() > 0)
+    {
+        ShowValidationErrors(Errors);
+        return;
+    }
+
+    bIsDirty = false;
+    if (StatusLabel)
+        StatusLabel->SetText(FText::FromString(
+            FString::Printf(TEXT("✓ 槽位 %d「%s」已存"), ActiveSlotIndex + 1, *RootSpell->Name)));
+    OnSaveSpell.ExecuteIfBound(RootSpell->Name, ActiveSlotIndex);
+}
+
+void UBlockEditorWidget::ShowValidationErrors(const TArray<FString>& Errors)
+{
+    FString Msg;
+    for (const FString& E : Errors)
+        Msg += TEXT("• ") + E + TEXT("\n");
+    ShowConfirmDialog(TEXT("⚠ 儲存失敗"), Msg.TrimEnd(), TEXT("確認"), FString(), nullptr);
+}
+
+void UBlockEditorWidget::TryExitEditor()
+{
+    // 對應 Godot TryExitEditor（AbilityEditorUI.cs:264-327）
+    if (!bIsDirty)
+    {
+        OnCloseRequested.ExecuteIfBound();
+        return;
+    }
+    ShowConfirmDialog(
+        TEXT("未儲存的變更"), TEXT("技能整構尚未儲存，是否儲存後離開？"),
+        TEXT("儲存並離開"), TEXT("捨棄變更"),
+        [this]()
+        {
+            HandleSaveClicked();
+            // 驗證失敗時 HandleSaveClicked 已經彈出錯誤對話框且 bIsDirty 仍是 true，不離開
+            if (!bIsDirty) OnCloseRequested.ExecuteIfBound();
+        },
+        [this]()
+        {
+            bIsDirty = false;
+            OnCloseRequested.ExecuteIfBound();
+        });
+}
+
+void UBlockEditorWidget::SwitchGroup(int32 NewGroupIndex)
+{
+    // 對應 Godot SwitchEditorGroup（AbilityEditorUI.cs:231-250）。UE5 直接用指標編輯原始
+    // 資料（CurrentSpell 本來就指向 Loadout 裡的 FSpellArray），不像 Godot 需要本地 _spells[]
+    // 緩衝寫回——這一步在 UE5 架構下是多餘的，切組時資料早已經是最新的。
+    if (!SpellGroups || NewGroupIndex == SpellGroups->ActiveGroupIndex) return;
+    SpellGroups->SetActiveGroup(NewGroupIndex);
+
+    FSpellLoadout& Loadout = SpellGroups->GetActiveLoadout();
+    const int32 SlotIdx = FMath::Clamp(ActiveSlotIndex, 0, FSpellLoadout::MaxSlots - 1);
+    SetEditingSpell(&Loadout.Slots[SlotIdx]);
+    RefreshGroupDotHighlight();
+}
+
+void UBlockEditorWidget::RefreshGroupDotHighlight()
+{
+    // 對應 Godot RefreshGroupDots（AbilityEditorUI.cs:252-262）
+    const int32 Active = SpellGroups ? SpellGroups->ActiveGroupIndex : 0;
+    for (int32 i = 0; i < GroupDotCount; ++i)
+    {
+        if (!GroupDots[i]) continue;
+        GroupDots[i]->SetBackgroundColor(i == Active
+            ? FLinearColor(0.40f, 0.85f, 1.00f) : FLinearColor(0.50f, 0.50f, 0.60f));
+    }
 }

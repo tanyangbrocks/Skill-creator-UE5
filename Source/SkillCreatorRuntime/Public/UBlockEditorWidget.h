@@ -15,6 +15,7 @@ class UProgressBar;
 class USpinBox;
 struct FBlockNode;
 struct FSpellArray;
+struct FSpellGroup;
 
 // 積木編輯器主視窗（runtime UMG，取代 Editor-only 的 SBlockEditorWidget/SGraphEditor）。
 // 整體版面對齊 Godot AbilityEditorUI.cs:123-145：
@@ -38,6 +39,15 @@ public:
     void SetEditingSpell(FSpellArray* InSpell);
     void RebuildList();
     void RefreshStatsPanel();
+
+    // Phase 7：技能組（5 組，Phase 8 由 PlayerController 注入）+ 目前編輯的槽位索引
+    void SetSpellGroups(FSpellGroup* InGroups) { SpellGroups = InGroups; RefreshGroupDotHighlight(); }
+    void SetActiveSlot(int32 SlotIdx) { ActiveSlotIndex = SlotIdx; }
+    int32 GetActiveSlot() const { return ActiveSlotIndex; }
+
+    // 儲存（對應 Godot SaveSpell()）：5 項驗證全過才廣播，Phase 8 PlayerController 接住寫回 Loadout
+    DECLARE_DELEGATE_TwoParams(FOnSaveSpell, const FString&, int32)
+    FOnSaveSpell OnSaveSpell;
 
 protected:
     virtual void NativeConstruct() override;
@@ -68,7 +78,22 @@ private:
     // ── Phase 6：容器巢狀導覽（對應 Godot AbilityEditorUI.cs:29-34 _navStack）─────
     FSpellArray* RootSpell = nullptr;
     TArray<TPair<FSpellArray*, FString>> NavStack;
-    TObjectPtr<UBorder> ConfirmOverlay; // 進入容器效果前的確認彈窗
+    TObjectPtr<UBorder> ConfirmOverlay; // 進入容器效果前/未儲存確認/驗證錯誤共用的彈窗
+
+    // ── Phase 7：儲存/驗證/未儲存確認/技能組切換 ──────────────────
+    bool bIsDirty = false;
+    FSpellGroup* SpellGroups = nullptr;
+    int32 ActiveSlotIndex = 0;
+    TObjectPtr<UButton> SaveButton;
+
+    void HandleSaveClicked();
+    void ShowValidationErrors(const TArray<FString>& Errors);
+    void TryExitEditor();
+    void SwitchGroup(int32 NewGroupIndex);
+    void RefreshGroupDotHighlight();
+
+    UFUNCTION() void OnSaveButtonClicked();
+    UFUNCTION() void OnSpellNameCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
     void RefreshHeaderState(); // 對應 Godot RefreshHeaderState：返回鈕文字+麵包屑顯示/隱藏
     FString BuildBreadcrumb() const;
