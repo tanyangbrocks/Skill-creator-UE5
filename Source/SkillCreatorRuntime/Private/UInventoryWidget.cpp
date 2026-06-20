@@ -215,17 +215,26 @@ void UInventoryWidget::NativeTick(const FGeometry& Geo, float Delta)
 {
     Super::NativeTick(Geo, Delta);
 
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC) return;
+
+    float MX, MY;
+    PC->GetMousePosition(MX, MY);
+    FVector2D MousePos(MX, MY);
+
+    // 拖曳圖示跟隨滑鼠（Godot Main.cs:939-943）
     if (DragSrcSlot >= 0 && DragFloatIcon)
     {
-        APlayerController* PC = GetOwningPlayer();
-        if (PC)
-        {
-            float MX, MY;
-            PC->GetMousePosition(MX, MY);
-            if (UCanvasPanelSlot* DS = Cast<UCanvasPanelSlot>(DragFloatIcon->Slot))
-                DS->SetPosition(FVector2D(MX - 15.f, MY - 15.f));
-        }
+        if (UCanvasPanelSlot* DS = Cast<UCanvasPanelSlot>(DragFloatIcon->Slot))
+            DS->SetPosition(MousePos - FVector2D(15.f, 15.f));
     }
+
+    // Hover tooltip（Godot Main.cs:2589-2594：slot.MouseEntered → ShowFloatTooltip(DisplayName)）
+    int32 Hovered = GetSlotUnderMouse();
+    if (Hovered >= 0 && CachedSlots.IsValidIndex(Hovered) && !CachedSlots[Hovered].IsEmpty())
+        ShowFloatTooltip(FItemRegistry::Get(CachedSlots[Hovered].ItemId).DisplayName.ToString(), MousePos);
+    else
+        HideFloatTooltip();
 }
 
 // ── 滑鼠事件（拖曳起點 + 終點）────────────────────────────────────────────

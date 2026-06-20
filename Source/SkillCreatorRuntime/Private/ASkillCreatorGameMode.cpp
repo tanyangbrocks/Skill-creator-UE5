@@ -51,7 +51,6 @@ void ASkillCreatorGameMode::BeginPlay()
             // Widget 根節點 UBorder 填滿 slot 即完整覆蓋畫面。
             GameFlowWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
             GameFlowWidget->SetAlignmentInViewport(FVector2D(0.f, 0.f));
-            GameFlowWidget->SetOffsetsInViewport(FMargin(0.f, 0.f, 0.f, 0.f));
             FInputModeUIOnly InputMode;
             InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
             PC->SetInputMode(InputMode);
