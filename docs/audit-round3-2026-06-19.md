@@ -3,7 +3,56 @@
 **建立時間**：2026-06-19  
 **目標**：對照 Godot 原始碼（C:\skill-creator\Scripts\）逐一核實 issues.md 所有「已實作」標記是否真正正確實作，並修復不符的地方。
 
-> **下個 AI 接手規則**：直接從「各 Agent 任務進度」表格找尚未完成的任務繼續，不需要重讀歷史。
+> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。直接看下方「⭐ 待修速查表」，按優先序動手修，不需重讀 Agent 段落。修完每項後在速查表勾選 [x] 並在 `實作進度.md` 加一列。
+
+---
+
+## ⭐ 待修速查表（下個 AI 直接看這裡）
+
+> **狀態說明**：🔴 高優先 / 🟡 中優先 / ⚪ 低優先（⚠️ 注意下方 🔴 已全修，新待修均為 🟡）
+
+### 🟡 可立即動手（小範圍 C++ 修改）
+
+| # | 項目 | 修法摘要 | Godot 依據 | UE5 檔案 |
+|---|-----|---------|-----------|---------|
+| J-16 | `EnterWorld()` 缺 LastPlayed 更新 | `UGameFlowWidget::EnterWorld()` 在 `OnEnterGame()` 前加 `Meta.LastPlayed=FDateTime::Now()` 再呼叫 SaveMeta | `GameFlowUI.cs:379` | `UGameFlowWidget.cpp` |
+| J-19 | CreateWorld 缺地形預生成 | `ASkillCreatorGameMode::StartGameplayWithWorld()` 偵測 `bIsFirstEnter==true` → 呼叫 `MapGenerator3D` 生成 + `TileWorld3D::SaveAllLoadedChunks` + 設 `bIsFirstEnter=false` | `GameFlowUI.cs:451-502` | `ASkillCreatorGameMode.cpp` |
+| K-20 | AutoSave 30 秒計時器 | `ASkillCreatorCharacter::Tick` 加 `AutoSaveTimer+=dt`，≥30f 時呼叫 `GameMode->SaveAll()` | `Main.cs` _Process 每幀倒數 | `ASkillCreatorCharacter.cpp` |
+| K-7 | 放置 OccupiedByEntity 缺失 | `Tick()` 更新 TW 佔用格（玩家+敵人格 IsOccupied）；`OnPlace` 前加 `!TW->IsOccupied(target)` | `Main.cs PlaceBlock` | `ASkillCreatorCharacter.cpp` + `TileWorld3D` |
+| I-7 | 敵人復活延遲 5f vs Godot 8f | `AEnemy.h:116` RespawnDelay 5.f→8.f | `Enemy.cs:47 RespawnTime=8f` | `AEnemy.h` |
+
+### 🟡 中範圍（需較多工程，建議單獨 session）
+
+| # | 項目 | 修法摘要 | Godot 依據 | UE5 檔案 |
+|---|-----|---------|-----------|---------|
+| H-6 | GreedyMesher 缺半透明雙 pass（水/火不透明） | `FMaterialData` 補 `bIsTransparent/Opacity`；`MaterialRegistry` 填值 Water=true/0.55, Fire=true/0.65, Steam=true/0.35；`GreedyMesher::Build` 輸出兩個 StreamSet；`AVoxelWorldActor` 透明 slot 使用 AlphaBlend 材質。**需關 Editor + Rebuild** | `TileWorldRenderer3D.cs:64-83` `MaterialData.cs:17-23` | `GreedyMesher.h/.cpp` `MaterialRegistry.cpp` `FMaterialData` |
+| I-9 | 敵人 AI 完全缺失（BT 資產不存在） | 建立 `BT_Enemy.uasset` + 最小 `BTTask_MoveOnGrid.cpp`/`BTTask_AttackPlayer.cpp`，還原 Godot UpdateMelee/Ranged/Patrol/Heavy 四種狀態機。**此為 M-5/M-8 工作，範圍最大** | `Enemy.cs:171-411` | `AEnemyAIController.cpp` + 新 BTTask |
+| K-5 | PlacedObjectRegistry 完美移除分流 | `OnMine` 成功後先查 `TryGetUnit(target)`；有 Unit + `bPerfectRemove=true` → `RemoveUnit` + `Inventory->TryAdd(1)`，不進形狀採掘段；`ASkillCreatorHUD` 補 `bool bPerfectRemove=true` | `Main.cs:1203-1225` | `ASkillCreatorCharacter.cpp` `ASkillCreatorHUD.h` |
+| K-12 | F1 筆刷面板未實作 | `ASkillCreatorHUD` 加 F1 面板（6 種材質 + 4 種筆刷大小）；`OnMine` 若 `bDebugPaintEnabled` 則 `TW->SetTile(target, ActivePaintMaterial)` | `Main.cs:549-599` | `ASkillCreatorHUD.cpp` `ASkillCreatorCharacter.cpp` |
+| H-4 | TileCell 缺 Variant 色差欄位 | `FTileCell` 補 `uint8 Variant=0`（**需關 Editor + Rebuild**）；`FMaterialRegistry::GetColor` 補 Variant 參數；`GreedyMesher` 傳入 `cell.Variant` | `TileCell.cs:8` `MaterialRegistry.cs:86-92` | `MaterialType.h` `MaterialRegistry.h/.cpp` `GreedyMesher.cpp` |
+
+### 🟡 積木編輯器 UI（最大範圍，建議單獨 session）
+
+> 以下項目需大幅 Slate SWidget 工程，全部在 `SBlockEditorWidget.h/.cpp` 實作：
+
+| # | 項目 | 修法摘要 | Godot 依據 |
+|---|-----|---------|-----------|
+| K-17 | 左側 Palette 三分頁面板（最嚴重） | `SBlockEditorWidget::Construct` 改 SHorizontalBox；左 250px SScrollBox 放三分頁（技能因子/積木/刻印），點擊/拖放加積木到 Graph | `AbilityEditorUI.cs:419-836` |
+| K-18 | 右側統計面板（AP/MP breakdown） | 175px 右側面板：AP SProgressBar + BaseMpCost SSpinBox + MP 逐類型分解 + 技能摘要 STextBlock；`OnChanged` 時刷新 | `AbilityEditorUI.cs:932-1050` |
+| K-16 | 5 組 dot 切換 UI | 標頭右側 5 個 dot 按鈕；`ToggleBlockEditorOverlay` 建立 5 個 UBlockEdGraph 陣列；切換前 `Graph.ToBlockNodes()` 寫回對應 Slot | `AbilityEditorUI.cs:193-250` |
+| K-15 | 關閉未儲存確認彈窗 | `bool bIsDirty`，`OnChanged` 設 true，儲存清；`TryClose()` 彈確認視窗；`ToggleBlockEditorOverlay` 改呼叫 `TryClose()` | `AbilityEditorUI.cs:264-327` |
+| K-19 | 容器導覽棧（麵包屑） | `TArray<FContainerFrame> NavStack`；進入 ContainerEffect 時 Push；麵包屑列 SHorizontalBox；Back 按鈕 Pop | `AbilityEditorUI.cs` ContainerEffect 深層編輯 |
+
+### ⚠️ 已記錄的架構差異（不須修改，留存備忘）
+
+| # | 說明 |
+|---|-----|
+| H-1 | EMaterialType ID 重組（UE5 新增 Grass/Leaves/Ore_Gold，後續 ID 偏移）：跨版本存檔按 uint8 讀回會材質錯亂。目前無舊存檔相容需求，記錄在案 |
+| G-12 | 洞穴算法根本不同（Godot CA 平滑大廳 vs UE5 noise 隧道）：UE5 per-chunk 更適合無限世界，屬有意架構差異 |
+| J-21 | CharacterSaveData Stamina/MentalEnergy/Mood：Godot runtime-only，UE5 持久化，語意差異屬刻意擴充 |
+| K-11 | Tab 鍵 Godot=X-Ray，UE5 改為 CycleCameraMode 4模式（X-Ray 功能未移植，屬功能降級，未來視需求補） |
+
+---
 
 ---
 
@@ -289,9 +338,9 @@
 
 ---
 
-## 修復待辦清單（A~F 完成後彙整，尚未動手修，待使用者指示）
+## 修復待辦清單（A~K 全部完成，2026-06-20）
 
-> 排序依嚴重度。每項附 id 可回 JSON 查完整佐證。G~K 尚未跑，待續。
+> 稽核全覆蓋：A~K 11 個 Agent 全數完成。排序依嚴重度。每項附 id 可回 JSON 查完整佐證。**下個 AI 直接看上方「⭐ 待修速查表」**，按優先序動手，修完勾選 [x] + 更新 `実作進度.md`。
 
 ### 🔴 高優先（架構性缺失/明顯偏離設計意圖）— **全部 12 項已於 2026-06-20 修復 ✅**
 
@@ -326,7 +375,7 @@
 - [x] **B-11** act_fire_projectile 命中補 AoE + modifier 套用（2026-06-20：TW->Explode+ApplyModsToNearbyEnemies，Godot SpellProjectile.cs:114-116）
 - [x] **B-13** act_teleport 步數改 20 倒數搜尋（2026-06-20：MaxSteps=20 i=20→1，Godot SpellCaster.cs:853-857）
 - [x] **B-17** ApplyModsToNearbyEnemies 改逐格碰撞（2026-06-20：per-cell TileWorld check，Godot SpellCaster.cs:695-715；Slow/Freeze/Stun 待 W-5）
-- [ ] **D-7** EEngraveCategory/EEngraveTrigger 列舉數值對齊 Godot 順序 + 補回 OnExpire
+- [x] **D-7** EEngraveCategory/EEngraveTrigger 列舉數值對齊 Godot 順序 + 補回 OnExpire（2026-06-20：SpellArray.h:64-82，Modifier=0/Action=1，OnExpire 補回）
 - [x] **C-10 / D-13** 確認無雙重計算（見上方 D-13 確認說明）
 - [x] **C-5** SpellRunner.PruneAfter 補 MP 退還（2026-06-20：FActiveEntry.MpCost+OnMpRefund callback，Godot SpellRunner.cs:111-122）
 - [x] **F-8** IWorldInterface.h 曼哈頓→歐幾里德距離注解（2026-06-20，Godot IWorldInterface.cs:11）
