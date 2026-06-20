@@ -17,6 +17,13 @@
 #include "TotemLibrary.h"
 #include "FBlockNode.h"
 #include "BlockUIDescriptor.h"
+#include "SpellArray.h"
+#include "SpellSlotSync.h"
+#include "AbilityPointCalculator.h"
+#include "SpellDescriptionGenerator.h"
+#include "ManaTypeRegistry.h"
+#include "Components/ProgressBar.h"
+#include "Components/SpinBox.h"
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -217,6 +224,7 @@ UWidget* UBlockEditorWidget::BuildBody()
     RightSize->SetContent(RightPanel);
     if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(RightSize))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+    BuildStatsPanel();
 
     return BodyRow;
 }
@@ -491,11 +499,162 @@ void UBlockEditorWidget::OnSubTab10Clicked() { ActiveSubTab = 10; RebuildPalette
 //  Phase 3：中央積木卡片清單（對應 Godot ScratchCanvas::Rebuild/SyncFrom）
 // ══════════════════════════════════════════════════════════════════
 
+void UBlockEditorWidget::SetEditingSpell(FSpellArray* InSpell)
+{
+    CurrentSpell = InSpell;
+    if (CurrentSpell && !CurrentSpell->Blocks.IsValid())
+        CurrentSpell->SetBlocks({}); // 全新技能整構：先給空陣列，Palette 拖拉才有東西可插入
+    CurrentBlocks = CurrentSpell ? CurrentSpell->Blocks.Get() : nullptr;
+    RebuildList();
+}
+
 void UBlockEditorWidget::RebuildList()
 {
     if (!CenterList) return;
     CenterList->ClearChildren();
-    if (!CurrentBlocks) return;
+    if (!CurrentBlocks)
+    {
+        RefreshStatsPanel();
+        return;
+    }
 
     UBlockCardWidget::BuildBlockList(this, CenterList, *CurrentBlocks, 0, [this]() { RebuildList(); });
+
+    // 對應 Godot 每次 canvas 變動後呼叫 SyncSlotsFromBlocks（AbilityEditorUI.cs:866 附近），
+    // 讓 Slots/GlobalEngravings/Container 跟積木樹保持同步，AP/MP 數字才能即時反映變動
+    if (CurrentSpell)
+        FSpellSlotSync::SyncSlotsFromBlocks(*CurrentSpell);
+
+    RefreshStatsPanel();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Phase 5：右側統計面板（對應 Godot AbilityEditorUI.cs:934-1122）
+// ══════════════════════════════════════════════════════════════════
+
+void UBlockEditorWidget::BuildStatsPanel()
+{
+    UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
+    RightPanel->SetContent(Root);
+
+    auto AddSectionLabel = [&](const FString& Text)
+    {
+        UTextBlock* Lbl = WidgetTree->ConstructWidget<UTextBlock>();
+        Lbl->SetText(FText::FromString(Text));
+        Lbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.65f, 0.75f)));
+        if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(Lbl))
+            S->SetPadding(FMargin(6.f, 8.f, 6.f, 2.f));
+    };
+
+    // 能力點統計（Godot AbilityEditorUI.cs:952-979）
+    AddSectionLabel(TEXT("能力點統計"));
+    ApValueLabel = WidgetTree->ConstructWidget<UTextBlock>();
+    ApValueLabel->SetText(FText::FromString(TEXT("0 點")));
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(ApValueLabel))
+        S->SetPadding(FMargin(6.f, 0.f));
+
+    ApBar = WidgetTree->ConstructWidget<UProgressBar>();
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(ApBar))
+        S->SetPadding(FMargin(6.f, 2.f));
+
+    // 基礎 MP 消耗（Godot AbilityEditorUI.cs:986-999）
+    AddSectionLabel(TEXT("基礎消耗"));
+    BaseMpSpin = WidgetTree->ConstructWidget<USpinBox>();
+    BaseMpSpin->SetMinValue(0.f);
+    BaseMpSpin->SetMaxValue(9999.f);
+    BaseMpSpin->SetDelta(1.f);
+    BaseMpSpin->OnValueChanged.AddDynamic(this, &UBlockEditorWidget::OnBaseMpChanged);
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(BaseMpSpin))
+        S->SetPadding(FMargin(6.f, 0.f));
+
+    // MP 消耗分解（Godot AbilityEditorUI.cs:1005-1116）
+    AddSectionLabel(TEXT("MP 消耗"));
+    MpBreakdownList = WidgetTree->ConstructWidget<UVerticalBox>();
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(MpBreakdownList))
+        S->SetPadding(FMargin(6.f, 0.f));
+
+    // 技能整構摘要（Godot AbilityEditorUI.cs:1118-1122）
+    AddSectionLabel(TEXT("技能整構摘要"));
+    UScrollBox* DescScroll = WidgetTree->ConstructWidget<UScrollBox>();
+    DescriptionLabel = WidgetTree->ConstructWidget<UTextBlock>();
+    DescriptionLabel->SetAutoWrapText(true);
+    DescScroll->AddChild(DescriptionLabel);
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(DescScroll))
+    {
+        S->SetPadding(FMargin(6.f, 0.f));
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    }
+
+    RefreshStatsPanel();
+}
+
+void UBlockEditorWidget::RefreshStatsPanel()
+{
+    if (!ApValueLabel) return; // 面板尚未建好（BuildStatsPanel 第一次呼叫時 RefreshStatsPanel 會在最後才跑）
+
+    if (!CurrentSpell)
+    {
+        ApValueLabel->SetText(FText::FromString(TEXT("0 點")));
+        if (ApBar) ApBar->SetPercent(0.f);
+        if (MpBreakdownList) MpBreakdownList->ClearChildren();
+        if (DescriptionLabel) DescriptionLabel->SetText(FText::GetEmpty());
+        return;
+    }
+
+    // AP（對應 Godot AbilityEditorUI.cs:1067-1084）
+    const int32 Ap  = FAbilityPointCalculator::CalculateTotalCost(*CurrentSpell);
+    const int32 Cap = FAbilityPointCalculator::TierApCap(PlayerLevel);
+    const bool  bOver = FAbilityPointCalculator::ExceedsLevelCap(*CurrentSpell, PlayerLevel);
+    ApValueLabel->SetText(FText::FromString(FString::Printf(TEXT("%d 點"), Ap)));
+    ApValueLabel->SetColorAndOpacity(FSlateColor(bOver
+        ? FLinearColor(1.f, 0.3f, 0.3f) : FLinearColor(0.9f, 0.9f, 0.9f)));
+    if (ApBar) ApBar->SetPercent(Cap > 0 ? FMath::Clamp((float)Ap / (float)Cap, 0.f, 1.f) : 0.f);
+
+    // 基礎 MP 消耗（避免 SetValue 觸發 OnValueChanged 造成無窮迴圈，先檢查再設）
+    if (BaseMpSpin && !FMath::IsNearlyEqual(BaseMpSpin->GetValue(), CurrentSpell->BaseMpCost))
+        BaseMpSpin->SetValue(CurrentSpell->BaseMpCost);
+
+    // MP 按類型分解（對應 Godot AbilityEditorUI.cs:1086-1116）
+    if (MpBreakdownList)
+    {
+        MpBreakdownList->ClearChildren();
+        const TMap<FName, float> ByType = FAbilityPointCalculator::CalculateSlotCostByType(*CurrentSpell);
+        if (ByType.Num() == 0)
+        {
+            UTextBlock* Fallback = WidgetTree->ConstructWidget<UTextBlock>();
+            Fallback->SetText(FText::FromString(FString::Printf(TEXT("%.0f 點"),
+                FAbilityPointCalculator::CalculateMpCost(*CurrentSpell))));
+            MpBreakdownList->AddChildToVerticalBox(Fallback);
+        }
+        else
+        {
+            for (const auto& Pair : ByType)
+            {
+                const FManaType* MT = FManaTypeRegistry::Get().Find(Pair.Key);
+                const FString TypeName = MT ? MT->DisplayName.ToString() : Pair.Key.ToString();
+                UTextBlock* Row = WidgetTree->ConstructWidget<UTextBlock>();
+                Row->SetText(FText::FromString(FString::Printf(TEXT("%s：%.0f 點"), *TypeName, Pair.Value)));
+                Row->SetColorAndOpacity(FSlateColor(FLinearColor(0.7f, 0.85f, 1.f)));
+                MpBreakdownList->AddChildToVerticalBox(Row);
+            }
+        }
+        if (CurrentSpell->HasUnboundMpBlocks())
+        {
+            UTextBlock* Warn = WidgetTree->ConstructWidget<UTextBlock>();
+            Warn->SetText(FText::FromString(TEXT("⚠ 部分插槽未指定 MP 種類")));
+            Warn->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.55f, 0.3f)));
+            MpBreakdownList->AddChildToVerticalBox(Warn);
+        }
+    }
+
+    // 技能摘要（對應 Godot AbilityEditorUI.cs:1118-1122）
+    if (DescriptionLabel)
+        DescriptionLabel->SetText(FText::FromString(FSpellDescriptionGenerator::GenerateStructured(*CurrentSpell)));
+}
+
+void UBlockEditorWidget::OnBaseMpChanged(float NewValue)
+{
+    if (!CurrentSpell) return;
+    CurrentSpell->BaseMpCost = NewValue;
+    RefreshStatsPanel();
 }

@@ -11,7 +11,10 @@ class UEditableTextBox;
 class UHorizontalBox;
 class UVerticalBox;
 class UScrollBox;
+class UProgressBar;
+class USpinBox;
 struct FBlockNode;
+struct FSpellArray;
 
 // 積木編輯器主視窗（runtime UMG，取代 Editor-only 的 SBlockEditorWidget/SGraphEditor）。
 // 整體版面對齊 Godot AbilityEditorUI.cs:123-145：
@@ -29,11 +32,12 @@ public:
     // 玩家等級（鎖等級判斷用，Phase 8 由 PlayerController 帶入真實值）
     int32 PlayerLevel = 1;
 
-    // Phase 3：指向正在編輯的積木樹（FSpellArray.Blocks 解開的裸指標，Phase 7/8 由
-    // PlayerController/SwitchEditorGroup 設定）。不持有任何「視覺節點」中介物件——
-    // 卡片清單直接讀寫這份樹本身。
-    void SetEditingBlocks(TArray<TUniquePtr<FBlockNode>>* InBlocks) { CurrentBlocks = InBlocks; RebuildList(); }
+    // Phase 3/5：指向正在編輯的技能整構（Phase 7/8 由 PlayerController/SwitchEditorGroup
+    // 設定）。不持有任何「視覺節點」中介物件——卡片清單直接讀寫 Spell->Blocks 這份樹本身。
+    // Spell->Blocks 若為空（全新技能整構）會自動初始化成空陣列，確保 Palette 拖拉有東西可插入。
+    void SetEditingSpell(FSpellArray* InSpell);
     void RebuildList();
+    void RefreshStatsPanel();
 
 protected:
     virtual void NativeConstruct() override;
@@ -57,8 +61,19 @@ private:
     TObjectPtr<UVerticalBox>    CenterList;
     TObjectPtr<UBorder>         RightPanel;
 
-    // Phase 3：正在編輯的積木樹（不擁有，指向 FSpellArray.Blocks）
+    // Phase 3/5：正在編輯的技能整構（不擁有）+ 解開的積木樹裸指標（指向 Spell->Blocks）
+    FSpellArray* CurrentSpell = nullptr;
     TArray<TUniquePtr<FBlockNode>>* CurrentBlocks = nullptr;
+
+    // ── Phase 5：右側統計面板 ────────────────────────────────────
+    TObjectPtr<UTextBlock>   ApValueLabel;
+    TObjectPtr<UProgressBar> ApBar;
+    TObjectPtr<USpinBox>     BaseMpSpin;
+    TObjectPtr<UVerticalBox> MpBreakdownList;
+    TObjectPtr<UTextBlock>   DescriptionLabel;
+
+    void BuildStatsPanel();
+    UFUNCTION() void OnBaseMpChanged(float NewValue);
 
     UFUNCTION() void OnBackClicked();
     UFUNCTION() void OnGroupDot0Clicked();
