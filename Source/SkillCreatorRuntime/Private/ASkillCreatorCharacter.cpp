@@ -279,14 +279,61 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     if (PlaceCooldown > 0.f)
         PlaceCooldown -= DeltaTime;
 
-    // ── F2：座標偵錯 overlay ──────────────────────────────────────────
+    // ── F2：座標偵錯 overlay（對應 Godot Main.cs:1023-1031）──────────
     if (bDebugCoordEnabled && GEngine)
     {
         const FGridPos TilePos  = GetPosition();
         const FVector  WorldPos = GetActorLocation();
-        GEngine->AddOnScreenDebugMessage(9901, 0.f, FColor::Green,
-            FString::Printf(TEXT("[偵錯 F2]  格:(%d,%d,%d)  世界:(%.1f,%.1f,%.1f)"),
-                TilePos.X, TilePos.Y, TilePos.Z, WorldPos.X, WorldPos.Y, WorldPos.Z));
+
+        APlayerController* DbgPC = Cast<APlayerController>(GetController());
+        float MX = 0.f, MY = 0.f;
+        if (DbgPC) DbgPC->GetMousePosition(MX, MY);
+
+        // 鏡頭前方 5 格瞄準格（對應 Godot _player.MouseGridPos）
+        FGridPos LookTile = TilePos;
+        if (DbgPC && CachedVoxelWorld)
+        {
+            FVector CamLoc; FRotator CamRot;
+            DbgPC->GetPlayerViewPoint(CamLoc, CamRot);
+            const FVector LookWorld = CamLoc + CamRot.Vector() * (5.f * WorldScale::TileSizeCm);
+            const int32 TH = CachedVoxelWorld->GetTileWorld()
+                           ? CachedVoxelWorld->GetTileWorld()->Height : 256;
+            LookTile = WorldScale::WorldToTile(LookWorld, TH);
+        }
+
+        // 視角模式名稱（對應 Godot _camera3d.Mode）
+        const TCHAR* ModeStr = TEXT("?");
+        switch (CameraMode) {
+            case ECameraMode::ThirdPerson:  ModeStr = TEXT("第三人稱"); break;
+            case ECameraMode::FirstPerson:  ModeStr = TEXT("第一人稱"); break;
+            case ECameraMode::Isometric:    ModeStr = TEXT("等角視角"); break;
+            case ECameraMode::SideScroll2D: ModeStr = TEXT("橫向2.5D"); break;
+        }
+
+        // 羅盤方向（對應 Godot ddx/ddy）
+        const float Yaw = GetControlRotation().Yaw;
+        const float Canon = FMath::Fmod(Yaw + 360.f, 360.f);
+        const TCHAR* DirStr =
+            (Canon < 45.f || Canon >= 315.f) ? TEXT("北") :
+            (Canon < 135.f)                  ? TEXT("東") :
+            (Canon < 225.f)                  ? TEXT("南") : TEXT("西");
+
+        const float ArmLen = SpringArm ? SpringArm->TargetArmLength : 0.f;
+
+        GEngine->AddOnScreenDebugMessage(9901, 0.f, FColor::Green, FString::Printf(
+            TEXT("[偵錯 F2]\n")
+            TEXT("視角:   %s\n")
+            TEXT("螢幕:   (%.0f, %.0f) px\n")
+            TEXT("世界:   (%.1f, %.1f, %.1f)\n")
+            TEXT("瞄準格: (%d, %d, %d)\n")
+            TEXT("玩家格: (%d, %d, %d)\n")
+            TEXT("方向:   %s  (yaw %.1f°)\n")
+            TEXT("彈簧臂: %.0f cm"),
+            ModeStr, MX, MY,
+            WorldPos.X, WorldPos.Y, WorldPos.Z,
+            LookTile.X, LookTile.Y, LookTile.Z,
+            TilePos.X, TilePos.Y, TilePos.Z,
+            DirStr, Yaw, ArmLen));
     }
 
     // ── F4：生存速率偵錯 overlay ──────────────────────────────────────
