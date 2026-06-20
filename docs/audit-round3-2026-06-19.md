@@ -3,7 +3,7 @@
 **建立時間**：2026-06-19  
 **目標**：對照 Godot 原始碼（C:\skill-creator\Scripts\）逐一核實 issues.md 所有「已實作」標記是否真正正確實作，並修復不符的地方。
 
-> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。⭐ 待修速查表第一層（5 項）+ 第二層中範圍（5 項：H-4/H-6/K-5/K-12/I-9）已全部完成，詳見下方表格狀態欄。**只剩「🟡 積木編輯器 UI」這一層**，且範圍認定已變更：`SBlockEditorWidget` 用的 `SGraphEditor` 是 Editor-only（UnrealEd 依賴），封裝後玩家完全打不開，K-15~19 寫的「全部在 SBlockEditorWidget.h/.cpp 實作」等於繼續往錯的地基上加功能。下一步應先跟使用者確認是否要整套換成 runtime UMG 重做（範圍遠大於原估），而不是逐項修 K-15~19。
+> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent），⭐ 待修速查表三層（第一層 5 項 + 中範圍 5 項 + 積木編輯器 UI 5 項）全部完成 ✅。積木編輯器 UI 改用整套 runtime UMG 重做（`plans/mutable-singing-nova.md`），Phase 0~8 已完成、核心驗收標準達成（Shipping build E 鍵可用）。**唯一剩餘**：Phase 9（清理舊 Slate 架構）使用者明確要求先不做，且發現 `SkillCreatorEditorModule.cpp` 還有獨立 Editor 分頁依賴舊類別，要先處理才能真的清理。下個 AI 如果要做 Phase 9，先讀 `plans/mutable-singing-nova.md` 確認最新狀態，不要重新規劃。
 
 ---
 
@@ -31,17 +31,19 @@
 | K-12 | F1 筆刷面板未實作 | ✅ 新增 `UDebugPaintWidget` + 真實塗繪效果（Godot 原版按鈕本身是 stub，UE5 選擇做出真實效果） |
 | H-4 | TileCell 缺 Variant 色差欄位 | ✅ 已補，視覺效果仍需 Material Graph 讀 VertexColor.G（美術編輯，未做） |
 
-### 🟡 積木編輯器 UI（最大範圍，建議單獨 session）
+### 🟡 積木編輯器 UI — 改用整套 runtime UMG 重做，已完成 Phase 0~8 ✅（2026-06-20）
 
-> 以下項目需大幅 Slate SWidget 工程，全部在 `SBlockEditorWidget.h/.cpp` 實作：
+> 原本評估 K-15~19 要「全部在 `SBlockEditorWidget.h/.cpp` 實作」，但動手前查證發現 `SBlockEditorWidget` 用的 `SGraphEditor` 是 Editor-only（依賴 `GraphEditor`/`UnrealEd` module），封裝後玩家完全打不開——繼續往這個地基加功能等於白做。改成完整重做計畫，詳見 `C:\Users\譚揚勳\.claude\plans\mutable-singing-nova.md`（10 phase）。下表狀態為實際結果：
 
-| # | 項目 | 修法摘要 | Godot 依據 |
-|---|-----|---------|-----------|
-| K-17 | 左側 Palette 三分頁面板（最嚴重） | `SBlockEditorWidget::Construct` 改 SHorizontalBox；左 250px SScrollBox 放三分頁（技能因子/積木/刻印），點擊/拖放加積木到 Graph | `AbilityEditorUI.cs:419-836` |
-| K-18 | 右側統計面板（AP/MP breakdown） | 175px 右側面板：AP SProgressBar + BaseMpCost SSpinBox + MP 逐類型分解 + 技能摘要 STextBlock；`OnChanged` 時刷新 | `AbilityEditorUI.cs:932-1050` |
-| K-16 | 5 組 dot 切換 UI | 標頭右側 5 個 dot 按鈕；`ToggleBlockEditorOverlay` 建立 5 個 UBlockEdGraph 陣列；切換前 `Graph.ToBlockNodes()` 寫回對應 Slot | `AbilityEditorUI.cs:193-250` |
-| K-15 | 關閉未儲存確認彈窗 | `bool bIsDirty`，`OnChanged` 設 true，儲存清；`TryClose()` 彈確認視窗；`ToggleBlockEditorOverlay` 改呼叫 `TryClose()` | `AbilityEditorUI.cs:264-327` |
-| K-19 | 容器導覽棧（麵包屑） | `TArray<FContainerFrame> NavStack`；進入 ContainerEffect 時 Push；麵包屑列 SHorizontalBox；Back 按鈕 Pop | `AbilityEditorUI.cs` ContainerEffect 深層編輯 |
+| # | 項目 | 狀態 |
+|---|-----|------|
+| K-17 | 左側 Palette 三分頁面板 | ✅ Phase 2：`UPaletteItemWidget`+`UBlockDragDropOp`，三主分頁+子分頁，技能因子/積木/刻印全部對齊 Godot 精確色+名稱 |
+| K-18 | 右側統計面板（AP/MP breakdown） | ✅ Phase 5：直接呼叫既有 `FAbilityPointCalculator`/`FSpellDescriptionGenerator`，零新邏輯 |
+| K-16 | 5 組 dot 切換 UI | ✅ Phase 1（版面）+ Phase 7（`SwitchGroup` 實際切換邏輯） |
+| K-15 | 關閉未儲存確認彈窗 | ✅ Phase 7：`bIsDirty`+`TryExitEditor()`+`ShowConfirmDialog` |
+| K-19 | 容器導覽棧（麵包屑） | ✅ Phase 6：`NavStack`+`EnterContainerEffect`+`BuildBreadcrumb` |
+
+**核心驗收標準已達成**：Phase 8 拆掉 `#if WITH_EDITOR`，封裝後的 Shipping build E 鍵現在也能打開積木編輯器。**唯一未完成**：Phase 9（刪除舊 `SBlockEditorWidget`/`UBlockEdGraph*`/`UBlockEdGraphSchema`）使用者明確要求先不做——而且發現 `Source/SkillCreatorEditor/SkillCreatorEditorModule.cpp` 還有一個獨立 Editor 選單分頁在用這些舊類別（純開發工具，非玩家會碰到），要先處理這個分頁才能真的刪掉舊架構。**未實機驗證**：此沙箱環境無法跑 PIE，全部 8 個 Phase 只驗證到「Build 0 錯誤 0 警告」，拖拉/點擊/巢狀導覽等互動行為需使用者在自己的 Editor 實測。
 
 ### ⚠️ 已記錄的架構差異（不須修改，留存備忘）
 
