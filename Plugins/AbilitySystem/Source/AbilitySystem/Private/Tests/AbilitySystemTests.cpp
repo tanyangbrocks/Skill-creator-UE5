@@ -6,6 +6,7 @@
 #include "SpellCompiler.h"
 #include "SpellRunner.h"
 #include "FBlockNodeSaveData.h"
+#include "TotemLibrary.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAbilityTest, Log, All);
 
@@ -461,6 +462,43 @@ bool FAbilityTest_BlockTreeSaveRoundTrip::RunTest(const FString&)
 
     TestTrue(TEXT("還原後編譯執行 Completed"), Ctx.State == EExecutionState::Completed);
     TestEqual(TEXT("還原後 3>1 → then → result==1"), Ctx.InstanceVars.FindRef("result"), 1.f);
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  積木編輯器 UMG 重做 Phase 0 — TotemLibrary 資料表筆數核對
+//  （Godot UI/TotemLibrary.cs：new TotemData 29 筆、new EngraveData 117 筆，
+//   檔頭註解寫「27種」/「90種」是 Godot 自己過時的註解，已用 grep 核實實際筆數）
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAbilityTest_TotemLibraryCounts,
+    "AbilitySystem.Data.TotemLibraryCounts",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FAbilityTest_TotemLibraryCounts::RunTest(const FString&)
+{
+    TestEqual(TEXT("AllTotems 29 筆"), FTotemLibrary::AllTotems().Num(), 29);
+    TestEqual(TEXT("AllEngravings 117 筆"), FTotemLibrary::AllEngravings().Num(), 117);
+    TestEqual(TEXT("ContainerActionIds 8 筆"), FTotemLibrary::ContainerActionIds().Num(), 8);
+    TestEqual(TEXT("DefaultActionEngraveId 29 筆"), FTotemLibrary::DefaultActionEngraveId().Num(), 29);
+
+    const FTotemData* AreaFan = FTotemLibrary::FindTotem(TEXT("area_fan"));
+    TestNotNull(TEXT("找得到 area_fan"), AreaFan);
+    if (AreaFan)
+        TestEqual(TEXT("area_fan 成本 6"), AreaFan->BaseAbilityPointCost, 6);
+
+    const FEngraveData* WhiteDmg = FTotemLibrary::FindEngraving(TEXT("white_dmg"));
+    TestNotNull(TEXT("找得到 white_dmg"), WhiteDmg);
+    if (WhiteDmg)
+    {
+        TestTrue(TEXT("white_dmg 顏色為 White"), WhiteDmg->Color == EEngraveColor::White);
+        TestEqual(TEXT("white_dmg 基礎成本 2"), WhiteDmg->BaseCost, 2);
+    }
+
+    const FEngraveData* YellowHpCost = FTotemLibrary::FindEngraving(TEXT("yellow_hp_cost"));
+    TestNotNull(TEXT("找得到 yellow_hp_cost"), YellowHpCost);
+    if (YellowHpCost)
+        TestTrue(TEXT("yellow_hp_cost 是限制型"), YellowHpCost->bIsRestriction);
+
     return true;
 }
 

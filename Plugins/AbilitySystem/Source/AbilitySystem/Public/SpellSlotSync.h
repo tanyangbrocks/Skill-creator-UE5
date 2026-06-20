@@ -4,6 +4,7 @@
 #include "FBlockNode.h"
 #include "Instruction.h"
 #include "AbilityPointCalculator.h"
+#include "TotemLibrary.h"
 
 // ══════════════════════════════════════════════════════════════════
 //  FSpellSlotSync — 從積木樹掃描 Totem/Engraving 積木，重建
@@ -95,14 +96,14 @@ struct FSpellSlotSync
                 const FEngravingBlockArgs* Args = IS ? IS->GetPtr<FEngravingBlockArgs>() : nullptr;
                 if (!Args || Args->EngraveId.IsNone()) continue;
 
-                // ⚠️ UE5 無 TotemLibrary.AllEngravings 資料表（已知缺口），
-                // 無法像 Godot 查表取得 Color/Category/Trigger/ScalingType/BaseEffect。
-                // 暫以積木自帶的 EngraveId + Points 建立最小可用的 FEngraveData，
-                // 其餘欄位維持預設值，待 TotemLibrary 移植後補上查表邏輯。
-                FEngraveData NewEngrave;
-                NewEngrave.EngraveId = Args->EngraveId;
-                NewEngrave.Points    = (int32)Args->Points;
-                Spell.GlobalEngravings.Add(NewEngrave);
+                // 查 FTotemLibrary 取得完整刻印範本（對應 Godot AbilityEditorUI.cs:1174-1190）
+                if (const FEngraveData* Template = FTotemLibrary::FindEngraving(Args->EngraveId))
+                {
+                    FEngraveData NewEngrave = *Template;
+                    NewEngrave.bIsGlobal = true;
+                    NewEngrave.Points    = (int32)Args->Points;
+                    Spell.GlobalEngravings.Add(MoveTemp(NewEngrave));
+                }
             }
         }
 

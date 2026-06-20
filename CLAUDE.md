@@ -154,7 +154,7 @@ SkillCreatorUE5/
 
 ### 新增刻印 / 圖騰資料
 
-1. `Plugins/SkillCreatorUI/Public/TotemLibrary.h/.cpp` — 在 `AllEngravings` / `AllTotems` 陣列加條目
+1. `Plugins/AbilitySystem/Public/TotemLibrary.h/.cpp` — 在 `AllEngravings()` / `AllTotems()` 陣列加條目（2026-06-20 修正：原寫在 `SkillCreatorUI`，但 `FSpellSlotSync`〔AbilitySystem plugin〕需要查這份表，UI plugin 不能反過來被低層 plugin 依賴，故移到 `AbilitySystem`）
 
 ### 新增 UI Widget
 
