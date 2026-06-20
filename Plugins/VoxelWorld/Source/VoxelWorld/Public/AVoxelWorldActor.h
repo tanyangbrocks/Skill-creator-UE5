@@ -8,6 +8,7 @@
 #include "RealtimeMeshSimple.h"
 #include "GridPos.h"
 #include "TileMaterialRegistry.h"
+#include "PlacedObjectRegistry.h"
 #include "AVoxelWorldActor.generated.h"
 
 // UE Actor wrapper for FTileWorld3D + RMC rendering.
@@ -58,6 +59,9 @@ public:
     // CreateWorld 首次進入時的出生點地形預生成用（GameMode::StartGameplayWithWorld）
     FMapGenerator3D& GetMapGenerator() { return Streaming.GetMapGenerator(); }
 
+    // K-5：玩家放置物件登記（完美移除分流用，ASkillCreatorCharacter::OnMine/OnPlace）
+    FPlacedObjectRegistry& GetPlacedRegistry() { return PlacedRegistry; }
+
     static AVoxelWorldActor* FindInWorld(UWorld* World);
 
     // ── 採掘高亮 ──────────────────────────────────────────────────
@@ -72,6 +76,7 @@ public:
 private:
     FTileWorld3D           TileWorld;
     FChunkStreamingManager Streaming;
+    FPlacedObjectRegistry  PlacedRegistry;
 
     UPROPERTY() TObjectPtr<UStaticMeshComponent> HighlightMesh;
 

@@ -12,6 +12,7 @@
 #include "UEquipmentWidget.h"
 #include "UInputSettingsWidget.h"
 #include "USpellListWidget.h"
+#include "UDebugPaintWidget.h"
 #include "ItemRegistry.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -64,6 +65,7 @@ void ASkillCreatorHUD::ToggleInventory()       { TogglePanel(InventoryPanel);   
 void ASkillCreatorHUD::ToggleEquipment()       { TogglePanel(EquipmentPanel);      }
 void ASkillCreatorHUD::ToggleInputSettings()   { TogglePanel(InputSettingsPanel);  }
 void ASkillCreatorHUD::ToggleSpellList()       { TogglePanel(SpellListPanel);      }
+void ASkillCreatorHUD::ToggleDebugPaint()       { TogglePanel(DebugPaintPanel);     }
 
 // ── BeginPlay：建立所有 widget + 綁定 delegate ───────────────────────────
 
@@ -107,6 +109,18 @@ void ASkillCreatorHUD::BeginPlay()
             });
         ShapeMenuPanel->OnCloseRequested.BindLambda(
             [this](){ if (ShapeMenuPanel) ShapeMenuPanel->SetVisibility(ESlateVisibility::Collapsed); });
+    }
+
+    // DebugPaint（K-12，F1 開關，無關閉按鈕——再按 F1 收起，對應 Godot 行為）
+    DebugPaintPanel = CreatePanel<UDebugPaintWidget>();
+    if (DebugPaintPanel)
+    {
+        DebugPaintPanel->ActiveMaterial = ActivePaintMaterial;
+        DebugPaintPanel->BrushRadius    = PaintBrushRadius;
+        DebugPaintPanel->OnMaterialSelected.BindLambda(
+            [this](EMaterialType M){ ActivePaintMaterial = M; });
+        DebugPaintPanel->OnBrushRadiusSelected.BindLambda(
+            [this](int32 R){ PaintBrushRadius = R; });
     }
 
     // SpellGroup

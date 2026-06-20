@@ -141,4 +141,8 @@ private:
     static int32  NextId;
     bool          bPendingRespawn = false;
     FTimerHandle  RespawnTimerHandle;
+
+public:
+    // I-9：Patrol 巡邏方向（對應 Godot Enemy.cs:50 _patrolDir，±1 沿 X 軸來回）
+    int32 PatrolDir = 1;
 };

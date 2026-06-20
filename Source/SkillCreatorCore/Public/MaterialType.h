@@ -48,5 +48,6 @@ struct FTileCell
     uint8 CA_State   = 0;    // CA 模擬狀態（流體、煙霧等）
     uint8 Category   = 0;    // ETileCategory（GameplayBlock / VisualCA）
     uint8 Flags      = 0;    // bit 0 = dirty, bit 1 = occupied, 其餘預留
+    uint8 Variant    = 0;    // 0-255，微小色差用（Godot TileCell.cs:8）；生成時隨機指派
 };
-static_assert(sizeof(FTileCell) == 4, "FTileCell must be 4 bytes for cache efficiency");
+static_assert(sizeof(FTileCell) == 5, "FTileCell must be 5 bytes for cache efficiency");

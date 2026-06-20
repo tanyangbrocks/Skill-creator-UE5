@@ -62,6 +62,12 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
     TArray<uint8> Mask;
     Mask.SetNumUninitialized(MegaSize * MegaSize);
 
+    // H-4：每格 Variant（色差）。Greedy 合併只比對 MaterialID，同一個合併後的 quad
+    // 仍只能呈現「一個」Variant 值（取該 quad 起點格），無法做到逐格獨立色差——
+    // 這是 Mega-Chunk greedy meshing 為了大世界效能合併同材質面的必然取捨。
+    TArray<uint8> VariantMask;
+    VariantMask.SetNumUninitialized(MegaSize * MegaSize);
+
     // ── 6 face directions ────────────────────────────────────────────────────
     // d  = slice axis  (0=X, 1=Y, 2=Z)
     // u  = first perpendicular axis  (d+1)%3
@@ -89,10 +95,10 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                         FIntVector Nbr = Self;
                         Nbr[d] += facing;
 
-                        const uint8 SelfMat = static_cast<uint8>(
-                            World.GetTile(MinTile.X + Self.X,
-                                          MinTile.Y + Self.Y,
-                                          MinTile.Z + Self.Z));
+                        const FTileCell SelfCell = World.GetCell(MinTile.X + Self.X,
+                                                                  MinTile.Y + Self.Y,
+                                                                  MinTile.Z + Self.Z);
+                        const uint8 SelfMat = SelfCell.MaterialID;
 
                         // Neighbour may cross the mega-chunk boundary;
                         // GetTile() returns Air for unloaded chunks — correct.
@@ -103,6 +109,7 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
 
                         Mask[i * MegaSize + j] =
                             (IsOpaque(SelfMat) && !IsOpaque(NbrMat)) ? SelfMat : 0;
+                        VariantMask[i * MegaSize + j] = SelfCell.Variant;
                     }
                 }
 
@@ -141,7 +148,10 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                         const FVector3f Normal  = VoxToUE5Local(NormalVox);
                         const FVector3f Tangent = VoxToUE5Local(TangentVox);
                         const FRealtimeMeshTangentsHighPrecision Tang(Normal, Tangent);
-                        const FColor Col(Mat, 0, 0, 255); // R = MaterialID
+                        // R = MaterialID；G = Variant（quad 起點格的色差值，H-4。
+                        // Material 端要看到效果，需在對應材質的 Material Graph 讀
+                        // VertexColor.G 做基色微調——這部分屬美術資產編輯，需手動）
+                        const FColor Col(Mat, VariantMask[i * MegaSize + j], 0, 255);
 
                         // 4 corners: u ∈ [i, i+h], v ∈ [j, j+w]
                         auto MakePos = [&](float uc, float vc) -> FVector3f

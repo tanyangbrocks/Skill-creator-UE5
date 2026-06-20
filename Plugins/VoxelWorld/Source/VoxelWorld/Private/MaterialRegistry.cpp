@@ -8,7 +8,7 @@ using I = EItemId;
 // 材質資料表（與 EMaterialType 一一對應，依 ID 順序）
 // 欄位順序：Physics, Density, bFlammable, BurnMin, BurnMax, NativeElement,
 //           bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity,
-//           FragmentItem
+//           FragmentItem, [bIsTransparent=false 省略時免寫]
 static const FMaterialData GMatData[] =
 {
     // ID  0 — Air
@@ -21,10 +21,10 @@ static const FMaterialData GMatData[] =
     { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt   },
     // ID  4 — Sand
     { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255, I::FragmentSand   },
-    // ID  5 — Water
-    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 200, I::None           },
-    // ID  6 — Lava
-    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 220, I::None           },
+    // ID  5 — Water（H-6：Opacity 200→140≈0.55×255 + bIsTransparent=true；Godot MaterialRegistry.cs:16-17）
+    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 140, I::None,          true },
+    // ID  6 — Lava（H-6：Godot 未標 IsTransparent，220→255 完全不透明；Godot MaterialRegistry.cs:18-19）
+    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 255, I::None           },
     // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹；原 UE5=1）
     { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,0, 0.5f, 0.f,  255, I::FragmentWood   },
     // ID  8 — Leaves
@@ -33,10 +33,10 @@ static const FMaterialData GMatData[] =
     { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw     },
     // ID 10 — Ore_Gold
     { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::OreGoldRaw     },
-    // ID 11 — Fire
-    { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 150, I::None           },
-    // ID 12 — Steam
-    { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  100, I::None           },
+    // ID 11 — Fire（H-6：Opacity 150→166≈0.65×255 + bIsTransparent=true；Godot MaterialRegistry.cs:20-21）
+    { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 166, I::None,          true },
+    // ID 12 — Steam（H-6：Opacity 100→89≈0.35×255 + bIsTransparent=true；Godot MaterialRegistry.cs:22-23）
+    { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  89,  I::None,          true },
     // ID 13 — Ash
     { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh    },
     // ID 14 — Ore_Coal（H-5：Godot Coal=20幀≈Stone(40幀)×0.5，UE5 Hardness 也改 1.5f；原 3.f=Stone 相同）
@@ -88,11 +88,19 @@ static const FLinearColor GMatColors[] =
     FLinearColor(0.60f, 0.40f, 1.00f, 0.82f),  // 16: Ore_MagicCrystal (purple)
 };
 
-FLinearColor FMaterialRegistry::GetColor(EMaterialType Mat)
+FLinearColor FMaterialRegistry::GetColor(EMaterialType Mat, uint8 Variant)
 {
     uint8 ID = (uint8)Mat;
     if (ID >= GMatDataCount) return FLinearColor::White;
-    return GMatColors[ID];
+    const FLinearColor& C = GMatColors[ID];
+
+    // 對應 Godot MaterialRegistry.cs:83-92：v = (variant/255)*0.06 - 0.03，僅偏移 RGB，Alpha 不變
+    const float V = (Variant / 255.f) * 0.06f - 0.03f;
+    return FLinearColor(
+        FMath::Clamp(C.R + V, 0.f, 1.f),
+        FMath::Clamp(C.G + V, 0.f, 1.f),
+        FMath::Clamp(C.B + V, 0.f, 1.f),
+        C.A);
 }
 
 // ── 顯示名稱查找表（中文）────────────────────────────────────────────────

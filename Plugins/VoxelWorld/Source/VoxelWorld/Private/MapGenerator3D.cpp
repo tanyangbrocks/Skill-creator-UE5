@@ -124,6 +124,13 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
 
         int32 Idx = lz*S*S + ly*S + lx;
         OutCells[Idx].MaterialID = MatID;
+
+        // H-4：每格微小色差（Godot TileWorld3D.cs:461 cell.Variant = _rng.Next(256)）。
+        // 背景 thread 平行生成多個 chunk，不能共用可變 RNG 狀態，改用座標決定性雜湊
+        // （與 PlaceOreVeinsInChunk 同款 LCG 常數，純函數無副作用，thread-safe）。
+        uint32 VH = (uint32)wx * 1664525u ^ (uint32)wy * 22695477u ^ (uint32)wz * 1013904223u ^ (uint32)Seed;
+        VH = VH * 1664525u + 1013904223u;
+        OutCells[Idx].Variant = (uint8)(VH >> 8);
     }
 
     EnsureWalkableCavesInChunk(OutCells);

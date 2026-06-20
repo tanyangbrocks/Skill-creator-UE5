@@ -25,6 +25,10 @@ public:
     // 是否有任何已登記的 PlacedUnit 佔用此 tile
     bool               OccupiedByPlaced(FIntVector WorldTile) const;
 
+    // K-5：任一 tile 被摧毀時呼叫（不論原因），對應 Godot PlacedObjectRegistry.cs:51-61。
+    // 把該格從所屬 Unit 移除；Tiles 清空或損壞 ≥50%（!IsIntact）則整個 Unit 解體。
+    void               NotifyDestroyed(FIntVector WorldTile);
+
     const TArray<FPlacedUnit>& GetAll() const { return Units; }
     int32                      Count()  const { return Units.Num(); }
 

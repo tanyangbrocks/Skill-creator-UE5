@@ -25,6 +25,8 @@
 #include "ASkillCreatorHUD.h"
 #include "PlacementShape.h"
 #include "PlacementValidator.h"
+#include "PlacedObjectRegistry.h"
+#include "PlacedUnit.h"
 #include "MaterialRegistry.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -120,12 +122,19 @@ void ASkillCreatorCharacter::RebindWorldSystems()
     if (CachedVoxelWorld)
     if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
     {
-        TWeakObjectPtr<UWorld> WeakWorld(GetWorld());
-        TW->OnTileDestroyed = [WeakWorld](int32 x, int32 y, int32 z,
+        TWeakObjectPtr<UWorld>            WeakWorld(GetWorld());
+        TWeakObjectPtr<AVoxelWorldActor>  WeakVoxelWorld(CachedVoxelWorld);
+        TW->OnTileDestroyed = [WeakWorld, WeakVoxelWorld](int32 x, int32 y, int32 z,
                                            EMaterialType OldMat, EDestroyReason Reason)
         {
             UWorld* W = WeakWorld.Get();
             if (!W) return;
+
+            // K-5：任何方式摧毀的格子都要通知 Registry（不限完美移除路徑），
+            // 對應 Godot Main.cs:404-407 全域 OnTileDestroyed → NotifyDestroyed
+            if (AVoxelWorldActor* VW = WeakVoxelWorld.Get())
+                VW->GetPlacedRegistry().NotifyDestroyed(FIntVector(x, y, z));
+
             auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
             if (!DropMgr) return;
             DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
@@ -680,10 +689,15 @@ void ASkillCreatorCharacter::OnDebugSnapshotApply()
 void ASkillCreatorCharacter::OnDebugPaint()
 {
     bDebugPaintEnabled = !bDebugPaintEnabled;
+
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (ASkillCreatorHUD* HUD = PC ? Cast<ASkillCreatorHUD>(PC->GetHUD()) : nullptr)
+        HUD->ToggleDebugPaint();
+
     if (GEngine)
         GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow,
             bDebugPaintEnabled
-                ? TEXT("[F1] 畫筆模式 ON（材質繪製尚未實作，僅狀態切換）")
+                ? TEXT("[F1] 畫筆模式 ON（左鍵塗材質 / 右鍵清除）")
                 : TEXT("[F1] 畫筆模式 OFF"));
 }
 
@@ -762,6 +776,20 @@ void ASkillCreatorCharacter::OnMine()
         return;
     }
 
+    // K-12：F1 畫筆模式——左鍵立即塗 HUD->ActivePaintMaterial（取代採掘），不消耗
+    // MiningProgress/工具判定。對應 Godot Main.cs:569-583 材質按鈕意圖（Godot 本身
+    // 該處理器只是 GD.Print stub，UE5 版本改為真正落地塗繪）。
+    if (bDebugPaintEnabled)
+    {
+        if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+        {
+            for (const FIntVector& Off : FPlacementShape::GetOffsets(EPlacementShape::Cube, HUD->PaintBrushRadius))
+                TW->SetTile(Hit.HitCell.X + Off.X, Hit.HitCell.Y + Off.Y, Hit.HitCell.Z + Off.Z,
+                            HUD->ActivePaintMaterial);
+        }
+        return;
+    }
+
     // ── 漸進式採掘（Godot PlayerController.cs:442-471 TickMining）─────────
     const EMaterialType TargetMat = TW->GetTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
     const FMaterialData& MatData  = FMaterialRegistry::Get(TargetMat);
@@ -787,29 +815,47 @@ void ASkillCreatorCharacter::OnMine()
     if (MiningProgress < MatData.Hardness)
         return; // 仍在進行中，中心格尚未被摧毀
 
-    // 達到硬度門檻 → 中心格摧毀（ShapeMining：靜默摧毀，由下方統一 spawn 1 個掉落物）
-    TW->DestroyTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, EDestroyReason::ShapeMining);
     CancelMining();
 
-    // 讀取 HUD 的形狀設定（N 鍵 ShapeMenuWidget 設定；預設 Cube + WorldScale::DefaultShapeRadius，
+    // 讀取 HUD 的形狀/完美移除設定（N 鍵 ShapeMenuWidget 設定；預設 Cube + WorldScale::DefaultShapeRadius，
     // 對應 Godot Main.cs:71-72 _activeShape=Cube / _shapeRadius=PlayerH/6）
     EPlacementShape Shape = EPlacementShape::Cube;
     int32 Radius = WorldScale::DefaultShapeRadius;
+    bool  bPerfectRemove = true;
     if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
     {
         Shape  = HUD->ActiveShape;
         Radius = HUD->PlaceRadius;
+        bPerfectRemove = HUD->bPerfectRemove;
     }
 
-    // 形狀範圍內其他格子立即摧毀（中心格已摧毀，跳過 dx=dy=dz=0；對應 Main.cs:1229-1235）
-    for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
+    // K-5：完美移除分流（對應 Main.cs:1203-1225）。採掘前先查目標格是否屬於某個
+    // PlacedUnit；若是且開啟完美移除，整個 Unit 的剩餘格子一起摧毀，不做形狀採掘。
+    FPlacedObjectRegistry& Registry = CachedVoxelWorld->GetPlacedRegistry();
+    FPlacedUnit* HitUnit = bPerfectRemove ? Registry.FindAtTile(Hit.HitCell) : nullptr;
+
+    if (HitUnit)
     {
-        if (Off == FIntVector::ZeroValue) continue;
-        const int32 tx = Hit.HitCell.X + Off.X;
-        const int32 ty = Hit.HitCell.Y + Off.Y;
-        const int32 tz = Hit.HitCell.Z + Off.Z;
-        if (TW->GetTile(tx, ty, tz) != EMaterialType::Air)
-            TW->DestroyTile(tx, ty, tz, EDestroyReason::ShapeMining);
+        TArray<FIntVector> Remaining = HitUnit->Tiles.Array();
+        const int32 UnitId = HitUnit->PlacedUnitId;
+        Registry.Unregister(UnitId);  // 對應 Main.cs:1218 RemoveUnit（先於摧毀，避免 NotifyDestroyed 競爭）
+        for (const FIntVector& P : Remaining)
+            if (TW->GetTile(P.X, P.Y, P.Z) != EMaterialType::Air)
+                TW->DestroyTile(P.X, P.Y, P.Z, EDestroyReason::ShapeMining);
+    }
+    else
+    {
+        // 一般形狀採掘路線（世界原生 tile 或完美移除關閉；對應 Main.cs:1228-1235）
+        TW->DestroyTile(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, EDestroyReason::ShapeMining);
+        for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
+        {
+            if (Off == FIntVector::ZeroValue) continue;
+            const int32 tx = Hit.HitCell.X + Off.X;
+            const int32 ty = Hit.HitCell.Y + Off.Y;
+            const int32 tz = Hit.HitCell.Z + Off.Z;
+            if (TW->GetTile(tx, ty, tz) != EMaterialType::Air)
+                TW->DestroyTile(tx, ty, tz, EDestroyReason::ShapeMining);
+        }
     }
 
     // 整個形狀採掘只 spawn 1 個掉落物（對應 Main.cs:1238；ShapeMining 在
@@ -817,14 +863,6 @@ void ASkillCreatorCharacter::OnMine()
     if (UWorld* W = GetWorld())
         if (UDroppedItemManager* DropMgr = W->GetSubsystem<UDroppedItemManager>())
             DropMgr->SpawnForReason(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, TargetMat, EDestroyReason::Mining);
-
-    // 已知缺口（R-6 PlacedObjectRegistry「完美移除」分流，對應 Main.cs:1203-1225）：
-    // 若採掘目標屬於玩家放置過的 PlacedUnit，Godot 在 _perfectRemove 模式下會改走
-    // 移除整個 Unit + 返還 1 物品的路線，不走形狀採掘。UE5 的 FPlacedObjectRegistry/
-    // FPlacedUnit 已存在但尚無實例掛在 AVoxelWorldActor 上，且 OnMine/OnPlace 從未
-    // 呼叫過。完整移植需要：① 在 AVoxelWorldActor 加一個 FPlacedObjectRegistry 成員、
-    // ② 採掘前查詢 Registry、③ 依 bPerfectRemove 分流處理。這部分工作量超出本次
-    // 任務範圍，故暫不實作，僅在此記錄缺口。
 }
 
 void ASkillCreatorCharacter::OnPlace()
@@ -861,6 +899,16 @@ void ASkillCreatorCharacter::OnPlace()
     FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
     if (!Hit.bHit) return;
 
+    // K-12：F1 畫筆模式——右鍵清除（設為 Air），不消耗物品/不走放置驗證
+    if (bDebugPaintEnabled)
+    {
+        if (HUD)
+            for (const FIntVector& Off : FPlacementShape::GetOffsets(EPlacementShape::Cube, HUD->PaintBrushRadius))
+                TW->SetTile(Hit.HitCell.X + Off.X, Hit.HitCell.Y + Off.Y, Hit.HitCell.Z + Off.Z,
+                            EMaterialType::Air);
+        return;
+    }
+
     // 取熱鍵格目前選中的物品
     const int32 Idx = InventoryComp->ActiveHotbarIndex;
     if (!InventoryComp->Slots.IsValidIndex(Idx)) return;
@@ -882,8 +930,9 @@ void ASkillCreatorCharacter::OnPlace()
     }
 
     const FGridPos PlayerPos = GetPosition();
+    FPlacedObjectRegistry& Registry = CachedVoxelWorld->GetPlacedRegistry();
 
-    int32 Placed = 0;
+    TArray<FIntVector> PlacedTiles;
     for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
     {
         const FIntVector P = PlaceCenter + Off;
@@ -897,17 +946,23 @@ void ASkillCreatorCharacter::OnPlace()
         if (PlayerPos.EuclideanDistance(PGrid) > static_cast<float>(WorldScale::MiningRangeTiles))
             continue;
 
-        // 每格放置合法性（對應 Main.cs:1272 PlacementValidator.CanPlace；
-        // Registry 參數留空 = 暫不檢查 PlacedObjectRegistry 佔用，屬另一已知缺口 K-5）
-        if (!FPlacementValidator::CanPlace(*TW, { P }, Data.PlaceAs))
+        // 每格放置合法性（對應 Main.cs:1272 PlacementValidator.CanPlace；K-5：補上 Registry
+        // 避免疊放到既有 PlacedUnit 上）
+        if (!FPlacementValidator::CanPlace(*TW, { P }, Data.PlaceAs, &Registry))
             continue;
 
         TW->SetTile(P.X, P.Y, P.Z, Data.PlaceAs);
-        ++Placed;
+        PlacedTiles.Add(P);
     }
 
-    if (Placed > 0)
+    if (PlacedTiles.Num() > 0)
     {
+        // K-5：登記為一個 PlacedUnit，供之後「完美移除」整體判定（對應 Main.cs:1280）
+        FPlacedUnit Unit;
+        Unit.Material = Data.PlaceAs;
+        Unit.Tiles.Append(PlacedTiles);
+        Registry.Register(Unit);
+
         // 只消耗 1 個物品，不管形狀放了多少格（對應 Main.cs:1281）
         InventoryComp->Consume(Idx, 1);
         PlaceCooldown = 0.12f; // 對應 Main.cs:1282

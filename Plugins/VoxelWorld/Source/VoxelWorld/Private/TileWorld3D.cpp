@@ -676,7 +676,7 @@ void FTileWorld3D::SaveChunk(int32 cx, int32 cy, int32 cz, const FString& WorldD
     if (!Ar) return;
 
     uint32 Magic = 0x434B3344u;  // 'CK3D'
-    uint8  Ver   = 1;
+    uint8  Ver   = 2;  // H-4：FTileCell 加 Variant 欄位（4→5 bytes），版號 bump 讓舊存檔安全重生成
     *Ar << Magic << Ver;
     Ar->Serialize((*Found)->Cells, sizeof((*Found)->Cells));
     (*Found)->bNeedsSave = false;
@@ -690,7 +690,7 @@ bool FTileWorld3D::TryLoadChunk(int32 cx, int32 cy, int32 cz, const FString& Wor
 
     uint32 Magic = 0; uint8 Ver = 0;
     *Ar << Magic << Ver;
-    if (Magic != 0x434B3344u || Ver != 1) return false;
+    if (Magic != 0x434B3344u || Ver != 2) return false;  // Ver 1（4 bytes/cell）視為過期，重新生成
 
     FIntVector CC(cx, cy, cz);
     FChunk3D& C = *GetOrCreateChunk(CC);

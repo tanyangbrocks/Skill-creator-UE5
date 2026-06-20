@@ -3,7 +3,7 @@
 **建立時間**：2026-06-19  
 **目標**：對照 Godot 原始碼（C:\skill-creator\Scripts\）逐一核實 issues.md 所有「已實作」標記是否真正正確實作，並修復不符的地方。
 
-> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。⭐ 待修速查表第一層（可立即動手 5 項：J-16/J-19/K-20/K-7/I-7）已全部完成，詳見下方表格狀態欄。直接看「🟡 中範圍」與「🟡 積木編輯器 UI」兩層接續，不需重讀 Agent 段落。修完每項後在速查表勾選並在 `實作進度.md` 加一列。
+> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。⭐ 待修速查表第一層（5 項）+ 第二層中範圍（5 項：H-4/H-6/K-5/K-12/I-9）已全部完成，詳見下方表格狀態欄。**只剩「🟡 積木編輯器 UI」這一層**，且範圍認定已變更：`SBlockEditorWidget` 用的 `SGraphEditor` 是 Editor-only（UnrealEd 依賴），封裝後玩家完全打不開，K-15~19 寫的「全部在 SBlockEditorWidget.h/.cpp 實作」等於繼續往錯的地基上加功能。下一步應先跟使用者確認是否要整套換成 runtime UMG 重做（範圍遠大於原估），而不是逐項修 K-15~19。
 
 ---
 
@@ -21,15 +21,15 @@
 | K-7 | 放置 OccupiedByEntity 缺失 | 新增 `ASkillCreatorCharacter::IsTileOccupiedByEntity()`，`OnPlace()` 逐格放置前檢查 | `Main.cs:1654 OccupiedByEntity` | `ASkillCreatorCharacter.h/.cpp` | ✅（玩家檢查額外補 Z 軸比對，修正 Godot 2D→3D 遺留的缺口） |
 | I-7 | 敵人復活延遲 5f vs Godot 8f | `AEnemy.h:116` `StartRespawn` 預設 5.f→8.f | `Enemy.cs:47 RespawnTime=8f` | `AEnemy.h` | ✅ |
 
-### 🟡 中範圍（需較多工程，建議單獨 session）
+### 🟡 中範圍 — 全部完成 ✅（2026-06-20）
 
-| # | 項目 | 修法摘要 | Godot 依據 | UE5 檔案 |
-|---|-----|---------|-----------|---------|
-| H-6 | GreedyMesher 缺半透明雙 pass（水/火不透明） | `FMaterialData` 補 `bIsTransparent/Opacity`；`MaterialRegistry` 填值 Water=true/0.55, Fire=true/0.65, Steam=true/0.35；`GreedyMesher::Build` 輸出兩個 StreamSet；`AVoxelWorldActor` 透明 slot 使用 AlphaBlend 材質。**需關 Editor + Rebuild** | `TileWorldRenderer3D.cs:64-83` `MaterialData.cs:17-23` | `GreedyMesher.h/.cpp` `MaterialRegistry.cpp` `FMaterialData` |
-| I-9 | 敵人 AI 完全缺失（BT 資產不存在） | 建立 `BT_Enemy.uasset` + 最小 `BTTask_MoveOnGrid.cpp`/`BTTask_AttackPlayer.cpp`，還原 Godot UpdateMelee/Ranged/Patrol/Heavy 四種狀態機。**此為 M-5/M-8 工作，範圍最大** | `Enemy.cs:171-411` | `AEnemyAIController.cpp` + 新 BTTask |
-| K-5 | PlacedObjectRegistry 完美移除分流 | `OnMine` 成功後先查 `TryGetUnit(target)`；有 Unit + `bPerfectRemove=true` → `RemoveUnit` + `Inventory->TryAdd(1)`，不進形狀採掘段；`ASkillCreatorHUD` 補 `bool bPerfectRemove=true` | `Main.cs:1203-1225` | `ASkillCreatorCharacter.cpp` `ASkillCreatorHUD.h` |
-| K-12 | F1 筆刷面板未實作 | `ASkillCreatorHUD` 加 F1 面板（6 種材質 + 4 種筆刷大小）；`OnMine` 若 `bDebugPaintEnabled` 則 `TW->SetTile(target, ActivePaintMaterial)` | `Main.cs:549-599` | `ASkillCreatorHUD.cpp` `ASkillCreatorCharacter.cpp` |
-| H-4 | TileCell 缺 Variant 色差欄位 | `FTileCell` 補 `uint8 Variant=0`（**需關 Editor + Rebuild**）；`FMaterialRegistry::GetColor` 補 Variant 參數；`GreedyMesher` 傳入 `cell.Variant` | `TileCell.cs:8` `MaterialRegistry.cs:86-92` | `MaterialType.h` `MaterialRegistry.h/.cpp` `GreedyMesher.cpp` |
+| # | 項目 | 狀態 |
+|---|-----|------|
+| H-6 | GreedyMesher 缺半透明雙 pass（水/火不透明） | ✅ `FMaterialData` 補 `bIsTransparent`+修正 Opacity 數值。UE5 每材質一個 slot，不需要像 Godot 雙 StreamSet；實際半透明渲染仍需 Material 資產設 Translucent（美術編輯，未做） |
+| I-9 | 敵人 AI 完全缺失（BT 資產不存在） | ✅ 確認誤判：BT_Enemy/BB_Enemy.uasset 與 BTTask_MoveOnGrid/AttackPlayer 早已存在。改在 `UBTTask_MoveOnGrid` C++ 補 Patrol 巡邏 + Ranged 後退兩種行為分支，不需碰 BT 節點圖 |
+| K-5 | PlacedObjectRegistry 完美移除分流 | ✅ 已接通：`AVoxelWorldActor::PlacedRegistry`+`NotifyDestroyed`+`OnMine`/`OnPlace` 全部接通。⚠️ 未含 placed-registry.json 存讀持久化 |
+| K-12 | F1 筆刷面板未實作 | ✅ 新增 `UDebugPaintWidget` + 真實塗繪效果（Godot 原版按鈕本身是 stub，UE5 選擇做出真實效果） |
+| H-4 | TileCell 缺 Variant 色差欄位 | ✅ 已補，視覺效果仍需 Material Graph 讀 VertexColor.G（美術編輯，未做） |
 
 ### 🟡 積木編輯器 UI（最大範圍，建議單獨 session）
 

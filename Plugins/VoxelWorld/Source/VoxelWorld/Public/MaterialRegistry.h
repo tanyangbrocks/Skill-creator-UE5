@@ -33,6 +33,11 @@ struct FMaterialData
     float MagicResistance   = 0.f;   // 魔法傷害抵抗係數（0-1；1=完全免疫）
     uint8 Opacity           = 255;   // 透明度（255=完全不透明；0=完全透明）
     EItemId FragmentItem    = EItemId::None; // 採礦/爆炸碎裂後的主要掉落物 ID
+
+    // H-6：是否需要半透明渲染（對應 Godot MaterialData.cs:51 IsTransparent）。
+    // 刻意放在欄位表最後一個，現有 GMatData[] 的位置式初始化列表（13 個值）才不會
+    // 因為插入新欄位而把後面的值全部錯位一格。
+    bool  bIsTransparent    = false;
 };
 
 class VOXELWORLD_API FMaterialRegistry
@@ -42,7 +47,8 @@ public:
     static EPhysicsCategory       GetPhysics(uint8 MaterialID);
 
     // ── 顯示用輔助（對應 Godot MaterialData 顯示欄位）────────────────
-    static FLinearColor           GetColor(EMaterialType Mat);
+    // Variant：0-255 微小色差（對應 Godot MaterialRegistry.cs:83-92），預設 0 = 無偏移
+    static FLinearColor           GetColor(EMaterialType Mat, uint8 Variant = 0);
     static FText                  GetDisplayName(EMaterialType Mat);
     static TArray<FItemDrop>      GetDefaultDrops(EMaterialType Mat);
     static EItemId                GetFragmentItem(EMaterialType Mat);

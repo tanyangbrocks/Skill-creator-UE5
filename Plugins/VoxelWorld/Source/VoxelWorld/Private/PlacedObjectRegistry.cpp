@@ -6,11 +6,27 @@
 
 int32 FPlacedObjectRegistry::Register(FPlacedUnit& InUnit)
 {
-    InUnit.PlacedUnitId = NextId++;
+    InUnit.PlacedUnitId      = NextId++;
+    InUnit.OriginalTileCount = InUnit.Tiles.Num();
     for (const FIntVector& Tile : InUnit.Tiles)
         TileToUnitId.Add(Tile, InUnit.PlacedUnitId);
     Units.Add(InUnit);
     return InUnit.PlacedUnitId;
+}
+
+void FPlacedObjectRegistry::NotifyDestroyed(FIntVector WorldTile)
+{
+    const int32* IdPtr = TileToUnitId.Find(WorldTile);
+    if (!IdPtr) return;
+    const int32 Id = *IdPtr;
+    TileToUnitId.Remove(WorldTile);
+
+    FPlacedUnit* Unit = Find(Id);
+    if (!Unit) return;
+    Unit->Tiles.Remove(WorldTile);
+
+    if (Unit->Tiles.IsEmpty() || !Unit->IsIntact())
+        Unregister(Id);
 }
 
 void FPlacedObjectRegistry::Unregister(int32 PlacedUnitId)
