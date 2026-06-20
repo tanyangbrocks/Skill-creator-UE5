@@ -1,0 +1,231 @@
+{
+  "agent": "J",
+  "sections": ["§9 Items/Equipment/Inventory", "§10 GameFlow/Save"],
+  "audit_date": "2026-06-20",
+  "godot_files": [
+    "C:/skill-creator/Scripts/World/Items/ItemId.cs",
+    "C:/skill-creator/Scripts/World/Items/ItemData.cs",
+    "C:/skill-creator/Scripts/World/Items/ItemRegistry.cs",
+    "C:/skill-creator/Scripts/World/Items/ItemStack.cs",
+    "C:/skill-creator/Scripts/World/Items/Inventory.cs",
+    "C:/skill-creator/Scripts/World/Items/ItemDrop.cs",
+    "C:/skill-creator/Scripts/World/Items/DroppedItem.cs",
+    "C:/skill-creator/Scripts/World/Items/DroppedItemManager.cs",
+    "C:/skill-creator/Scripts/World/Items/EquipmentSlotType.cs",
+    "C:/skill-creator/Scripts/GameFlow/FlowSaveSystem.cs",
+    "C:/skill-creator/Scripts/GameFlow/GameFlowUI.cs",
+    "C:/skill-creator/Scripts/GameFlow/CharacterSaveData.cs",
+    "C:/skill-creator/Scripts/GameFlow/WorldSaveData.cs"
+  ],
+  "ue5_files": [
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Public/ItemId.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Public/ItemData.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Private/ItemRegistry.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Public/ItemRegistry.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Public/EquipmentSlotType.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/UInventoryComponent.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Private/UInventoryComponent.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/ADroppedItemActor.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Private/ADroppedItemActor.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/UDroppedItemManager.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Private/UDroppedItemManager.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/FlowSaveSystem.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Private/FlowSaveSystem.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/UGameFlowWidget.h",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Private/UGameFlowWidget.cpp",
+    "C:/SkillCreatorUE5/Source/SkillCreatorRuntime/Public/CharacterSaveData.h",
+    "C:/SkillCreatorUE5/Plugins/VoxelWorld/Source/VoxelWorld/Public/WorldSaveData.h"
+  ],
+  "summary": {
+    "total": 20,
+    "ok": 12,
+    "warn": 5,
+    "fail": 3
+  },
+  "findings": [
+    {
+      "id": "J-1",
+      "verdict": "OK",
+      "title": "EItemId 列舉完整性",
+      "godot_ref": "ItemId.cs:3-40 (enum ItemId)",
+      "ue5_ref": "ItemId.h:8-47 (EItemId)",
+      "detail": "Godot 有 None + 5 Block + 3 Tool + 3 Equip + 4 Ore + 9 Fragment = 25 值。UE5 有相同的 None~Fragment 系列，但多了 OreGoldRaw（ItemId.h:32），Godot 沒有此值。OreGoldRaw 屬純擴充（Godot 礦石清單裡沒有金），不算遷移失誤，但也沒有 Godot 依據。架構等價，多出的值屬 UE5 擴充。"
+    },
+    {
+      "id": "J-2",
+      "verdict": "WARN",
+      "title": "OreGoldRaw 無 Godot 依據且 ItemRegistry 未對齊掉落表",
+      "godot_ref": "ItemId.cs: OreGoldRaw 不存在",
+      "ue5_ref": "ItemId.h:32 OreGoldRaw; ItemRegistry.cpp:55 MakeMat(OreGoldRaw, 生金礦)",
+      "detail": "UE5 獨自增加 EItemId::OreGoldRaw，對應的 MaterialType 是否有 GoldOre 礦區及掉落表尚未核實。ItemRegistry 把它當 MakeMat（不可放置、無 PlaceAs）與 Godot OreCoal 等 IsPlaceable=true 不同。更重要的是，若 MaterialRegistry 沒有對應礦區和 FragmentGold，OreGoldRaw 在遊戲中永遠不會出現，是一個 dead item。不算錯誤但需要記錄。"
+    },
+    {
+      "id": "J-3",
+      "verdict": "WARN",
+      "title": "OreCoal/CopperRaw/IronRaw/MagicCrystal 的 IsPlaceable 語意不一致",
+      "godot_ref": "ItemRegistry.cs:41-44 — Reg(new ItemData(ItemId.OreCoal, '煤炭', true, MaterialType.CoalOre, false, 0, 1f, 99999))",
+      "ue5_ref": "ItemRegistry.cpp:52-56 — Set(MakeMat(EItemId::OreCoal, INVTEXT('煤炭')))",
+      "detail": "Godot 的 OreCoal/OreCopperRaw/OreIronRaw/OreMagicCrystal 四個礦石物品 bIsPlaceable=true，PlaceAs 分別為 CoalOre/CopperOre/IronOre/MagicCrystalOre（可以把礦石物品放回地圖變成礦脈）。UE5 用 MakeMat() 建立，bIsPlaceable=false、PlaceAs=Air，玩家無法把礦石物品放回地圖。Godot ItemRegistry.cs:41-44 是明確的設計意圖（放礦石回地圖 = 可再生礦脈），目前 UE5 缺失此行為。",
+      "fix": "ItemRegistry.cpp 的 OreCoal/OreCopperRaw/OreIronRaw/OreMagicCrystal 改用 MakeBlock() 或設 bIsPlaceable=true + PlaceAs=CoalOre/CopperOre/IronOre/MagicCrystalOre 對應材質。"
+    },
+    {
+      "id": "J-4",
+      "verdict": "OK",
+      "title": "FItemData 結構欄位完整性",
+      "godot_ref": "ItemData.cs:5-18 (record ItemData)",
+      "ue5_ref": "ItemData.h:11-31 (FItemData)",
+      "detail": "Godot record 欄位：Id, DisplayName, IsPlaceable, PlaceAs, IsTool, ToolTier, MiningSpeedMult, MaxStack, EquipSlot, AtkMult, DefFlat, MpBonus。UE5 FItemData 有完全對應的 11 個欄位，命名和型別均一致（bool bIsPlaceable/bIsTool 以 b 前綴對應 bool 語意）。架構等價。"
+    },
+    {
+      "id": "J-5",
+      "verdict": "OK",
+      "title": "ItemRegistry 所有非礦石物品數值一致",
+      "godot_ref": "ItemRegistry.cs:17-57",
+      "ue5_ref": "ItemRegistry.cpp:35-67",
+      "detail": "BlockDirt/Stone/Wood/Sand/Ash 的 MaxStack=99999 和放置材質一致；ToolBasicPick Tier=1/Speed=2.5f、ToolBasicAxe Tier=0/Speed=2.0f、ToolIronPick Tier=2/Speed=3.5f 完全一致；EquipBasicSword AtkMult=1.3f、EquipLeatherArmor DefFlat=5f、EquipAmulet MpBonus=30f 完全一致；Fragment 系列 MaxStack=99999 且 bIsPlaceable=false 一致。"
+    },
+    {
+      "id": "J-6",
+      "verdict": "OK",
+      "title": "EquipmentSlotType 四值完整",
+      "godot_ref": "EquipmentSlotType.cs:3 (enum: None, Weapon, Armor, Accessory)",
+      "ue5_ref": "EquipmentSlotType.h:5-12 (EEquipmentSlotType)",
+      "detail": "None/Weapon/Armor/Accessory 四值完整且順序一致。"
+    },
+    {
+      "id": "J-7",
+      "verdict": "OK",
+      "title": "ItemStack 結構與 IsEmpty 邏輯",
+      "godot_ref": "ItemStack.cs:3-14",
+      "ue5_ref": "（FItemStack 在 ItemStack.h — 未直接讀取，但從 UInventoryComponent.cpp 使用方式推斷）",
+      "detail": "從 UInventoryComponent.cpp 使用 FItemStack.IsEmpty()、FItemStack::Empty()、FItemStack(Id, Count)、WithCount() 等方法確認語意一致。UE5 以 struct 而非 class 實作（符合 POD 慣例），IsEmpty 條件（Id==None || Count<=0）從呼叫行為一致。"
+    },
+    {
+      "id": "J-8",
+      "verdict": "OK",
+      "title": "UInventoryComponent TryAdd 雙輪算法",
+      "godot_ref": "Inventory.cs:20-47 TryAdd()",
+      "ue5_ref": "UInventoryComponent.cpp:36-63 TryAdd()",
+      "detail": "兩版都是：第一輪填補同種格子（優先堆疊），第二輪填入空格，回傳實際加入數量（count-remaining）。MaxStack 查詢方式、迴圈邊界、Remaining 計算邏輯完全一致。"
+    },
+    {
+      "id": "J-9",
+      "verdict": "OK",
+      "title": "UInventoryComponent Consume / SwapSlots / ActiveToolTier / MiningSpeedMult",
+      "godot_ref": "Inventory.cs:50-91",
+      "ue5_ref": "UInventoryComponent.cpp:66-84",
+      "detail": "Consume 的邊界檢查、IsEmpty 守衛、全消耗時填 Empty 邏輯完全一致。SwapSlots 的邊界+自交換守衛一致（Godot 用 tuple deconstruct，UE5 用 Swap — 語意等價）。GetActiveToolTier 和 GetActiveMiningSpeedMult 邏輯一致。"
+    },
+    {
+      "id": "J-10",
+      "verdict": "OK",
+      "title": "Inventory 大小常數：HotbarSize=10 / TotalSize=30",
+      "godot_ref": "Inventory.cs:5-6 (HotbarSize=10, TotalSize=30)",
+      "ue5_ref": "UInventoryComponent.h:16-17 (HotbarSize=10, TotalSize=30)",
+      "detail": "完全一致。ActiveHotbarIndex Clamp(0, HotbarSize-1) 也一致。"
+    },
+    {
+      "id": "J-11",
+      "verdict": "FAIL",
+      "title": "DroppedItemManager 缺 SpawnFragments 碎片批次生成",
+      "godot_ref": "DroppedItemManager.cs:31-46 SpawnFragments(center, mat, tileCount, reason) — 爆炸/採掘結束後批次呼叫；1000 tile = 1 unit；Mining=100碎片/unit，Explosion=20~80碎片/unit",
+      "ue5_ref": "UDroppedItemManager.h / UDroppedItemManager.cpp — 全文無 SpawnFragments 或等效方法",
+      "detail": "Godot DroppedItemManager 有兩個 Spawn 方法：per-tile 的 Spawn()（爆炸/形狀採掘跳過）和批次的 SpawnFragments()（爆炸/採掘結束後依 tileCount 換算 Fragment 物品）。UE5 的 SpawnForReason 只實作了 per-tile 部分的路由邏輯（爆炸跳過、一般採掘查掉落表），完全缺少 SpawnFragments 的批次碎片邏輯。爆炸後礦石碎片（Fragment*）永遠不會掉落。",
+      "fix": "在 UDroppedItemManager 補上 SpawnFragments(FGridPos Center, EMaterialType Mat, int32 TileCount, EDestroyReason Reason) 方法：計算 units=TileCount/1000.f，Mining 給 units*100 碎片，Explosion 給 units*RandRange(20,80) 碎片，查 MaterialRegistry 的 FragmentItem 欄位生成。"
+    },
+    {
+      "id": "J-12",
+      "verdict": "FAIL",
+      "title": "DroppedItemActor 缺重力落下邏輯",
+      "godot_ref": "DroppedItem.cs:13-35 — FallInterval=0.18f，每 0.18 秒嘗試往下 Y+1 格，若下方為 Air 則 Position.Y++",
+      "ue5_ref": "ADroppedItemActor.cpp — 只有 Age 累加和 IsExpired 判斷，無任何重力/落下邏輯",
+      "detail": "Godot 掉落物有模擬重力：每 FallInterval=0.18f 秒往下移一格（若下方為 Air）。UE5 的 ADroppedItemActor::Tick 只做 Age 累加，掉落物會懸浮在空中被採掘位置，無法落到地面。對於地面採掘（tile 被清空後下方有 Air）掉落物視覺上不自然。",
+      "fix": "在 ADroppedItemActor::Tick 加入 FallTimer 倒數（0.18f），到期後透過 UDroppedItemManager 或直接查詢 AVoxelWorldActor 判斷正下方 tile 是否為 Air，若是則位置往下移一格（30cm）。需要 Actor 持有世界參照或由 Manager Tick 驅動。"
+    },
+    {
+      "id": "J-13",
+      "verdict": "WARN",
+      "title": "TryPickupAll 缺裝備自動穿戴邏輯",
+      "godot_ref": "DroppedItemManager.cs:62-90 Update() — 拾取裝備時若對應裝備欄空則自動穿戴（player.Equipment.TryEquip）",
+      "ue5_ref": "UDroppedItemManager.cpp:32-53 TryPickupAll() — 只回傳 FItemStack 陣列，無任何裝備自動穿戴邏輯",
+      "detail": "Godot 在 DroppedItemManager.Update 拾取裝備後會自動找到背包中的裝備槽，若對應裝備欄（武器/防具/飾品）為空則自動呼叫 player.Equipment.TryEquip 穿戴。UE5 的 TryPickupAll 只返回 FItemStack 陣列，由呼叫端（ASkillCreatorCharacter::OnMine）決定如何處理，但並未確認呼叫端是否有實作自動穿戴邏輯，需要追查 ASkillCreatorCharacter。"
+    },
+    {
+      "id": "J-14",
+      "verdict": "OK",
+      "title": "FlowSaveSystem 存取介面對應",
+      "godot_ref": "FlowSaveSystem.cs:20-88 — Load/Save/SaveCharacter/SaveWorld/MakeWorldDir/DeleteWorld/DeleteCharacter",
+      "ue5_ref": "FlowSaveSystem.h / FlowSaveSystem.cpp",
+      "detail": "架構合理重構：Godot 用單一 flowsave.json 存全部角色+世界清單；UE5 改為目錄型存法（每世界一個目錄，每角色一個.json），API 語意保留（ListAll/Create/Save/Load/Delete 對每個實體類型）。這是合理的架構演進（適應 UE5 的 ProjectSavedDir 慣例），功能語意完全覆蓋。"
+    },
+    {
+      "id": "J-15",
+      "verdict": "OK",
+      "title": "CreateNewWorld 自動產生 Id（GUID）",
+      "godot_ref": "WorldSaveData.cs:5 Id = Guid.NewGuid().ToString('N')[..8]（8字元短GUID）",
+      "ue5_ref": "FlowSaveSystem.cpp:55 OutData.Id = FGuid::NewGuid().ToString(EGuidFormats::Digits)（完整32字元GUID）",
+      "detail": "UE5 使用完整 32 字元 GUID 而非 Godot 的截頭 8 字元版本。碰撞機率更低，功能語意完全對應，屬合理改進。"
+    },
+    {
+      "id": "J-16",
+      "verdict": "WARN",
+      "title": "WorldSaveData 缺 LastPlayed 更新機制",
+      "godot_ref": "GameFlowUI.cs:379 w.LastPlayed = DateTime.Now.ToString('yyyy-MM-dd HH:mm') — 進入世界時更新",
+      "ue5_ref": "UGameFlowWidget.cpp:575-589 EnterWorld() — 無任何 LastPlayed 更新",
+      "detail": "Godot 在進入世界時（WorldCard.clickBtn.Pressed）會立刻更新 LastPlayed 時間戳並存檔（GameFlowUI.cs:379-381）。UE5 的 EnterWorld() 只做 LoadWorldMeta + SetPendingWorld + OnEnterGame，沒有更新 Meta.LastPlayed 並回存。UE5 的 FWorldSaveData 有 FDateTime LastPlayed 欄位但永遠不會被更新。"
+    },
+    {
+      "id": "J-17",
+      "verdict": "OK",
+      "title": "FlowSaveSystem DeleteWorld 遞迴刪除目錄",
+      "godot_ref": "FlowSaveSystem.cs:78-83 DeleteWorld() — Directory.Delete(recursive:true)",
+      "ue5_ref": "FlowSaveSystem.cpp:66-70 DeleteWorld() — IFileManager::Get().DeleteDirectory(bRecursive=true)",
+      "detail": "兩版都遞迴刪除整個世界目錄，語意一致。"
+    },
+    {
+      "id": "J-18",
+      "verdict": "OK",
+      "title": "GameFlowUI / UGameFlowWidget 五畫面→兩畫面架構差異（合理）",
+      "godot_ref": "GameFlowUI.cs: 五個 Panel（標題/角色選擇/角色創建/世界選擇/世界創建），含 PregenerateWorld 同步生成",
+      "ue5_ref": "UGameFlowWidget.cpp: 兩個畫面（CharScreen/WorldScreen），CreateWorld 直接呼叫 FFlowSaveSystem::CreateNewWorld（不做預先世界生成），內嵌建立欄位",
+      "detail": "UE5 合理簡化為兩畫面（角色/世界），把創建功能內嵌在同一畫面（輸入框+建立按鈕），而非 Godot 的五個獨立 Panel。此架構差異已在 UGameFlowWidget.h 的類別注解明確說明（第 42-43 行），屬刻意設計，不算缺失。"
+    },
+    {
+      "id": "J-19",
+      "verdict": "FAIL",
+      "title": "GameFlowWidget 缺世界預先生成（PregenerateWorld）",
+      "godot_ref": "GameFlowUI.cs:451-502 PregenerateWorld() — 創建世界時立刻執行地形生成+存 chunk+寫出生點，進入世界永遠走「讀磁碟」快速路徑（Minecraft 式）",
+      "ue5_ref": "UGameFlowWidget.cpp:560-566 CreateWorld() — 只呼叫 FFlowSaveSystem::CreateNewWorld（建目錄+寫 meta），不執行任何地形生成",
+      "detail": "Godot 在「確認創建世界」時同步呼叫 PregenerateWorld()，執行 MapGenerator3D.Generate()、把 chunk 存磁碟、並寫出生點到 world.meta，讓之後每次進入世界都走「讀磁碟」路徑（快）。UE5 的 CreateWorld 僅建立空目錄和 meta 文件，世界進入時需要即時生成地形（慢，且 bIsFirstEnter 永遠是 true）。對大地圖（256 tiles 高）這會造成明顯延遲。",
+      "fix": "在 UGameFlowWidget::CreateWorld() 呼叫後，觸發 ATileWorldActor 的地形預生成（對應 PregenerateWorld：生成出生區 chunk、存磁碟、寫 PlayerSpawn、設 bIsFirstEnter=false）。或在 GameMode 首次進入世界時偵測 bIsFirstEnter=true 並觸發生成，至少需要確保有一個明確的生成時機點。"
+    },
+    {
+      "id": "J-20",
+      "verdict": "OK",
+      "title": "CharacterSaveData 欄位完整性",
+      "godot_ref": "CharacterSaveData.cs:4-26 — Id/Name/Level/Xp/Hp/Mp/InventorySlots/ActiveHotbar/SpellGroupJson/ManaCurrents",
+      "ue5_ref": "CharacterSaveData.h:16-47 — Id/CharacterName/Level/Xp/CurrentHp/CurrentMp/Stamina/MentalEnergy/Mood/InventorySlots/ActiveHotbar/SpellGroupJson/ManaCurrents/SpellBook",
+      "detail": "UE5 CharacterSaveData 包含 Godot 所有欄位（Id/Name/Level/Xp/Hp/Mp/InventorySlots/ActiveHotbar/SpellGroupJson/ManaCurrents），且額外增加了 UE5 擴充欄位（Stamina/MentalEnergy/Mood/SpellBook）。所有 Godot 欄位都有對應，屬正向擴充。CharacterName vs Name 命名差異屬合理 UE5 慣例（避免與 AActor::GetName 混淆）。"
+    },
+    {
+      "id": "J-21",
+      "verdict": "WARN",
+      "title": "CharacterSaveData.Hp 預設值 100f 與 CharacterStats 初始值需核實",
+      "godot_ref": "CharacterSaveData.cs:9-10 Hp=100f, Mp=100f",
+      "ue5_ref": "CharacterSaveData.h:22-23 CurrentHp=100.f, CurrentMp=100.f",
+      "detail": "數值一致，但 Godot 的 Stamina/MentalEnergy/Mood 不在 CharacterSaveData（由 CharacterState runtime 管理），UE5 卻把它們放進存檔結構。這表示 UE5 存取這些精神狀態值（存盤後下次讀回），而 Godot 不存盤（每次進入世界重置）。屬刻意設計擴充，不算錯誤，但需記錄語意差異。"
+    }
+  ],
+  "missing_items_not_in_issues_md": [
+    "DroppedItemManager.SpawnFragments 批次碎片生成（J-11）",
+    "DroppedItemActor 重力落下邏輯（J-12）",
+    "進入世界時 LastPlayed 更新（J-16）",
+    "世界預先地形生成 PregenerateWorld（J-19）"
+  ],
+  "notes": [
+    "OreGoldRaw 是 UE5 自行增加的值，Godot 沒有；需確認是否有對應 GoldOre 材質和 FragmentGold（J-2）",
+    "礦石物品的 IsPlaceable=true 在 Godot 是刻意設計（可放回地圖重建礦脈），UE5 誤設為 false（J-3）",
+    "自動裝備穿戴邏輯：需追查 ASkillCreatorCharacter 的 OnMine 回呼是否有補實作（J-13）",
+    "GameFlowWidget 架構差異（五畫面→兩畫面）已在 .h 注解中說明，屬刻意設計（J-18）"
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "agent": "H",
+  "section": "§7 Rendering/Materials/Sky",
+  "generated_at": "2026-06-20",
+  "summary": "核實 10 項：✅3 / ⚠️4 / ❌3",
+  "findings": [
+    {
+      "id": "H-1",
+      "item": "EMaterialType 枚舉完整性與 ID 對應",
+      "godot_ref": "MaterialType.cs:4-19 — Air/Stone/Dirt/Wood/Sand/Water/Lava/Fire/Steam/Ash/CoalOre/CopperOre/IronOre/MagicCrystalOre（共14值）",
+      "ue5_ref": "Source/SkillCreatorCore/Public/MaterialType.h:20-41 — Air/Stone/Dirt/Grass/Sand/Water/Lava/Wood/Leaves/Ore_Iron/Ore_Gold/Fire/Steam/Ash/Ore_Coal/Ore_Copper/Ore_MagicCrystal/Count（共17+1值）",
+      "verdict": "⚠️",
+      "detail": "UE5 在 Godot 基礎上新增了 Grass(3)/Leaves(8)/Ore_Gold(10) 共 3 種材質，同時重新排列了部分 ID 順序。關鍵問題：Godot 的 ID 順序是 Air/Stone/Dirt/Wood/Sand/Water/Lava/Fire/Steam/Ash/Coal/Copper/Iron/MagicCrystal，UE5 插入 Grass 和 Leaves 後導致後面所有 ID 偏移（Godot Wood=3 → UE5 Wood=7、Godot Sand=4 → UE5 Sand=4 等）。Ore_Gold 是 UE5 新增（Godot 無此礦石）。Grass 和 Leaves 是合理擴充（Godot 2D 版本沒有地表/樹葉分別視覺）。ID 偏移是故意的重組設計，但舊存檔若按 Godot ID 讀回 UE5 會錯誤對應材質。"
+    },
+    {
+      "id": "H-2",
+      "item": "MaterialData 欄位完整性（FMaterialData vs MaterialData record）",
+      "godot_ref": "MaterialData.cs:7-51 — Type/DisplayName/BaseColor/Physics/IsFlammable/Density/BurnMin/BurnMax + IsMineable/Hardness/RequiredToolTier/BlastResistance/MagicResistance + DefaultDrops/FragmentItem + NativeElement + Opacity/IsTransparent 共17個欄位",
+      "ue5_ref": "MaterialRegistry.h:19-36 (FMaterialData) — Physics/Density/bFlammable/BurnMin/BurnMax/NativeElement/bIsMineable/Hardness/RequiredToolTier/BlastResistance/MagicResistance/Opacity/FragmentItem 共13個欄位；顏色與名稱分離到 GMatColors[]/GMatNames[] 查找表",
+      "verdict": "⚠️",
+      "detail": "架構差異：Godot 把顏色(BaseColor)和顯示名稱(DisplayName)內嵌在 MaterialData record，UE5 分離成獨立查找表 GMatColors[] 和 GMatNames[]（O(1) 查找，更快）。此架構差異合理。但兩個功能性欄位缺失：(1) Godot MaterialData.IsTransparent(bool) 決定是否走半透明 mesh pass，UE5 FMaterialData 無此欄位，透明判定目前由 GreedyMesher.cpp:IsOpaque() 硬編碼（Air/Fire/Steam 不遮擋，但水/蒸汽的半透明 alpha 混合 pass 機制並不存在）；(2) Godot DefaultDrops 是 record 的一部分，UE5 在 GetDefaultDrops() switch 裡硬編碼，無法透過 FMaterialData 結構直接存取，未來新增材質時需改兩處。"
+    },
+    {
+      "id": "H-3",
+      "item": "MaterialRegistry 顏色數值比對（BaseColor vs GMatColors）",
+      "godot_ref": "MaterialRegistry.cs:14-75 — 各材質 BaseColor 具體 RGB 值（如 Air=0.10/0.10/0.13、Water=0.18/0.42/0.82、Stone=0.50/0.50/0.52 等）",
+      "ue5_ref": "MaterialRegistry.cpp:71-89 (GMatColors[]) — Air=0/0/0/0、Stone=0.50/0.50/0.50、Dirt=0.50/0.30/0.10、Water=0.10/0.40/0.90/0.78",
+      "verdict": "⚠️",
+      "detail": "多個材質顏色數值明顯偏離 Godot：\n(1) Air：Godot RGB(0.10,0.10,0.13) 有微弱夜空色，UE5 全0透明（改為完全透明，合理的架構選擇）\n(2) Water：Godot (0.18,0.42,0.82)偏中藍 → UE5 (0.10,0.40,0.90/0.78)更深藍+有Alpha，藍色調加深\n(3) Dirt：Godot (0.48,0.34,0.20) → UE5 (0.50,0.30,0.10) 偏橙棕\n(4) Stone：Godot (0.50,0.50,0.52) → UE5 (0.50,0.50,0.50)，幾乎相同\n(5) Sand：Godot (0.84,0.74,0.40) → UE5 (0.80,0.70,0.30)，整體偏暗\n(6) Fire：Godot (1.00,0.50,0.10) → UE5 (1.00,0.50,0.10/0.59)，RGB相同但Alpha更低（更透明）\n(7) Ash：Godot (0.35,0.35,0.38) → UE5 (0.30,0.30,0.30)，偏暗\n(8) MagicCrystalOre：Godot (0.12,0.68,0.80) 藍綠色 → UE5 (0.60,0.40,1.00/0.82) 紫藍色，色調完全不同\n整體而言視覺風格有所偏移，屬於設計調整而非嚴格的 bug。"
+    },
+    {
+      "id": "H-4",
+      "item": "MaterialRegistry.GetColor() variant 微小色差機制",
+      "godot_ref": "MaterialRegistry.cs:83-93 — GetColor(type, variant): variant/255f * 0.06f - 0.03f 計算偏移 v，RGB 各加 v，回傳含 Opacity 的 Color；視覺上同一材質有 ±3% 亮度隨機差異使地形看起來更自然",
+      "ue5_ref": "MaterialRegistry.cpp:91-96 GetColor(Mat) — 直接查 GMatColors[ID] 回傳，無 variant 參數，無色差計算",
+      "verdict": "❌",
+      "detail": "Godot 的 GetColor 接受 (MaterialType, byte variant) 兩個參數，根據 variant 值（0~255）計算 ±3% 的亮度偏移，使同一材質在不同 tile 位置呈現微小色差，視覺上更自然（類似 Minecraft 的 biome 顏色變化效果）。UE5 的 FMaterialRegistry::GetColor 只接受材質類型，沒有 variant 參數，所有同材質 tile 顏色完全相同。此外，與 H-2 相關：Godot 的 FTileCell.Variant(byte) 在 UE5 的 FTileCell 也不存在（UE5 的 CA_State 是計時器語意，不是視覺 variant），因此即使補上 variant 參數，也沒有對應的資料來源。導致 UE5 地形視覺單調，缺乏 Godot 的自然色差效果。\n→ 修法：FTileCell 補回 Variant:uint8 欄位（需關 Editor + Rebuild）；FMaterialRegistry::GetColor 補 variant 參數並加入色差計算 `v = (variant/255.f)*0.06f - 0.03f; R/G/B += v`（對應 Godot MaterialRegistry.cs:86-92）。"
+    },
+    {
+      "id": "H-5",
+      "item": "Hardness 數值單位比對（採掘幀數 vs 硬度係數）",
+      "godot_ref": "MaterialRegistry.cs:26-75 — Hardness 是採掘「基礎幀數」（Dirt=15, Sand=10, Stone=40, Ash=5, CoalOre=20, IronOre=45, MagicCrystalOre=65）",
+      "ue5_ref": "MaterialRegistry.cpp:17-47 — Hardness 是浮點數係數（Stone=3.f, Dirt=1.f, Sand=0.5f, Ash=0.3f, Ore_Iron=4.f, Ore_Coal=3.f, Ore_MagicCrystal=4.5f）",
+      "verdict": "❌",
+      "detail": "Godot 的 Hardness 是絕對幀數（整數，如 Stone=40 幀 @ 60fps ≈ 0.67秒），UE5 的 Hardness 是相對係數（浮點）。這是刻意的架構重設計（UE5 Hardness 乘以某個基礎採掘速度得出實際時間），但有兩個問題：\n(1) UE5 沒有文件說明這個係數的換算公式（1.f 對應多少秒？），導致未來調整採掘速度時缺乏基準\n(2) 相對大小關係有些不符：Godot Ash(5幀) < Sand(10) < Coal(20) < Dirt(15) < Stone(40) < Iron(45) < Magic(65)，UE5 Ash(0.3f) < Sand(0.5f) < Dirt(1.f) < Wood(1.5f) < Coal(3.f) = Stone(3.f) < Copper(3.5f) < Iron(4.f) = Magic(4.5f)。Coal 在 Godot 明顯比 Stone 軟（20 vs 40），在 UE5 卻等同 Stone（都是 3.f），設計意圖有偏差。\n此外 RequiredToolTier 也有不一致：Godot MagicCrystalOre=2，UE5=3；Godot Wood=0（徒手），UE5 Wood=1（需工具）。\n→ 修法：需統一換算公式並在 MaterialRegistry.h 加入說明；至少修正 Wood 的 RequiredToolTier（Godot:0 → UE5:1，手斧砍樹應不需要「基礎工具」）。"
+    },
+    {
+      "id": "H-6",
+      "item": "GreedyMesher 雙 pass（不透明 + 半透明）機制",
+      "godot_ref": "TileWorldRenderer3D.cs:19-21 — 宣告 _matOpaque(CullMode=Disabled) + _matTransparent(CullMode=Disabled+AlphaBlend)；BuildMeshDataOffThread:325-326 — 依 MaterialRegistry.Get(fid.t).IsTransparent 選擇對應 List（兩個獨立 MeshSurface）",
+      "ue5_ref": "GreedyMesher.cpp:10-16 IsOpaque() — Air/Fire/Steam 視為不遮擋，其餘全部遮擋；Build() — 只輸出單一 FRealtimeMeshStreamSet，無雙 pass 分離",
+      "verdict": "❌",
+      "detail": "Godot TileWorldRenderer3D 完整實作雙 mesh pass：不透明 pass (CullMode=Back) 和半透明 pass (CullMode=Disabled + AlphaBlend)。IsTransparent=true 的材質（Water/Fire/Steam，對應 MaterialRegistry.cs:17-23 的 Opacity=0.55/0.65/0.35）進入半透明 pass，其餘進入不透明 pass。\nUE5 的 GreedyMesher::Build() 只輸出單一 StreamSet，IsOpaque() 函式只判斷「是否遮擋鄰居面」（用於遮面剔除），並沒有分離半透明 mesh。水(Water)/蒸汽(Steam) 在 GMatColors 雖然設了 Alpha < 1.0（Water=0.78, Steam=0.39），但 RMC 的單一材質 slot 無法做 alpha 混合（需要分離的透明渲染 pass）。\n實際後果：UE5 的水和蒸汽會以非透明方式渲染（或根據所用 M_Voxel material 的設定），無法看穿水面。\n→ 修法：GreedyMesher::Build() 應輸出兩個 StreamSet（或兩個 PolyGroup 並使用分離的透明/不透明 material slot）；AVoxelWorldActor 對透明材質 slot 使用 Transparency=Alpha 的材質。需在 FMaterialRegistry 補回 IsTransparent 欄位（對應 Godot MaterialData.cs:51）。"
+    },
+    {
+      "id": "H-7",
+      "item": "採掘高亮 overlay 機制",
+      "godot_ref": "TileWorldRenderer3D.cs:364-424 UpdateHighlightMesh() — 逐面向外推 eps=T*0.01f 的白色半透明 overlay mesh；SurfaceTool 逐格建立；白色 Color(1,1,1,0.28f)；每幀比對 tiles set 避免重建",
+      "ue5_ref": "AVoxelWorldActor.cpp:63-76 ShowHighlight() / HideHighlight() — 使用引擎內建 Cube.Cube static mesh + 縮放至 TileSizeCm；SetWorldScale3D(S+0.02f) 放大 2% 避免 z-fighting；無自訂顏色/材質設定",
+      "verdict": "⚠️",
+      "detail": "兩邊都有採掘高亮功能，但實作方式和完整度不同。Godot 動態建立 overlay mesh（逐面剔除背對玩家的面，只渲染朝 Air 方向的面），支援多格高亮（IReadOnlyCollection<GridPos> tiles 集合），且有相同 tiles 時的差分比對避免不必要重建。UE5 使用 StaticMeshComponent + 引擎內建 Cube，只支援單格高亮（ShowHighlight 只接受單一 FGridPos），且 Cube mesh 是全 6 面渲染（不考慮哪些面朝 Air），視覺上相同但效能略差。另外 UE5 的 HighlightMesh 缺乏材質設定（使用 fallback 材質），無法保證是半透明白色 overlay；Godot 的 DepthDrawMode=Disabled 確保 overlay 不受深度測試影響（可以穿透其他 mesh 顯示），UE5 無對應設定。\n→ 修法：ShowHighlight 的 HighlightMesh 應顯式設定半透明白色材質（Alpha=0.28）；如需多格採掘範圍高亮（Brush 功能），需改成動態 mesh 方案。"
+    },
+    {
+      "id": "H-8",
+      "item": "TerrainFeature 介面 Prepare() 參數差異",
+      "godot_ref": "Terrain/TerrainFeature.cs:31-33 Prepare(Func<int,int,int> getHeight) — 傳入高度查詢函式；GetSurfaceOverride(wx,wz,naturalH)→(int h, MaterialType mat)? 傳入自然高度，回傳可空元組",
+      "ue5_ref": "TerrainFeature.h:21-33 — Prepare(const FTileWorld3D&, FIntVector ChunkMin, FIntVector ChunkMax)；GetSurfaceOverride(x,z)→EMaterialType(Air=不覆蓋，無高度回傳)",
+      "verdict": "⚠️",
+      "detail": "UE5 的 TerrainFeature 介面在 Prepare() 和 GetSurfaceOverride() 簽名上有合理的 UE5 架構適配，但損失了 Godot 版本的部分表達能力。Godot 的 GetSurfaceOverride 回傳 (effectiveH, surfaceMat)? — 可以同時覆寫「有效地表高度」和「地表材質」，例如水池地形可以讓某些格子的地表 Y 比自然地表低（積水效果）。UE5 版本只回傳 EMaterialType（Air=不覆蓋），無法覆寫高度，水池等需要改變地形高度的特徵無法正確實作。此差異影響 SurfaceWaterPool 等已實作的 TerrainFeature 子類的完整性。"
+    },
+    {
+      "id": "H-9",
+      "item": "SkyConfig 欄位與預設值",
+      "godot_ref": "SkyConfig.cs:10-21 — TopColor(0.28,0.50,0.90)/HorizonColor(0.72,0.86,1.00)/CloudCoverage=0.32/CloudSpeed=0.010(UV/秒)/CloudColor(1,1,1,0.80)/Brightness=1.0",
+      "ue5_ref": "SkyTypes.h:12-33 FSkyConfig — TopColor(0.05,0.15,0.35)/HorizonColor(0.55,0.65,0.75)/CloudCoverage=0.3/CloudSpeed=200.f(世界單位/秒)/CloudColor(0.85,0.88,0.92)/Brightness=1.f",
+      "verdict": "✅",
+      "detail": "欄位結構對應完整（6個欄位全部存在）。預設值有差異：UE5 的天空顏色偏暗藍（TopColor 0.05→0.28，HorizonColor 0.55→0.72），適合 3D 夜間/陰天氛圍；CloudCoverage 0.3 vs 0.32 幾乎相同；CloudColor 在 Godot 是純白(1,1,1) 帶 0.80 alpha，UE5 是淡灰(0.85,0.88,0.92) 無 alpha（UE5 alpha 透明度由材質控制）。CloudSpeed 單位從 Godot 的 UV/秒(0.010) 改為 UE5 世界單位/秒(200.f)，是合理的單位換算。整體而言欄位架構正確，預設值調整為 UE5 視覺風格，屬設計選擇。"
+    },
+    {
+      "id": "H-10",
+      "item": "SkyController 實作機制（Shader vs UE5 原生大氣）",
+      "godot_ref": "SkyController.cs:19-106 — 使用自訂 sky shader（shader_type sky）實作漸層+FBM 雲層；透過 WorldEnvironment+ShaderMaterial 推送 uniform；PushConfig() 每幀推送 sky_top/sky_horizon/cloud_color/cloud_coverage/cloud_time",
+      "ue5_ref": "ASkyController.cpp — 使用 UDirectionalLightComponent+USkyAtmosphereComponent+USkyLightComponent 三組件；ApplyToComponents() 設定 SunLight 強度+顏色、Rayleigh/Mie 散射係數；雲層(CloudOffset/CloudColor)推送至 BlueprintImplementableEvent OnSkyConfigChanged，由 BP 端實作材質參數設定",
+      "verdict": "✅",
+      "detail": "兩邊都實作了天空視覺控制，但技術路徑完全不同——這是預期的 Godot→UE5 架構差異。Godot 用自訂 GLSL shader 直接畫天空，UE5 使用物理基礎大氣渲染（SkyAtmosphere）+ 方向光，視覺效果更高品質。UE5 額外實作了 TransitionTo() 平滑插值功能（Godot 無），屬於 UE5 版功能增強。唯一需注意：雲層渲染在 UE5 委託給 Blueprint 的 OnSkyConfigChanged，需確保關卡有 BP 子類實作此事件（否則天空只有大氣層，無雲層）；CLAUDE.md 規則要求最小化 Editor 手動操作，但此處的 BlueprintImplementableEvent 是合理例外（雲層材質參數需要 Blueprint Graph 實作）。"
+    }
+  ]
+}

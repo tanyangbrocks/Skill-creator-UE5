@@ -1,0 +1,119 @@
+{
+  "agent": "I",
+  "section": "§8 Enemy AI",
+  "summary": "核實 14 項：✅10 / ⚠️3 / ❌1",
+  "findings": [
+    {
+      "id": "I-1",
+      "item": "EnemyType / EnemyState / SpawnCategory 列舉完整性",
+      "godot_ref": "Enemy.cs:8-16 (EnemyState: Idle/Chase/Attack; EnemyType: Melee/Ranged/Patrol/Heavy; SpawnCategory 見 EnemyManager/MobSpawnController)",
+      "ue5_ref": "AEnemy.h:15-39 (EEnemyState: Idle/Chase/Attack; EEnemyType: Melee/Ranged/Patrol/Heavy; ESpawnCategory: Common/Area/Named/Boss)",
+      "verdict": "✅",
+      "detail": "三個列舉的值和語意完全一致。UE5 多了 Named/Boss 兩個 SpawnCategory 值，屬合理擴充（Godot 端只有 Common/Area，Named/Boss 是 UE5 為未來 Boss 系統預留）。EEnemyState 三個值順序和語意一致，EEnemyType 四個值完全對齊。"
+    },
+    {
+      "id": "I-2",
+      "item": "Enemy 基礎屬性（HP / MaxHp 預設值、SpawnPos / Position / FacingX / FacingZ）",
+      "godot_ref": "Enemy.cs:91-106 (MaxHp: Heavy=150/Ranged=35/Patrol=45/Melee=50; SpawnPos=pos; Hp=MaxHp)",
+      "ue5_ref": "AEnemy.cpp:39-53 (MaxHp: Heavy=150/Ranged=35/Patrol=45/Melee=50; SpawnGridPos=GridPosition; Hp=MaxHp)",
+      "verdict": "✅",
+      "detail": "所有 MaxHp 預設值數值完全一致（Heavy=150, Ranged=35, Patrol=45, Melee=50）。SpawnPos/SpawnGridPos 均在初始化時記錄位置。FacingX/FacingZ 初始值（1/0）也對齊。唯一架構差異：Godot 在 constructor 設 MaxHp，UE5 在 BeginPlay()，但功能等價。"
+    },
+    {
+      "id": "I-3",
+      "item": "AI 計時器常數（BaseMoveInterval / AttackInterval / AttackDamage / AttackRange / DetectRange）",
+      "godot_ref": "Enemy.cs:53-89 (MoveInterval: Heavy=0.60/Ranged=0.45/Patrol=0.40/Melee=0.35; AttackInterval: Heavy=2.5/Ranged=2.2/Melee=1.8; AttackDamage: Heavy=25/Ranged=0/Melee=8; AttackRange: Heavy=3/Ranged=12/Melee=2; DetectRange: Ranged=30/Patrol=15/Melee=25)",
+      "ue5_ref": "AEnemy.cpp:151-205 (GetBaseMoveInterval/GetAttackInterval/GetAttackDamage/GetAttackRange/GetDetectRange — 所有數值逐字一致)",
+      "verdict": "✅",
+      "detail": "所有 AI 時序常數數值完全一致，包括 Heavy 攻擊間隔 2.5s、Ranged 2.2s、Melee 1.8s；移動間隔 Heavy=0.60、Ranged=0.45、Patrol=0.40、Melee=0.35；攻擊範圍 Heavy=3、Ranged=12、Melee=2；偵測範圍 Ranged=30、Patrol=15、Melee=25。架構差異：Godot 是屬性 property，UE5 是成員函式，邏輯等價。"
+    },
+    {
+      "id": "I-4",
+      "item": "MoveInterval 速度懲罰乘數（Aura.SpeedPenalty）",
+      "godot_ref": "Enemy.cs:61 (MoveInterval => BaseMoveInterval * (1f + Aura.SpeedPenalty))",
+      "ue5_ref": "AEnemy.cpp:162-164 (GetMoveInterval: return GetBaseMoveInterval() * (1.f + AuraComp->SpeedPenalty))",
+      "verdict": "✅",
+      "detail": "公式完全一致：MoveInterval = BaseMoveInterval × (1 + SpeedPenalty)。SpeedPenalty 為正值時延長移動間隔（減速），與 Godot 一致。"
+    },
+    {
+      "id": "I-5",
+      "item": "TakeDamage 公式（Aura 修飾 + ActionBus 攔截）",
+      "godot_ref": "Enemy.cs:422-429 (modified = amount * (1+Aura.DefensePenalty) * (1+Aura.DamageTakenBonus); ActionBus.Dispatch(EntityDamageAction); Hp -= finalDmg)",
+      "ue5_ref": "AEnemy.cpp:56-68 (Modified = Amount * (1+DamageTakenBonus) * (1+DefensePenalty); ActionBus.DispatchPlayerDamage(Modified); Hp-=Modified; FloatingDamage spawn)",
+      "verdict": "⚠️",
+      "detail": "傷害公式的兩個修飾因子順序不同：Godot 是 `DefensePenalty × DamageTakenBonus`（先防禦再傷害加成），UE5 是 `DamageTakenBonus × DefensePenalty`（先傷害加成再防禦）。由於兩項都是乘法，乘法交換律下數值結果相同，功能等價。但 ActionBus 呼叫的是 `DispatchPlayerDamage`（對應 C-6 修復），名稱語意上偏向「玩家傷害」而非「實體傷害」——這是 C-6 修復的遺留命名問題，功能上已接通攔截管線。另外 UE5 多了 FloatingDamageActor.Spawn（Godot 沒有），屬視覺擴充，不影響邏輯。"
+    },
+    {
+      "id": "I-6",
+      "item": "XpReward 數值",
+      "godot_ref": "Enemy.cs:414-420 (Ranged=20/Patrol=15/Heavy=40/Melee=10)",
+      "ue5_ref": "AEnemy.cpp:207-216 (GetXpReward: Ranged=20/Patrol=15/Heavy=40/Melee=10)",
+      "verdict": "✅",
+      "detail": "所有類型的 XP 獎勵數值完全一致。"
+    },
+    {
+      "id": "I-7",
+      "item": "Respawn / ForceDespawn / ForceRevive 邏輯",
+      "godot_ref": "Enemy.cs:108-142 (ForceDespawn: Hp=0; StartRespawn/TickRespawn: 倒計時 8f; Respawn: 重置所有欄位; ForceRevive: 清除計時器+強制復活)",
+      "ue5_ref": "AEnemy.cpp:70-93 (ForceDespawn: Hp=0; StartRespawn: FTimerHandle 計時; Respawn: 重置欄位; ForceRevive: ClearTimer+Respawn)",
+      "verdict": "⚠️",
+      "detail": "Godot RespawnTime 固定 8f（Enemy.cs:47），UE5 StartRespawn 預設參數 5f（AEnemy.h:116 `StartRespawn(float DelaySeconds = 5.f)`），復活計時器短了 3 秒。Respawn 重置邏輯上也有一項差異：Godot Respawn() 會顯式重置 `_patrolDir=1` 和 `_vy/_fractY`（Enemy.cs:125-126,128），UE5 的 Respawn() 僅重置 Hp/AIState/AuraComp（AEnemy.cpp:71-80），沒有 patrolDir 和垂直速度重置（UE5 使用 UE 物理引擎，這兩個欄位已不存在，屬架構差異）。計時器從 8f→5f 是實質不同。"
+    },
+    {
+      "id": "I-8",
+      "item": "ApplyGravity 邏輯（Heavy 2×2 footprint vs Melee/Ranged/Patrol 1×1）",
+      "godot_ref": "Enemy.cs:387-411 (ApplyGravity: Heavy footprint 掃 bx=0..1; 墜落超出 world.Height ForceDespawn; 精確亞格分段落下)",
+      "ue5_ref": "AEnemy.cpp:96-128 (ApplyGravity: Heavy 掃 DX=0..1, DZ=0..1; 超出世界高度不 ForceDespawn; 非精確每幀單格落下)",
+      "verdict": "⚠️",
+      "detail": "Heavy 的 2D footprint 不同：Godot 在 ApplyGravity 只掃 bx=0..1（X方向）用於確認是否有支撐（Enemy.cs:398），UE5 掃 DX=0..1 且 DZ=0..1（2D=2×2），更嚴謹地確認四個角落是否有支撐（AEnemy.cpp:108-114）。UE5 邏輯比 Godot 更正確（Godot 有疏漏）。但有一個漏洞：Godot 在敵人墜落超出 `world.Height` 時呼叫 `ForceDespawn()`（Enemy.cs:395），UE5 只做邊界 InBounds 檢查跳過，不 ForceDespawn，可能造成敵人在未生成 chunk 中無限懸空。另外 Godot 使用帶分數累加的精確重力（_vy/_fractY 亞格計算），UE5 改為每幀單格落下（非精確模擬）——鑑於 UE5 有真實物理引擎，這屬於合理架構差異。"
+    },
+    {
+      "id": "I-9",
+      "item": "AI 主迴圈（Update / 四種 AI 行為分支、軟性距離跳過、Aura 處理）",
+      "godot_ref": "Enemy.cs:171-199 (Update: Aura.Process; 水平距離 > DespawnSoftDist 跳過; 依 Type switch 分支; UpdateMelee/Ranged/Patrol/Heavy)",
+      "ue5_ref": "AEnemyAIController.cpp + BehaviorTree (AEnemyAIController 只做 RunBehaviorTree；四種 AI 行為分支由 BT + BTTask 實作，目前 BT_Enemy 尚未建立)",
+      "verdict": "❌",
+      "detail": "Godot 所有 AI 邏輯（UpdateMelee/UpdateRanged/UpdatePatrol/UpdateHeavy，含水平距離跳過、Chase/Attack/Idle 狀態機、moveTimer/attackTimer 累減、TryMoveXZ 台階爬行、WantsToFire 設旗）都在 Enemy.cs 的 Update() 方法中直接實作（Enemy.cs:171-411）。UE5 端 AEnemyAIController 只有 OnPossess 啟動 BT，BT_Enemy 資產不存在（AEnemyAIController.cpp:7: '/Game/BT_Enemy not found' 警告），連 BTTask_MoveOnGrid/BTTask_AttackPlayer 等 Task 檔案都未建立。換言之，UE5 敵人目前完全沒有 AI 行為——不追玩家、不攻擊、不巡邏。這是嚴重缺失，不是架構差異。四種敵人的 AI 差異（Ranged 維持 PreferredDist=8 反向跑、Patrol 巡邏 ±PatrolRange=12、Heavy 緩速 2×2 等）全部缺失。\n→ 修法（M-5/M-8 工作）：建立 BT_Enemy.uasset 及最小 BTTask C++ 實作（BTTask_MoveOnGrid + BTTask_AttackPlayer），或暫時在 AEnemy::Tick() 中直接還原 Godot 的 Update 邏輯作為過渡。"
+    },
+    {
+      "id": "I-10",
+      "item": "EnemyManager.Spawn + DynamicActiveCount 追蹤",
+      "godot_ref": "EnemyManager.cs:23-28 (Spawn: Common/Area → DynamicActiveCount++)",
+      "ue5_ref": "AEnemyManager.cpp:24-46 (Spawn: Common/Area → DynamicActiveCount++)",
+      "verdict": "✅",
+      "detail": "生成邏輯與 DynamicActiveCount 增減完全一致。Godot 在 Spawn 和死亡時分別 ++/-- DynamicActiveCount，UE5 同樣在 Spawn 時 ++（AEnemyManager.cpp:43）、在死亡清理時 --（AEnemyManager.cpp:104）。架構差異：Godot 回傳 void，UE5 回傳 AEnemy*（合理擴充）。"
+    },
+    {
+      "id": "I-11",
+      "item": "EnemyManager 環境傷害（Fire/Lava）+ 死亡後 XP + 死亡後 Respawn 邏輯",
+      "godot_ref": "EnemyManager.cs:36-79 (FireDps=25/LavaDps=40/BoltDamage=12; 死亡→GainXp→Common/Area移除/Named復活; WantsToFire→Spawn bolt)",
+      "ue5_ref": "AEnemyManager.cpp:48-116 (FireDps=5/LavaDps=15/BoltDamage=8; 死亡→OnEnemyKilled+DropItem→Common/Area Destroy; 無 XP; 無 Bolt 生成)",
+      "verdict": "❌",
+      "detail": "多項數值和邏輯不符：\n(1) 環境傷害數值嚴重偏低：FireDps Godot=25 → UE5=5（1/5）；LavaDps Godot=40 → UE5=15（<1/2）；BoltDamage Godot=12 → UE5=8。AEnemyManager.h:20-22 明確標註「對應 Godot EnemyManager.cs §486」，但數值錯誤。\n(2) 死亡後 XP 獎勵缺失：Godot `player.GainXp(e.XpReward)`（EnemyManager.cs:61），UE5 Tick 死亡分支無任何 GainXp 呼叫，改成 UCombatStateSubsystem::OnEnemyKilled()（不等價，後者是計數器而非XP）。\n(3) Named/Boss 敵人復活邏輯缺失：Godot Named 敵人死亡後呼叫 StartRespawn（EnemyManager.cs:48-49），UE5 只有 Common/Area Destroy，Named/Boss 的 `// Named/Boss: 復活邏輯 → M-5` 是空 comment。\n(4) WantsToFire → EnemyProjectile 生成路徑缺失：Godot EnemyManager.cs:72-73 檢查 `e.WantsToFire` 後新增 EnemyProjectile，UE5 EnemyManager 完全不做此事（與 I-9 的 AI 整體缺失相關）。"
+    },
+    {
+      "id": "I-12",
+      "item": "MobSpawnController 生成環常數（MinSpawnDist/MaxSpawnDist/DespawnHard/Soft/MaxCommonActive/BaseInterval）",
+      "godot_ref": "MobSpawnController.cs:20-26 (MinSpawnDist=32/MaxSpawnDist=128/DespawnHardDist=256/DespawnSoftDist=192/MaxCommonActive=8/BaseInterval=8f)",
+      "ue5_ref": "AMobSpawnController.h:40-45 (MinSpawnDist=32/MaxSpawnDist=128/DespawnHardDist=256/DespawnSoftDist=192/MaxCommonActive=8/BaseInterval=8f)",
+      "verdict": "✅",
+      "detail": "所有六個生成環常數數值完全一致，含 SpawnTriesPerAttempt=24 和 SoftDespawnRate=0.05f 也一致。架構差異：Godot 為 `public const`，UE5 為 `static constexpr`，等價。"
+    },
+    {
+      "id": "I-13",
+      "item": "MobSpawnController HandleDespawns + PickEntry 加權抽選",
+      "godot_ref": "MobSpawnController.cs:73-104 (HandleDespawns: HardDespawn||(SoftDist+rand<rate*delta)→ForceDespawn; PickEntry: 只選Common/Area加權滾輪)",
+      "ue5_ref": "AMobSpawnController.cpp:62-96 (HandleDespawns: 同邏輯; PickEntry: 只選Common/Area加權滾輪)",
+      "verdict": "✅",
+      "detail": "兩段邏輯逐行對應。HandleDespawns：超 HardDist 立即 ForceDespawn；SoftDist~HardDist 區間 `rand < SoftDespawnRate * delta` 機率 ForceDespawn。PickEntry 加權滾輪：先計算 Total，再 Roll=FRand()*Total，逐條減去 Weight 直到 Roll<=0 回傳（邊界條件：Empty 回傳 null；Godot 用 pool[^1] fallback，UE5 用 MobTable.Last()，等價）。"
+    },
+    {
+      "id": "I-14",
+      "item": "MobSpawnController TryFindSpawnPos（角度隨機、水平距離範圍、地表高度、Area 半徑篩選、可站立條件）",
+      "godot_ref": "MobSpawnController.cs:107-146 (angle隨機; hDist=Min+(Max-Min)rand; tx/tz=player±cos/sin; GetTerrainY(); ty=surfaceH-1; Area半徑檢查; Air+下方固體)",
+      "ue5_ref": "AMobSpawnController.cpp:99-141 (同邏輯; 使用 TW->HeightEstimator(TX,TZ); TW->EnsureChunkAt(TX,SurfaceY-1,TZ); Air+下方固體)",
+      "verdict": "✅",
+      "detail": "核心找點邏輯完整對齊：角度均勻隨機、水平距離在 [MinSpawnDist, MaxSpawnDist] 範圍、tx/tz Clamp 邊界保護、Area 半徑篩選（平方比較避免開根號）、可站立條件（腳底 Air 且下方固體）。主要架構差異：Godot 用注入的 `GetTerrainY` callback（外部注入地形高度函式），UE5 改用 TileWorld3D 內建的 `HeightEstimator(TX,TZ)`，語意等價但耦合方式不同（UE5 更內聚）。UE5 多了 `EnsureChunkAt` 確保 chunk 已載入（對應 Godot 的 EnsureChunkAt callback），邏輯對等。"
+    }
+  ]
+}

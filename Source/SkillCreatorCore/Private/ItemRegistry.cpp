@@ -48,12 +48,12 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
     Set(MakeEquip(EItemId::EquipLeatherArmor, INVTEXT("皮革護甲"), EEquipmentSlotType::Armor,     1.0f, 5.f, 0.f));
     Set(MakeEquip(EItemId::EquipAmulet,       INVTEXT("護符"),     EEquipmentSlotType::Accessory, 1.0f, 0.f, 30.f));
 
-    // 礦石原材料
-    Set(MakeMat(EItemId::OreCoal,         INVTEXT("煤炭")));
-    Set(MakeMat(EItemId::OreCopperRaw,    INVTEXT("生銅礦")));
-    Set(MakeMat(EItemId::OreIronRaw,      INVTEXT("生鐵礦")));
-    Set(MakeMat(EItemId::OreGoldRaw,      INVTEXT("生金礦")));
-    Set(MakeMat(EItemId::OreMagicCrystal, INVTEXT("魔晶石")));
+    // 礦石原材料（J-3：OreCoal/Copper/Iron/Magic 可放回地圖重建礦脈，Godot ItemRegistry.cs:41-44）
+    Set(MakeBlock(EItemId::OreCoal,         INVTEXT("煤炭"),   EMaterialType::Ore_Coal));
+    Set(MakeBlock(EItemId::OreCopperRaw,    INVTEXT("生銅礦"), EMaterialType::Ore_Copper));
+    Set(MakeBlock(EItemId::OreIronRaw,      INVTEXT("生鐵礦"), EMaterialType::Ore_Iron));
+    Set(MakeMat(EItemId::OreGoldRaw,        INVTEXT("生金礦")));  // UE5 擴充，無 Godot 對應，保持不可放置
+    Set(MakeBlock(EItemId::OreMagicCrystal, INVTEXT("魔晶石"), EMaterialType::Ore_MagicCrystal));
 
     // 材質碎片
     Set(MakeMat(EItemId::FragmentDirt,         INVTEXT("土塊碎片")));

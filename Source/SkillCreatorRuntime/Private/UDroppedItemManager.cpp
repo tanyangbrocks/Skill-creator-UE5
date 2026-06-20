@@ -25,6 +25,8 @@ ADroppedItemActor* UDroppedItemManager::SpawnDrop(EItemId ItemId, int32 Count, F
 
     Drop->Init(ItemId, Count);
     Drop->OnPickedUp = [this](ADroppedItemActor* D){ OnDropPickedUp(D); };
+    // J-12：注入世界參照供重力 Tick 使用
+    Drop->CachedVoxelWorld = AVoxelWorldActor::FindInWorld(W);
     ActiveDrops.Add(Drop);
     return Drop;
 }
@@ -88,4 +90,22 @@ void UDroppedItemManager::SpawnForReason(int32 x, int32 y, int32 z,
 void UDroppedItemManager::OnDropPickedUp(ADroppedItemActor* Drop)
 {
     ActiveDrops.Remove(Drop);
+}
+
+void UDroppedItemManager::SpawnFragments(FGridPos Center, EMaterialType Mat,
+                                          int32 TileCount, EDestroyReason Reason)
+{
+    // J-11：對應 Godot DroppedItemManager.cs:31-46
+    EItemId FragId = FMaterialRegistry::GetFragmentItem(Mat);
+    if (FragId == EItemId::None) return;
+
+    const float Units = (float)TileCount / 1000.f;
+    int32 Count = 0;
+    if (Reason == EDestroyReason::Mining || Reason == EDestroyReason::ShapeMining)
+        Count = FMath::RoundToInt(Units * 100.f);   // Mining=100 碎片/unit（完整回收）
+    else if (Reason == EDestroyReason::Explosion)
+        Count = FMath::RoundToInt(Units * FMath::RandRange(20.f, 80.f));  // Explosion=20~80/unit
+
+    if (Count > 0)
+        SpawnDrop(FragId, Count, Center);
 }

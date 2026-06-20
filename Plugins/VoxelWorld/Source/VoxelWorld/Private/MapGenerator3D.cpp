@@ -55,12 +55,12 @@ int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
 void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
                                         TArray<FTileCell>& OutCells)
 {
-    // 高度圖 noise（FBm 4 octave：平滑大地形，減少微凸起避免格狀感）
+    // 高度圖 noise（FBm 7 octave：對應 Godot MapGenerator3D.cs:70-74，freq=0.001/7 octave 產生平緩大地形）
     FastNoiseLite HN;
     HN.SetSeed(Seed);
-    HN.SetFrequency(0.005f);
+    HN.SetFrequency(0.001f);  // G-9：Godot=0.001f（原 0.005f 差 5 倍，地形破碎感 5 倍）
     HN.SetFractalType(FastNoiseLite::FractalType::FBm);
-    HN.SetFractalOctaves(4);
+    HN.SetFractalOctaves(7);  // G-9：Godot=7（原 4，少 75% 細節層）
     HN.SetFractalLacunarity(2.f);
     HN.SetFractalGain(0.5f);
 
@@ -96,8 +96,11 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         }
 
         float Hv = HN.GetNoise((float)wx, (float)wz);  // -1..1
+        // G-10：Godot MapGenerator3D.cs:247-249 公式：worldH*0.30 + n*(worldH*0.08)
+        // 平均地表在 30% 深度，振幅 ±8%（原公式 40%/±30%，振幅差 4 倍，地表偏深 10%）
         int32 SurfaceY = FMath::Clamp(
-            (int32)(Height * 0.4f + Hv * Height * 0.30f), 4, Height - 8);
+            (int32)(Height * 0.30f + Hv * Height * 0.08f),
+            (int32)(Height * 0.15f), (int32)(Height * 0.45f));
 
         uint8 MatID = 0;  // Air
         if (wy == SurfaceY)

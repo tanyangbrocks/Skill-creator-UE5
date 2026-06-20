@@ -25,8 +25,8 @@ static const FMaterialData GMatData[] =
     { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 200, I::None           },
     // ID  6 — Lava
     { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 220, I::None           },
-    // ID  7 — Wood
-    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,1, 0.5f, 0.f,  255, I::FragmentWood   },
+    // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹；原 UE5=1）
+    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,0, 0.5f, 0.f,  255, I::FragmentWood   },
     // ID  8 — Leaves
     { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180, I::FragmentWood   },
     // ID  9 — Ore_Iron
@@ -39,12 +39,12 @@ static const FMaterialData GMatData[] =
     { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  100, I::None           },
     // ID 13 — Ash
     { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh    },
-    // ID 14 — Ore_Coal
-    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::OreCoal        },
+    // ID 14 — Ore_Coal（H-5：Godot Coal=20幀≈Stone(40幀)×0.5，UE5 Hardness 也改 1.5f；原 3.f=Stone 相同）
+    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  1.5f,1, 2.f,  0.5f, 255, I::OreCoal        },
     // ID 15 — Ore_Copper
     { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255, I::OreCopperRaw   },
-    // ID 16 — Ore_MagicCrystal
-    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,3, 2.f,  3.f,  210, I::OreMagicCrystal},
+    // ID 16 — Ore_MagicCrystal（H-5：Godot RequiredToolTier=2；原 UE5=3）
+    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,2, 2.f,  3.f,  210, I::OreMagicCrystal},
 };
 
 static constexpr uint8 GMatDataCount = (uint8)(sizeof(GMatData) / sizeof(GMatData[0]));

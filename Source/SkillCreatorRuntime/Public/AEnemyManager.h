@@ -17,9 +17,10 @@ public:
     AEnemyManager();
 
     // ── 環境傷害常數（對應 Godot EnemyManager.cs §486）────────────────
-    static constexpr float FireDps    = 5.f;   // 玩家站在火焰格每秒受到的傷害
-    static constexpr float LavaDps    = 15.f;  // 玩家站在熔岩格每秒受到的傷害
-    static constexpr float BoltDamage = 8.f;   // 敵人投射物命中單次傷害
+    // I-11：修正數值對齊 Godot EnemyManager.cs:486/488/72
+    static constexpr float FireDps    = 25.f;  // 玩家站在火焰格每秒受到的傷害（Godot=25，原 5）
+    static constexpr float LavaDps    = 40.f;  // 玩家站在熔岩格每秒受到的傷害（Godot=40，原 15）
+    static constexpr float BoltDamage = 12.f;  // 敵人投射物命中單次傷害（Godot=12，原 8）
 
     // ── 生成 ──────────────────────────────────────────────────────
     UFUNCTION(BlueprintCallable, Category="EnemyManager")

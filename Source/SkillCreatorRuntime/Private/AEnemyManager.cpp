@@ -7,6 +7,7 @@
 #include "MaterialType.h"
 #include "MaterialRegistry.h"
 #include "WorldScale.h"
+#include "ASkillCreatorCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -82,6 +83,11 @@ void AEnemyManager::Tick(float DeltaTime)
                 if (auto* GI = GetWorld()->GetGameInstance())
                 if (auto* Sub = GI->GetSubsystem<UCombatStateSubsystem>())
                     Sub->OnEnemyKilled();
+
+                // I-11b：死亡後發放 XP 給玩家（Godot EnemyManager.cs:61 player.GainXp(e.XpReward)）
+                if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+                if (ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn()))
+                    Char->GainXp(E->GetXpReward());
 
                 if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
                 {

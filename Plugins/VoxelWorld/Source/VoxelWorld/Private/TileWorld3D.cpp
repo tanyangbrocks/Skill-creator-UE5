@@ -356,6 +356,9 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
     FTileCell Cell = GetCell(x, y, z);
     EMaterialType Mat = static_cast<EMaterialType>(Cell.MaterialID);
 
+    // G-3a：Lava 限速 — 每 3 幀才更新一次，使岩漿流速約為水的 1/3（Godot TileWorld3D.cs:265）
+    if (Mat == EMaterialType::Lava && Frame % 3 != 0) return;
+
     if (TryMove(x, y, z, x, y+1, z)) return;
 
     static const int32 Dx[] = {-1,  1,  0,  0};
@@ -377,7 +380,7 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
         if (!TryMove(x, y, z, x, y, z + HZ*s)) break;
 
     if (Mat == EMaterialType::Lava)
-        TryIgniteAround(x, y, z, 0.005f);
+        TryIgniteAround(x, y, z, 0.1f);  // G-3b：Godot TileWorld3D.cs:287 為 0.1f（原 0.005f 差 20 倍）
 
     CheckElementalCaReactions(x, y, z);
 }

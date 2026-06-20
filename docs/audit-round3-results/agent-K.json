@@ -1,0 +1,239 @@
+{
+  "agent": "K",
+  "section": "§11 UI/Main/Input",
+  "generated_at": "2026-06-20",
+  "godot_sources": [
+    "C:\\skill-creator\\Scripts\\Main.cs",
+    "C:\\skill-creator\\Scripts\\InputBindings.cs",
+    "C:\\skill-creator\\Scripts\\World\\PlayerController.cs",
+    "C:\\skill-creator\\Scripts\\UI\\AbilityEditorUI.cs"
+  ],
+  "ue5_sources": [
+    "Source\\SkillCreatorRuntime\\Public\\ASkillCreatorCharacter.h",
+    "Source\\SkillCreatorRuntime\\Private\\ASkillCreatorCharacter.cpp",
+    "Source\\SkillCreatorRuntime\\Public\\ASkillCreatorPlayerController.h",
+    "Source\\SkillCreatorRuntime\\Private\\ASkillCreatorPlayerController.cpp",
+    "Source\\SkillCreatorRuntime\\Public\\ASkillCreatorHUD.h",
+    "Plugins\\SkillCreatorUI\\Source\\SkillCreatorUI\\Public\\SBlockEditorWidget.h",
+    "Plugins\\SkillCreatorUI\\Source\\SkillCreatorUI\\Private\\SBlockEditorWidget.cpp",
+    "Plugins\\AbilitySystem\\Source\\AbilitySystem\\Public\\SpellSlotSync.h"
+  ],
+  "findings": [
+    {
+      "id": "K-1",
+      "topic": "InputBindings 鍵位表完整性對比",
+      "godot_ref": "InputBindings.cs:16-82（32 個行為：MoveLeft/Right/Forward/Backward/Jump/EquipItem/OpenInventory/OpenEquipment/OpenEditor/OpenStats/OpenSettings/TogglePaint/ShapeMenu/ToggleXray/Hotbar1~5/SpellGroupSwitch/DebugCoord/DebugVmTrace/DebugSurvival/DebugSnapTake/DebugSnapRoll）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:436-507（Enhanced Input IMC：Move/Look/Jump/Mine/Place/SpellU~P/Camera/DbgTrace/SnapTake/SnapApply/DbgPaint/DbgCoord/DbgSurvival）；ASkillCreatorPlayerController.cpp:33-57（legacy BindKey：1~9/0/E/B/N/V/Z/X/C/Q/ScrollUp/Down）",
+      "verdict": "✅",
+      "detail": "Godot 統一管理於 InputBindings._defaults，UE5 依架構分兩層（Enhanced Input Character 層 + legacy BindKey PlayerController 層）。核對所有鍵位：WASD/Space/Q/Z/X/E/C/B/F1~F6/Tab/N/V/U/I/O/P/1~9/0/滾輪全部正確對應。ToggleXray(Tab) 由 CycleCameraMode 取代（4 模式循環），語意擴充但功能向後相容。Hotbar 6~10（Key6~Key9/Key0）在 Godot 僅由 _Input case 處理，UE5 的 OnHotbar6~OnHotbar0 等價覆蓋。"
+    },
+    {
+      "id": "K-2",
+      "topic": "U/I/O/P 組合鍵施法：最長組合優先、10 槽映射",
+      "godot_ref": "Main.cs:176-188（_castCombos 陣列，UIOP→9、IOP→8、UIO→7、OP→6、IO→5、UI→4、P→3、O→2、I→1、U→0，rising-edge 最長優先）；Main.cs:1044-1062",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:706-732（HandleSpellInput：4 個 IA_Spell* Started 觸發；if-else chain 完全複刻 _castCombos 順序）",
+      "verdict": "✅",
+      "detail": "Godot 每幀輪詢 _castCombos 清單，最長組合排最前確保優先觸發（Main.cs:1051-1063）。UE5 改用 Enhanced Input 4 個 Boolean Action 的 Started 事件觸發 HandleSpellInput，並在函式內部用 if-else chain 從最長到最短依序判斷——語意等價。ETriggerEvent::Started 本身就是 rising-edge，正確對應 Godot 的 allNow && !allPrev。"
+    },
+    {
+      "id": "K-3",
+      "topic": "採掘：漸進式進度累加、工具等級門檻、距離限制",
+      "godot_ref": "PlayerController.cs:442-471（MiningProgress += Inventory.ActiveMiningSpeedMult * delta * 60f；RequiredToolTier > ActiveToolTier → CancelMining；MiningRange = BodyH * 6f）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:765-791（MiningProgress += SpeedMult * DeltaSeconds * 60f；RequiredToolTier > ActiveToolTier → CancelMining；距離 > WorldScale::MiningRangeTiles）",
+      "verdict": "✅",
+      "detail": "公式完全一致：MiningProgress 每幀 +SpeedMult×dt×60（基準 60fps）；Hardness 門檻相同；換目標重置；工具等級不足立即 CancelMining。距離上限由 Godot BodyH*6f 轉換為 WorldScale::MiningRangeTiles 常數（Grain=16 時 = 96 tiles），架構等價。"
+    },
+    {
+      "id": "K-4",
+      "topic": "採掘：形狀採掘 GetOffsets 與形狀半徑預設值",
+      "godot_ref": "Main.cs:1229-1235（ShapeVoxels.GetOffsets(_activeShape) 略去中心格）；Main.cs:71-72（_activeShape=Cube, _shapeRadius=PlayerH/6=2@Grain=16）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:793-813（FPlacementShape::GetOffsets(Shape,Radius) 略去 ZeroValue；Shape/Radius 從 HUD->ActiveShape/PlaceRadius 讀取；fallback WorldScale::DefaultShapeRadius）",
+      "verdict": "✅",
+      "detail": "中心格先 DestroyTile(ShapeMining) 摧毀，形狀範圍其他格跳過 ZeroValue 再摧毀；整個形狀採掘只 spawn 1 個掉落物（Main.cs:1238 / ASkillCreatorCharacter.cpp:817-819），正確對應。預設形狀 Cube + WorldScale::DefaultShapeRadius（需確認 == 2）對應 Godot 預設值。"
+    },
+    {
+      "id": "K-5",
+      "topic": "採掘：PlacedObjectRegistry 完美移除分流缺失",
+      "godot_ref": "Main.cs:1203-1225（_perfectRemove && pendingUnit != null → 移除整個 Unit 所有 tiles + 返還 1 物品，不走形狀採掘）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:821-828（已知缺口自注釋：需 AVoxelWorldActor 加 FPlacedObjectRegistry 成員 + 採掘前查詢 + 依 bPerfectRemove 分流）",
+      "verdict": "❌",
+      "detail": "Godot Main.cs 在採掘完成後先查 PlacedObjectRegistry（Main.cs:1203），若目標屬於已放置的 PlacedUnit 且 _perfectRemove=true，走「移除整個 Unit + 返還 1 物品」路線，完全不進入形狀採掘。UE5 OnMine() 目前直接走形狀採掘，無任何 PlacedObjectRegistry 查詢或 bPerfectRemove 分流邏輯。玩家放置的物件被採掘時不返還 1 物品，行為不一致。",
+      "fix_suggestion": "① AVoxelWorldActor 加 TUniquePtr<FPlacedObjectRegistry> PlacedRegistry；② OnMine() 採掘成功後先查 PlacedRegistry->TryGetUnit(Target)；③ 若有 Unit 且 bPerfectRemove=true → RemoveUnit 清除所有 tiles + Inventory->TryAdd(TargetMat, 1)，不進入形狀採掘段；④ ASkillCreatorHUD 加 bool bPerfectRemove = true。"
+    },
+    {
+      "id": "K-6",
+      "topic": "放置：bHoldToPlace 節流 + rising-edge + 0.12s 冷卻",
+      "godot_ref": "Main.cs:1250-1255（holdToPlace=true 時 cooldown>0 跳過；false 時 rightNow && !_rightWasPressed 才觸發）；Main.cs:1282（_placeCooldown=0.12f）；Main.cs:124（_holdToPlace 預設 true）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:839-852 + 913（PlaceCooldown=0.12f, bRightMouseWasPressed rising-edge）；ASkillCreatorHUD.h:60（bHoldToPlace=true）；ASkillCreatorCharacter.cpp:269-271（Tick 中遞減）",
+      "verdict": "✅",
+      "detail": "節流邏輯正確對應。0.12f 冷卻值一致。bHoldToPlace 預設 true（已修正）。PlaceCooldown 在 Tick() 遞減（對應 Godot Main.cs:1250）。"
+    },
+    {
+      "id": "K-7",
+      "topic": "放置：OccupiedByEntity 實體佔用格檢查缺失",
+      "godot_ref": "Main.cs:1269-1270（放置每格前 !OccupiedByEntity(p)）；Main.cs:1654-1661（OccupiedByEntity：遍歷 player + enemies 的位置矩形/碰撞盒）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:885-889（已知缺口自注釋：TileWorld3D SetOccupied/IsOccupied 目前從未被 SkillCreatorRuntime 呼叫填入玩家/敵人位置）",
+      "verdict": "⚠️",
+      "detail": "Godot 在每格放置前排除玩家/敵人所在格，防止方塊穿模進入實體碰撞盒。UE5 的 FTileWorld3D 有 SetOccupied/IsOccupied API 但無人呼叫填入玩家/敵人座標，玩家可在自己站的格或敵人身上放置方塊。缺口不致崩潰，但與 Godot 行為不一致。",
+      "fix_suggestion": "ASkillCreatorCharacter::Tick() 呼叫 TW->ClearOccupied() + TW->SetOccupied(PlayerPos) + 遍歷 CachedEnemyMgr->GetEnemies() 設置；OnPlace 中每格 CanPlace 前加 !TW->IsOccupied(P) 條件。"
+    },
+    {
+      "id": "K-8",
+      "topic": "數字鍵 1~9/0 熱鍵欄選取 + 滾輪切換",
+      "godot_ref": "Main.cs:1293-1301（Key.Key1~Key0 → slot 0~9）；Main.cs:1305-1321（WheelUp/Down + Ctrl 縮放）",
+      "ue5_ref": "ASkillCreatorPlayerController.cpp:37-46 + 117-126（OnHotbar1~0 → SetActiveHotbarIndex 0~9）；ASkillCreatorPlayerController.cpp:71-114（OnScrollUp/Down + LeftControl||RightControl）",
+      "verdict": "✅",
+      "detail": "完整對應。1→0, 2→1 … 0→9，10格全覆蓋。滾輪循環切換（HotbarSize 模數）與 Ctrl+滾輪縮放鏡頭均正確。Godot 縮放 OrthoSize（正交相機），UE5 縮放 TargetArmLength（臂長），架構差異合理。"
+    },
+    {
+      "id": "K-9",
+      "topic": "E 鍵積木編輯器：Runtime vs WITH_EDITOR 限制",
+      "godot_ref": "InputBindings.cs:65（OpenEditor = Key.E）；Main.cs:1434 → ToggleEditor()；AbilityEditorUI 是 Runtime Control 節點，可在遊戲中使用",
+      "ue5_ref": "ASkillCreatorPlayerController.cpp:130-135（OnOpenEditor → ToggleBlockEditorOverlay）；ASkillCreatorPlayerController.cpp:33-38（#if WITH_EDITOR 條件編譯）",
+      "verdict": "⚠️",
+      "detail": "E 鍵有綁定且能觸發編輯器，但 UE5 的 SBlockEditorWidget 整段包在 #if WITH_EDITOR 中（ASkillCreatorPlayerController.cpp:33-38），Runtime 包（打包遊戲）下 E 鍵 OnOpenEditor 函式體為空，積木編輯器完全消失。Godot 的 AbilityEditorUI 是 Runtime UI，玩家可隨時編輯。若不考慮打包則可接受（開發模式下正常），但若需要 Runtime 積木編輯功能，目前架構完全不支援。"
+    },
+    {
+      "id": "K-10",
+      "topic": "其他面板鍵（V/B/N/Z/X/C/Q/F1~F6）",
+      "godot_ref": "InputBindings.cs:34-81（OpenStats=C, OpenInventory=Z, OpenEquipment=X, OpenSettings=B, EquipItem=Q, ShapeMenu=N, SpellGroupSwitch=V, TogglePaint=F1, DebugCoord=F2, DebugVmTrace=F3, DebugSurvival=F4, DebugSnapTake=F5, DebugSnapRoll=F6）",
+      "ue5_ref": "ASkillCreatorPlayerController.cpp:49-57（B/N/V/Z/X/C/Q）；ASkillCreatorCharacter.cpp:503-537（F1~F6 Enhanced Input）",
+      "verdict": "✅",
+      "detail": "所有面板鍵完整對應：B=設定, N=形狀選單, V=技能組, Z=物品欄, X=裝備欄, C=數值面板, Q=裝備物品, F1=畫筆, F2=座標overlay, F3=VM追蹤, F4=生存overlay, F5=快照儲存, F6=快照還原。"
+    },
+    {
+      "id": "K-11",
+      "topic": "Tab 鍵：Godot X-Ray 模式 vs UE5 4 模式相機循環",
+      "godot_ref": "InputBindings.cs:70（ToggleXray = Tab）；Main.cs:1381-1386（_xray toggle + XrayZRadius）；Godot 無視角切換鍵位",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:501+531+627-639（Tab → CycleCameraMode：ThirdPerson/FirstPerson/Isometric/SideScroll2D 四模式）",
+      "verdict": "⚠️",
+      "detail": "Godot 的 Tab 只切換 X-Ray 模式（顯示/隱藏遮蔽方塊，_xray 布林，_xrayLabel 提示）；相機固定 SideScroll2D 無鍵盤切換。UE5 的 Tab 循環 4 種相機模式，X-Ray 功能未移植。此為有意的功能擴充（2D→3D 相機系統升級），但 X-Ray 開發工具本身完全缺失，Godot 用於「穿牆看地形」的偵錯功能在 UE5 無等價實作。"
+    },
+    {
+      "id": "K-12",
+      "topic": "F1 開發者筆刷：材質繪製功能未實作",
+      "godot_ref": "Main.cs:549-599（F1 切換 _paintToolPanel；6 種材質按鈕 + 4 種筆刷大小按鈕；左鍵繪製/右鍵清除材質）；InputBindings.cs:68（TogglePaint = F1）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:680-688（OnDebugPaint：只切換 bDebugPaintEnabled + GEngine 偵錯文字「材質繪製尚未實作，僅狀態切換」）",
+      "verdict": "❌",
+      "detail": "Godot F1 開啟包含 Sand/Water/Stone/Wood/Fire/Lava 材質選擇按鈕 + 4 種筆刷大小的面板，可直接在 Voxel World 繪製材質（左鍵）或清除（右鍵）。UE5 只有 boolean 切換 + 偵錯訊息，連 UI 面板都沒有，材質繪製功能完全未實作。這是核心開發工具缺失。",
+      "fix_suggestion": "ASkillCreatorHUD（或 UMG Widget）加 F1 筆刷面板：6 種材質選擇 + 筆刷大小（1/3/5/9）；OnMine 若 bDebugPaintEnabled 則不採掘而是 TW->SetTile(target, ActivePaintMaterial)；右鍵若 bDebugPaintEnabled 則 TW->SetTile(target, Air)。"
+    },
+    {
+      "id": "K-13",
+      "topic": "玩家移動物理（WalkSpeed/JumpZ/Gravity 換算）",
+      "godot_ref": "PlayerController.cs:138-145（Gravity=30f tiles/s², JumpSpeed=20f tiles/s, MoveInterval=0.12f；tile-step 離散式移動）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:56-60（MaxWalkSpeed=WorldScale::WalkSpeedCm, JumpZVelocity=WorldScale::JumpZVelocityCm, GravityScale=WorldScale::GravityScaleMult）",
+      "verdict": "✅",
+      "detail": "Godot 為 tile-step 離散物理，UE5 使用 CharacterMovement 連續物理，架構差異合理。WorldScale 負責換算（JumpSpeed 20 tiles/s × TileSizeCm 30 = 600cm/s = JumpZVelocityCm；GravityScaleMult 補償 UE5 預設 980cm/s² 與 Godot 30 tiles/s² 的差異）。設計意圖正確對應。"
+    },
+    {
+      "id": "K-14",
+      "topic": "AbilityEditorUI SaveSpell 5 項驗證邏輯",
+      "godot_ref": "AbilityEditorUI.cs:1276-1318（① name 非空 1284；② hasTotem 1288；③ !IsPassive 需 HasActivationTypeBlock 1291；④ HasUnboundMpBlocks 1295；⑤ ExceedsLevelCap 1298；全部收集後一次彈 AcceptDialog）",
+      "ue5_ref": "SpellSlotSync.h:138-176（ValidateSpell 5 項順序一致）；SBlockEditorWidget.cpp:126-200（HandleSaveClicked → SyncSlotsFromBlocks → ValidateSpell → ShowValidationErrors modal window）",
+      "verdict": "✅",
+      "detail": "5 項驗證完整對應，順序與 Godot 完全一致，錯誤訊息中文文字一致（「請填寫技能整構名稱（必填）」等）。全部錯誤收集後一次回報（無 early-return）。ShowValidationErrors 建立 SWindow modal 對應 Godot AcceptDialog（line 1305-1318）。驗證失敗不呼叫 OnSaveSpell，驗證通過才廣播 delegate 給 PlayerController 寫入 Loadout。"
+    },
+    {
+      "id": "K-15",
+      "topic": "AbilityEditorUI 關閉時未儲存變更確認彈窗缺失",
+      "godot_ref": "AbilityEditorUI.cs:264-327（TryExitEditor：_isDirty 時彈 ConfirmationDialog「儲存並離開/捨棄變更」；DoExitEditor 另檢查 MP 超限警告再 EmitSignal BackPressed）",
+      "ue5_ref": "ASkillCreatorPlayerController.cpp:180-198（ToggleBlockEditorOverlay：只切換 Visibility/InputMode，無 _isDirty 追蹤，無確認彈窗）",
+      "verdict": "❌",
+      "detail": "Godot 編輯器關閉時若有未儲存變更（_isDirty）會彈確認對話框，防止意外丟失積木設計。UE5 SBlockEditorWidget 沒有 bIsDirty 追蹤，ToggleBlockEditorOverlay 直接隱藏視窗，玩家按 E 關閉時所有未儲存的積木變更直接丟失。MP 種類超限警告（Godot DoExitEditor 的 violating 清單）同樣缺失。",
+      "fix_suggestion": "SBlockEditorWidget 加 bool bIsDirty；OnChanged 中設 bIsDirty=true；HandleSaveClicked 成功後清 bIsDirty；新增 TryClose() 方法：若 bIsDirty 彈 SWindow 確認後再關，否則直接關；ToggleBlockEditorOverlay 改呼叫 TryClose()。"
+    },
+    {
+      "id": "K-16",
+      "topic": "積木編輯器技能組 5 組 dot 切換 UI 缺失",
+      "godot_ref": "AbilityEditorUI.cs:193-210（_groupDots 按鈕 5 個，點擊 SwitchEditorGroup；230-250 SwitchEditorGroup：_spells[] 緩衝寫回→切組→還原緩衝）",
+      "ue5_ref": "SBlockEditorWidget.cpp:219-228（SwitchEditorGroup API 存在但只換 Graph 指標）；ASkillCreatorPlayerController.cpp（ToggleBlockEditorOverlay 只建立 1 個 UBlockEdGraph，無 5 組管理）",
+      "verdict": "❌",
+      "detail": "Godot 編輯器內有 5 個 dot 按鈕（Header 右側 groupRow），切換時把當前 _spells[] 緩衝寫回 Loadout 再從新組讀取。UE5 SBlockEditorWidget 雖然有 SwitchEditorGroup API（SBlockEditorWidget.cpp:219），但 PlayerController 只建立一個 UBlockEdGraph，SpellGroup.MaxGroups=5 架構從未被 Editor 端利用，UI 層的 5 個 dot 按鈕完全缺失。",
+      "fix_suggestion": "ToggleBlockEditorOverlay 建立 5 個 UBlockEdGraph 陣列對應 SpellGroups；SBlockEditorWidget 加 5 個 dot 按鈕（對應 Godot _groupDots），點擊時 SwitchEditorGroup 並切換對應 Graph；切換前把當前 Graph.ToBlockNodes() 寫回對應 SpellLoadout.Slots。"
+    },
+    {
+      "id": "K-17",
+      "topic": "積木編輯器左側 Palette 面板缺失（技能因子/積木/刻印三分頁）",
+      "godot_ref": "AbilityEditorUI.cs:419-836（BuildLeftPanel：三主 tab + 子標籤欄；BuildTotemContent/BuildBlockContent/BuildEngraveContent；拖放到畫布）",
+      "ue5_ref": "SBlockEditorWidget.cpp:44-101（Construct：只有標題列 + 名稱+儲存行 + SGraphEditor 畫布，無 Palette）",
+      "verdict": "❌",
+      "detail": "Godot 左側 Palette 有三個主分頁（技能因子 8 sub-type / 積木 11 sub-group / 刻印 11 色系），每個 sub-tab 展示對應積木庫（可點擊加入或拖放到畫布）。UE5 SBlockEditorWidget 完全沒有 Palette 面板，使用者只能在 SGraphEditor 右鍵選單中看到 Schema 暴露的節點清單，既無分類瀏覽也無完整的刻印庫，嚴重影響積木編輯器可用性。",
+      "fix_suggestion": "SBlockEditorWidget::Construct 改為 SHorizontalBox：左側 250px SScrollBox 作為 Palette；依 _activeLeftTab（0/1/2）切換三個 VBox（技能因子/積木/刻印）；按鈕點擊 AddNode() 到 Graph；拖放用 MouseMotion 偵測 BlockDrag 觸發。"
+    },
+    {
+      "id": "K-18",
+      "topic": "積木編輯器右側統計面板缺失（AP/MP breakdown/摘要）",
+      "godot_ref": "AbilityEditorUI.cs:932-1050（BuildRightPanel：AP 數字+上限+進度條；BaseMpCost SpinBox；MP 逐類型分解；技能摘要文字；儲存按鈕）",
+      "ue5_ref": "SBlockEditorWidget.cpp（Header 只有名稱輸入 + 儲存按鈕一行，無 AP/MP/摘要統計面板）",
+      "verdict": "❌",
+      "detail": "Godot 右側完整統計面板：AP 消耗（紅色超限警告）+ 境界上限 + AP 進度條 + BaseMpCost SpinBox + MP 逐類型分解（CalculateSlotCostByType）+ 技能摘要（SpellDescriptionGenerator）。UE5 右側統計面板完全缺失，設計師無從得知技能的 AP/MP 成本，也看不到技能摘要，嚴重影響設計工作流。",
+      "fix_suggestion": "SBlockEditorWidget::Construct 加 175px 右側面板：AP STextBlock + SProgressBar；BaseMpCost SSpinBox；MP breakdown SVerticalBox；描述 SScrollBox+STextBlock；OnChanged 時 RefreshStatsPanel() 更新所有值（呼叫 FAbilityPointCalculator::CalculateTotalCost 等）。"
+    },
+    {
+      "id": "K-19",
+      "topic": "積木編輯器容器導覽棧（麵包屑/ContainerEffect 深層編輯）缺失",
+      "godot_ref": "AbilityEditorUI.cs:361-403（EnterContainerEffect：_navStack.Add；BuildBreadcrumb；切換畫布到 ContainerEffect；返回鍵 _navStack.RemoveAt）；SafetyGuard.MaxContainerDepth=3",
+      "ue5_ref": "SBlockEditorWidget.cpp（無任何 NavStack 或容器導覽機制；SGraphEditor 所有節點平鋪在同一 Graph）",
+      "verdict": "❌",
+      "detail": "Godot 編輯器支援雙擊容器型刻印進入 ContainerEffect SpellArray 的深層編輯，Header 顯示麵包屑路徑（「技能名 › 投射物容器」）。UE5 SGraphEditor 所有節點在同一 Graph 平面顯示，ContainerEffect 的積木樹無法被編輯。投射物/召喚等容器型技能的效果鏈在 UE5 積木編輯器中完全無法設定。",
+      "fix_suggestion": "SBlockEditorWidget 加 TArray<TPair<FSpellArray*,FString>> NavStack；雙擊 ContainerActionIds 中的刻印節點時 EnterContainerEffect → 切換 Graph + NavStack.Push；Header 加麵包屑 STextBlock；返回鍵 NavStack.Pop 還原前一個 Graph。"
+    },
+    {
+      "id": "K-20",
+      "topic": "AutoSave 30 秒自動存檔缺失",
+      "godot_ref": "Main.cs:27（_autoSaveTimer=0f）；Main.cs:29（AutoSaveInterval=30f）；Main.cs:983-989（每幀累加，到 30s 呼叫 SaveAll）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp（全文無 AutoSaveTimer、AutoSave、SaveAll 等；存檔時機：OnCharacterDied + FillSaveData 呼叫鏈）",
+      "verdict": "⚠️",
+      "detail": "Godot 有 30 秒定時自動存檔（Main.cs:983-989），防止崩潰/強制退出丟失進度。UE5 僅有死亡時觸發的存檔，缺少 30 秒定時自動存檔。若遊戲在無死亡的情況下崩潰（常見於開發期），近 30 秒的探索/戰鬥進度會丟失。",
+      "fix_suggestion": "ASkillCreatorCharacter 加 float AutoSaveTimer = 0f；Tick() 中 AutoSaveTimer += DeltaTime；達 30f 時 AutoSaveTimer=0f + 呼叫 GameMode->SaveCurrentCharacter() 或等價存檔流程。"
+    },
+    {
+      "id": "K-21",
+      "topic": "F2 座標 overlay 顯示欄位不完整",
+      "godot_ref": "Main.cs:1016-1031（顯示：視角模式/螢幕 px 座標/世界座標/格座標/玩家格座標/移動方向/OrthoZoom）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:273-282（bDebugCoordEnabled：只顯示格座標 + 世界座標兩欄）",
+      "verdict": "⚠️",
+      "detail": "UE5 只顯示格座標和世界座標，Godot 額外顯示視角模式、螢幕像素座標、玩家格座標、移動方向、OrthoZoom。缺失欄位降低開發偵錯便利性但不影響功能。低優先。"
+    },
+    {
+      "id": "K-22",
+      "topic": "採掘/放置 mouseOverHotbar 阻斷缺失",
+      "godot_ref": "Main.cs:1198（採掘：!_mouseOverHotbar && !_inventoryOpen）；Main.cs:1256（放置：同樣兩個條件）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:738-828（OnMine/OnPlace 無任何 mouseOverHotbar 或 InventoryOpen 檢查）",
+      "verdict": "⚠️",
+      "detail": "Godot 採掘/放置前確認滑鼠不在熱鍵欄上且物品欄未開啟。UE5 無此防禦性檢查，點擊 HUD 按鈕時理論上會同時觸發世界互動。實際影響取決於 UE5 HUD 的 MouseFilter 攔截能力，但邏輯層面缺乏保護。"
+    },
+    {
+      "id": "K-23",
+      "topic": "InputBindings 玩家自訂鍵位持久化缺失",
+      "godot_ref": "InputBindings.cs:87-179（SavePath=OS.GetUserDataDir()/bindings.json；RegisterAll 讀磁碟；Rebind 寫磁碟；只儲存與預設值不同的 override）",
+      "ue5_ref": "（無任何 bindings.json 等價持久化；所有鍵位硬編碼）",
+      "verdict": "⚠️",
+      "detail": "Godot 支援玩家重新綁定鍵位且持久化。UE5 所有鍵位硬編碼在 SetupPlayerInputComponent 和 SetupInputComponent 中，玩家無法重新綁定。UI-2（InputSettingsWidget + GetDefaultMappingContext）架構已預留重綁 API（ASkillCreatorCharacter.h:123），但持久化機制尚未實作。屬低優先 QoL 缺口。"
+    },
+    {
+      "id": "K-24",
+      "topic": "死亡重生流程正確對應",
+      "godot_ref": "Main.cs:971-981（IsAlive 判定：顯示 _deathScreen + SaveAll + return）；Main.cs:175-184（DeathGuard 攔截 → 保留 1 HP）",
+      "ue5_ref": "ASkillCreatorCharacter.cpp:324-336（OnCharacterDied.Broadcast）；ASkillCreatorCharacter.cpp:327-330（ActionBus.DispatchPlayerDeath → CurrentHp=1）",
+      "verdict": "✅",
+      "detail": "DeathGuard 攔截邏輯（DispatchPlayerDeath → 保留 1 HP）正確對應 Godot Main.cs:175-184。死亡後廣播 OnCharacterDied 讓 HUD 顯示死亡畫面，架構合理。重生點和死亡畫面 UI 細節由 HUD 端管理（本次未讀 UPlayerHUDWidget.cpp，但 Character 端邏輯正確）。"
+    }
+  ],
+  "summary": "核實 24 項：✅10 / ⚠️8 / ❌6",
+  "verdict_breakdown": {
+    "✅": ["K-1","K-2","K-3","K-4","K-6","K-8","K-10","K-13","K-14","K-24"],
+    "⚠️": ["K-7","K-9","K-11","K-21","K-22","K-23","K-20","K-5 (partial)"],
+    "❌": ["K-5","K-12","K-15","K-16","K-17","K-18","K-19"]
+  },
+  "critical_gaps": [
+    "K-17: 積木編輯器完全缺左側 Palette 面板（技能因子/積木/刻印三分頁），最嚴重可用性缺口",
+    "K-18: 積木編輯器完全缺右側統計面板（AP/MP breakdown/摘要），設計師無法得知技能成本",
+    "K-19: 容器導覽棧（麵包屑）缺失，ContainerEffect 積木無法被編輯",
+    "K-16: 技能組 5 組 dot 切換 UI 缺失，多組技能設計無法在 Editor 中切換",
+    "K-15: 關閉編輯器未儲存確認彈窗缺失，積木設計可能意外丟失",
+    "K-12: F1 筆刷工具（材質繪製）完全未實作，開發工具缺口",
+    "K-5: PlacedObjectRegistry 完美移除分流缺失（已有自注釋，但尚未修復）"
+  ]
+}

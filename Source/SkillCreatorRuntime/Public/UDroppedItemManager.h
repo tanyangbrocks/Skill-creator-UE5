@@ -31,6 +31,10 @@ public:
     // 嘗試拾取玩家周圍範圍內所有掉落物；回傳成功拾取的 FItemStack 陣列
     TArray<FItemStack> TryPickupAll(ASkillCreatorCharacter* Player);
 
+    // J-11：批次生成礦石碎片（對應 Godot DroppedItemManager.cs:31-46 SpawnFragments）
+    // Mining：units=tileCount/1000，生成 units*100 個碎片；Explosion：units*Rand(20,80)
+    void SpawnFragments(FGridPos Center, EMaterialType Mat, int32 TileCount, EDestroyReason Reason);
+
     // 清除所有掉落物
     void Clear();
 

@@ -1,0 +1,116 @@
+{
+  "agent": "G",
+  "section": "§6 Voxel World Core",
+  "summary": "核實 12 項：✅4 / ⚠️5 / ❌3",
+  "godot_files_read": [
+    "C:/skill-creator/Scripts/World/TileCell.cs",
+    "C:/skill-creator/Scripts/World/TileWorld3D.cs (全文)",
+    "C:/skill-creator/Scripts/World/Chunk3D.cs",
+    "C:/skill-creator/Scripts/World/MapGenerator3D.cs (全文)"
+  ],
+  "ue5_files_read": [
+    "C:/SkillCreatorUE5/Source/SkillCreatorCore/Public/MaterialType.h",
+    "C:/SkillCreatorUE5/Plugins/VoxelWorld/Source/VoxelWorld/Public/Chunk3D.h",
+    "C:/SkillCreatorUE5/Plugins/VoxelWorld/Source/VoxelWorld/Private/Chunk3D.cpp",
+    "C:/SkillCreatorUE5/Plugins/VoxelWorld/Source/VoxelWorld/Private/TileWorld3D.cpp",
+    "C:/SkillCreatorUE5/Plugins/VoxelWorld/Source/VoxelWorld/Private/MapGenerator3D.cpp"
+  ],
+  "findings": [
+    {
+      "id": "G-1",
+      "item": "TileCell 欄位完整性",
+      "godot_ref": "TileCell.cs:5-10 — 三欄位：Type:MaterialType / Variant:byte(0-255色差) / Timer:short(燃燒/消散倒計時)",
+      "ue5_ref": "Source/SkillCreatorCore/Public/MaterialType.h:45-51 — 四欄位：MaterialID:uint8 / CA_State:uint8(Timer語意) / Category:uint8 / Flags:uint8",
+      "verdict": "⚠️",
+      "detail": "MaterialID 對應 Godot Type（正確）。CA_State 對應 Timer（正確，但精度從 short 縮為 uint8，上限 255 而 Godot short 理論可達 32767，實際 Fire=30-90、Steam=60-120、Wood 最長約 200，均在 255 以內，無實質問題）。Godot Variant（微小色差，0-255）在 UE5 中完全缺失，無法表現同一材質的視覺多樣性。Category（ETileCategory：GameplayBlock/VisualCA）和 Flags 是 UE5 新增的雙軌制欄位，Godot 沒有對應，屬有意擴充而非錯誤。Variant 功能缺失需記錄但對遊戲邏輯無直接影響。"
+    },
+    {
+      "id": "G-2",
+      "item": "CA 物理規則——粉末（Powder）重力",
+      "godot_ref": "TileWorld3D.cs:249-258 UpdatePowder: 先 TryMove(y+1)直落，再隨機起始序的四方向斜落(x2/z2=±1,y+1)",
+      "ue5_ref": "TileWorld3D.cpp:339-352 UpdatePowder: 先 TryMove(y+1)直落，再 Dx[]/Dz[] 陣列 RandHelper(4) 起始的四方向斜落",
+      "verdict": "✅",
+      "detail": "邏輯完全一致：先嘗試垂直落下，若不行再以隨機起始方向嘗試四個斜向落下（±X,±Z 各組合）。UE5 改用連續陣列迴圈取代 Godot 四次顯式 TryMove，語意等價。防重複更新（IsUpdated）機制兩邊都有。"
+    },
+    {
+      "id": "G-3",
+      "item": "CA 物理規則——液體 Lava 限速 + 點火機率",
+      "godot_ref": "TileWorld3D.cs:265 — Lava 限速：`if (mat == MaterialType.Lava && _frame % 3 != 0) return;` 讓岩漿流速為水的 1/3；TileWorld3D.cs:287 — Lava UpdateLiquid 末尾點火：`TryIgniteAround(x,y,z, 0.1f)`",
+      "ue5_ref": "TileWorld3D.cpp:354-383 UpdateLiquid — 無 Lava 限速；TileWorld3D.cpp:380 — Lava 點火：`TryIgniteAround(x,y,z, 0.005f)`",
+      "verdict": "❌",
+      "detail": "兩個嚴重數值問題：\n(1) Lava 限速完全缺失：Godot TileWorld3D.cs:265 在 UpdateLiquid 入口有 `if (mat == Lava && _frame % 3 != 0) return;`，讓岩漿流速降為水的 1/3。UE5 UpdateLiquid 完全沒有此限速，岩漿擴散速度與水相同（過快，設計意圖為岩漿流動緩慢）。\n(2) Lava 點火機率差 20 倍：Godot 0.1f，UE5 0.005f，導致 UE5 岩漿周圍的燃燒效果極其稀少（僅 Godot 的 5%）。\n修法：(1) UpdateLiquid 入口加 `if (Mat==Lava && Frame%3!=0) return;`；(2) Lava UpdateLiquid 末尾點火機率改 0.1f。"
+    },
+    {
+      "id": "G-4",
+      "item": "CA 物理規則——液體（Water）水平擴散雙向掃描",
+      "godot_ref": "TileWorld3D.cs:274-285 UpdateLiquid 水平擴散：先掃 (lr?-i:i) 方向再掃反向 (lr?i:-i)，兩組 for 迴圈 i=1..spread",
+      "ue5_ref": "TileWorld3D.cpp:370-377 UpdateLiquid 水平擴散：HX/HZ 由 Frame% 決定方向，for s=1..Spread 遇 TryMove 失敗就 break",
+      "verdict": "⚠️",
+      "detail": "Godot 液體在水平擴散時先掃一個方向 for i=1..spread（遇阻 return），再掃反方向 for i=1..spread。UE5 在每幀固定一個方向（HX/HZ 由 Frame% 決定），若首格擋住就 break 後不再掃反方向。效果差異：Godot 同一幀同一格可能同時往兩個反方向都嘗試最大 spread 步數；UE5 每幀只嘗試一個方向。液體向後流能力略有差異，但整體設計意圖（防偏斜的雙向掃描）基本達到。幀間交替效果類似但不完全等價，屬輕微不符。"
+    },
+    {
+      "id": "G-5",
+      "item": "CA 物理規則——氣體 Fire 消散順序 + ExtinguishFire 語意",
+      "godot_ref": "TileWorld3D.cs:299-325 UpdateGas: (1) Timer-- (2) 若 Timer<=0 則消散 (3) Fire: TryMove(y-1) 再 TryIgniteAround(0.08f) 再 HasAdjacent(Water)→ExtinguishFire; TileWorld3D.cs:466-481 ExtinguishFire: 把 Fire 格設為 Air，再把所有鄰近 Water 格改成 Steam",
+      "ue5_ref": "TileWorld3D.cpp:385-426 UpdateGas: (1) 先判 HasAdjacent(Water)→ExtinguishFire return (2) CA_State-- WriteCell (3) TryIgniteAround(0.02f) (4) TryMove(y-1) (5) 移動後再判 CA_State==0 消散; TileWorld3D.cpp:464-468 ExtinguishFire: 直接把 Fire 格 SetTile→Steam（不看鄰近 Water）",
+      "verdict": "⚠️",
+      "detail": "三點差異：\n(1) 點火機率 0.08f（Godot）vs 0.02f（UE5），差 4 倍，UE5 火焰傳播顯著較慢。\n(2) 執行順序不同：Godot 是「倒計時→消散/移動→點火→滅火」，UE5 是「滅火→倒計時→點火→移動→消散」。水滅火在 Godot 是最後一步（移動後才檢查），在 UE5 是第一步（移動前就滅），但功能上結果類似。\n(3) ExtinguishFire 語意差異最嚴重：Godot 把 Fire 格設為 Air，並把所有鄰近 Water 格轉成 Steam（完整的「火遇水化蒸汽」效果）；UE5 直接把 Fire 格本身設為 Steam（Fire 格自己變 Steam），鄰近 Water 完全不受影響。視覺和 CA 效果明顯不同：Godot 水能把火滅成 Air（火消失）並自身蒸發成 Steam；UE5 火遇水後自己變成 Steam（火沒消失，只是換材質）。"
+    },
+    {
+      "id": "G-6",
+      "item": "GetTile/SetTile 邊界檢查與預設回傳值",
+      "godot_ref": "TileWorld3D.cs:515-522 GetTile: !InBounds→Air, chunk不存在→Air; TileWorld3D.cs:559-580 SetTile: !InBounds→return(靜默)",
+      "ue5_ref": "TileWorld3D.cpp:88-120 InBounds: Width<=0時回傳true(無限世界); GetCell: chunk不存在→FTileCell{}(MaterialID=0=Air); SetTile: InBounds false→靜默return",
+      "verdict": "✅",
+      "detail": "兩邊行為一致：GetTile 在超出邊界或 chunk 不存在時都回傳 Air(0)；SetTile 超出邊界時靜默忽略。UE5 的 InBounds 在 Width/Height/Depth<=0 時回傳 true（正確支援無限懶載入模式）。WriteCell 不建立新 chunk（與 SetTile 不同，CA 內部移動安全）。"
+    },
+    {
+      "id": "G-7",
+      "item": "Explode(cx,cy,cz,r) 球形爆炸公式",
+      "godot_ref": "TileWorld3D.cs:655-663 Explode: dx²+dy²+dz²<=r²，全部 100% 必定設為 Air；觸發 OnExplosion 事件",
+      "ue5_ref": "TileWorld3D.cpp:494-510 Explode: dx²+dy²+dz²<=Radius²，有 Chance 參數（可設<1隨機性破壞）+ 30% 機率在被破壞格 y-1 放 Fire",
+      "verdict": "⚠️",
+      "detail": "球形半徑公式（歐幾里德，dx²+dy²+dz²<=r²）完全一致，這是核心邏輯。但 UE5 多了兩個 Godot 沒有的行為：(1) Chance 參數：Godot 爆炸 100% 必定清空格子，UE5 可設小於 1 的機率選擇性破壞（設計擴充，當 Chance=1.0 時等價）；(2) 30% 機率在被破壞格 wy-1 放置 Fire（Godot 爆炸不會點火）。兩者都是 UE5 擴充功能，不影響基本爆炸語意，但實際爆炸效果有所不同。技能施放側只需傳 Chance=1.0 即可完全對齊 Godot。"
+    },
+    {
+      "id": "G-8",
+      "item": "Chunk3D dirty tracking（AABB + Updated 旗標）",
+      "godot_ref": "Chunk3D.cs:17-60 — IsDirty/MeshNeedsRebuild/NeedsSave + DirtyMinX/Y/Z, DirtyMaxX/Y/Z 分離欄位；MarkDirty 擴展 AABB；ClearDirty 只清 bDirty 不清 bMeshNeedsRebuild；ClearUpdated 用 Array.Clear",
+      "ue5_ref": "Chunk3D.h:20-25 + Chunk3D.cpp:10-38 — bDirty/bMeshNeedsRebuild/bNeedsSave + DirtyMin[3]/DirtyMax[3] 合併陣列；邏輯與 Godot 逐行一致",
+      "verdict": "✅",
+      "detail": "完整對應。MarkDirty 同時設三個旗標並擴展 AABB；ClearDirty 只清 bDirty 和重置 AABB（不清 bMeshNeedsRebuild，由渲染器負責）；ClearUpdated 用 FMemory::Memzero 等價 Array.Clear；FlagMeshRebuild() 單獨設 bMeshNeedsRebuild（鄰 chunk 邊界外露時用）。架構差異：Godot 分開 DirtyMinX/Y/Z 三個 int 欄位，UE5 合併為 DirtyMin[3] 陣列，邏輯完全等價。"
+    },
+    {
+      "id": "G-9",
+      "item": "MapGenerator3D Noise 參數——高度 noise 頻率與 FBm Octaves",
+      "godot_ref": "MapGenerator3D.cs:70-79 MakeHeightNoise: freq=0.001f / 7 octaves / SimplexSmooth / FBm",
+      "ue5_ref": "MapGenerator3D.cpp:59-65 ComputeChunkData HN: freq=0.005f / 4 octaves / FBm",
+      "verdict": "❌",
+      "detail": "高度 noise 頻率相差 5 倍（0.001 vs 0.005），octave 數相差 75%（7 vs 4）。頻率越高表示地形變化更劇烈（週期更短）；octave 越少表示地形細節層次越少。結果：UE5 的地表起伏比 Godot 更劇烈（頻率 5 倍）但同時更平滑（octave 少）。兩邊玩家看到的世界地形外觀完全不同，不能認為架構差異可接受。"
+    },
+    {
+      "id": "G-10",
+      "item": "MapGenerator3D GetHeightAt 公式——地表高度基準與振幅",
+      "godot_ref": "MapGenerator3D.cs:247-249 GetHeightAt: `worldH * 0.30f + n * (worldH * 0.08f)`，地表平均在頂部 30% 深度，振幅 ±8%",
+      "ue5_ref": "MapGenerator3D.cpp:31-41 GetHeightAt: `WorldH * 0.4f + v * WorldH * 0.30f`，地表平均在頂部 40% 深度，振幅 ±30%",
+      "verdict": "❌",
+      "detail": "兩個嚴重不符：\n(1) 平均地表深度：Godot 30% → UE5 40%（地表整體下移 10%），對 256 高度的世界相當於地表往下移了 25.6 格。\n(2) 振幅差異最嚴重：Godot 振幅 ±0.08H（±20 格 @ H=256），UE5 振幅 ±0.30H（±77 格 @ H=256），相差近 4 倍。UE5 的地形高低落差比 Godot 劇烈得多，幾乎所有 Godot 預想的世界尺度都需要調整。此差異與 G-9（noise 頻率不同）疊加，導致兩邊地形體驗完全不同。"
+    },
+    {
+      "id": "G-11",
+      "item": "MapGenerator3D 洞穴 Noise 頻率與寬洞穴門檻",
+      "godot_ref": "MapGenerator3D.cs:81-97 — CaveThin: freq=0.022f/2oct; CaveWide: freq=0.008f/2oct; IsCaveAt: a²+b²<0.020 → 細蟲洞；c>0.80 → 大洞穴",
+      "ue5_ref": "MapGenerator3D.cpp:67-78 ComputeChunkData — CA/CB: freq=0.04f(無FBm); WN: freq=0.02f; 判定: a²+b²<0.02f || w>0.75f",
+      "verdict": "⚠️",
+      "detail": "洞穴門檻 0.02 兩邊相同（✅）。但洞穴 noise 頻率差異：細蟲洞 Godot 0.022 vs UE5 0.04（差 1.8 倍），UE5 細蟲洞更密集短小；大洞穴 Godot 0.008 vs UE5 0.02（差 2.5 倍），UE5 大洞穴頻率更高。寬洞穴門檻：Godot c>0.80 vs UE5 w>0.75，UE5 洞穴密度略高（門檻降低=更多洞穴）。此外 Godot 洞穴 noise 有 FBm 2 octave（有機感），UE5 CA/CB 洞穴 noise 無 FBm（單層，更均勻規則）。這些差異使兩邊洞穴形狀和密度有所不同，但都能生成合理地下空間，屬次要不符。"
+    },
+    {
+      "id": "G-12",
+      "item": "MapGenerator3D 洞穴生成演算法——CA 平滑 vs Noise 閾值",
+      "godot_ref": "MapGenerator3D.cs:473-521 GenerateCaCaves/SmoothCa3D: 先隨機種初始化 55% 空氣，再執行 4 次 Moore 鄰域 CA 平滑（threshold=18/15），產生有機團狀洞穴",
+      "ue5_ref": "MapGenerator3D.cpp:55-129 ComputeChunkData: 直接用 noise 閾值判斷 (a²+b²<0.02 || w>0.75)，無 CA 平滑步驟，per-chunk 獨立計算",
+      "verdict": "❌",
+      "detail": "演算法層面根本不同：\nGodot 對出生區做全局三步驟：(1) 隨機初始化 55% 空氣的 3D 布林陣列 (2) 執行 4 次 Moore 鄰域 CA 平滑（threshold=18） + 1 次 threshold=15 (3) 把最終布林值挖空成洞穴。此流程產生有機團狀洞穴（Minecraft 風格），洞穴形狀在全局一致且有流線感。\nUE5 完全沒有 CA 平滑步驟，直接用兩個偏移 noise 場（a²+b² 近等值線產生蟲洞）+ 一個高值 noise 場，per-chunk 獨立計算。兩個系統都能產生連通洞穴，但形狀截然不同（noise 場生成的洞穴更像蜿蜒隧道；CA 平滑生成的洞穴更像不規則大廳）。\n此差異是架構選擇，UE5 的 per-chunk 方法更適合無限世界懶加載（Godot 方法需要全局初始化）。記錄為 ❌ 是因為 issues.md 標「已實作」但兩邊洞穴風格差異較大；若有意為之，應在 issues.md 明確標記架構差異。"
+    }
+  ]
+}
