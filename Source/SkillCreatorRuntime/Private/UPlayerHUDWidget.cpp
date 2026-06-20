@@ -1,5 +1,7 @@
 #include "UPlayerHUDWidget.h"
 #include "ASkillCreatorHUD.h"
+#include "ASkillCreatorCharacter.h"
+#include "UInventoryComponent.h"
 #include "UCharacterStateComponent.h"
 #include "ItemStack.h"
 #include "ItemRegistry.h"
@@ -547,8 +549,8 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
             BreakthroughLabel->SetVisibility(ESlateVisibility::Hidden);
     }
 
-    // K-22：偵測游標是否在熱鍵欄格上，每幀寫入 ASkillCreatorHUD::bMouseOverHotbar
-    // （對應 Godot Main.cs:831-836 panel.MouseEntered → _mouseOverHotbar = true）
+    // K-22 + hover tooltip：偵測游標在熱鍵欄格上，寫入 bMouseOverHotbar + 顯示物品名稱
+    // （對應 Godot Main.cs:831-836 panel.MouseEntered → _mouseOverHotbar=true + ShowTooltip(idx)）
     if (APlayerController* PC = GetOwningPlayer())
     {
         if (ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
@@ -556,17 +558,39 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
             float MX, MY;
             PC->GetMousePosition(MX, MY);
             FVector2D MouseAbs(MX, MY);
-            bool bOver = false;
-            for (UBorder* B : ItemSlotBorders)
+
+            int32 HoveredIdx = -1;
+            for (int32 i = 0; i < ItemSlotBorders.Num(); ++i)
             {
+                UBorder* B = ItemSlotBorders[i];
                 if (!B) continue;
                 const FGeometry& G = B->GetCachedGeometry();
                 const FVector2D Local = G.AbsoluteToLocal(MouseAbs);
                 const FVector2D Sz    = G.GetLocalSize();
                 if (Local.X >= 0.f && Local.X <= Sz.X && Local.Y >= 0.f && Local.Y <= Sz.Y)
-                { bOver = true; break; }
+                { HoveredIdx = i; break; }
             }
-            HUD->bMouseOverHotbar = bOver;
+            HUD->bMouseOverHotbar = (HoveredIdx >= 0);
+
+            // Tooltip（對應 Godot ShowTooltip(idx) → ShowFloatTooltip(DisplayName)）
+            if (HoveredIdx >= 0)
+            {
+                ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn());
+                const bool bHasItem = Char && Char->InventoryComp
+                    && Char->InventoryComp->Slots.IsValidIndex(HoveredIdx)
+                    && !Char->InventoryComp->Slots[HoveredIdx].IsEmpty();
+                if (bHasItem)
+                    ShowFloatTooltip(
+                        FItemRegistry::Get(Char->InventoryComp->Slots[HoveredIdx].ItemId)
+                            .DisplayName.ToString(),
+                        MouseAbs);
+                else
+                    HideFloatTooltip();
+            }
+            else
+            {
+                HideFloatTooltip();
+            }
         }
     }
 }
