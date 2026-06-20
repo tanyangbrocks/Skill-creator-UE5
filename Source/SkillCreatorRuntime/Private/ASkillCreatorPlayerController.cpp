@@ -6,14 +6,8 @@
 #include "UEquipmentComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
-#if WITH_EDITOR
-#include "UBlockEdGraph.h"
-#include "UBlockEdGraphSchema.h"
-#include "SBlockEditorWidget.h"
-#include "Engine/GameViewportClient.h"
-#include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SBorder.h"
-#endif
+#include "UBlockEditorWidget.h"
+#include "SpellGroup.h"
 
 void ASkillCreatorPlayerController::BeginPlay()
 {
@@ -129,93 +123,64 @@ void ASkillCreatorPlayerController::OnHotbar0() { SetActiveHotbarIndex(9); }
 
 void ASkillCreatorPlayerController::OnOpenEditor()
 {
-#if WITH_EDITOR
     ToggleBlockEditorOverlay();
-#endif
 }
 
-#if WITH_EDITOR
 void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
 {
-    if (!GEngine || !GEngine->GameViewport) return;
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char || !Char->SpellCasterComp) return;
 
-    if (!BlockEditorOverlay.IsValid())
+    if (!BlockEditorWidget)
     {
-        UBlockEdGraph* Graph = NewObject<UBlockEdGraph>(GetTransientPackage());
-        Graph->Schema = UBlockEdGraphSchema::StaticClass();
+        BlockEditorWidget = CreateWidget<UBlockEditorWidget>(this, UBlockEditorWidget::StaticClass());
+        if (!BlockEditorWidget) return;
+        BlockEditorWidget->OnSaveSpell.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorSave);
+        BlockEditorWidget->OnCloseRequested.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorClosed);
+        BlockEditorWidget->AddToViewport(20);
+    }
 
-        TSharedRef<SBlockEditorWidget> EdWidget = SNew(SBlockEditorWidget).GraphToEdit(Graph);
-        BlockEditorWidget = EdWidget;
+    if (!bBlockEditorOpen)
+    {
+        // 載入目前選中槽位既有的積木樹 + 名稱（UBlockEditorWidget::SetEditingSpell 直接指向
+        // Loadout.Slots[ActiveSlot] 本體，不像舊版 Slate 需要 FromBlockNodes() 額外轉換）
+        FSpellGroup& Groups = Char->SpellCasterComp->SpellGroups;
+        const int32 ActiveSlot = Groups.GetActiveLoadout().ActiveIndex;
+        BlockEditorWidget->SetSpellGroups(&Groups);
+        BlockEditorWidget->SetActiveSlot(ActiveSlot);
+        BlockEditorWidget->SetEditingSpell(&Groups.GetActiveLoadout().Slots[ActiveSlot]);
 
-        // 載入目前選中槽位既有的積木樹 + 名稱（若有）
-        ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-        int32 ActiveSlot = 0;
-        if (Char && Char->SpellCasterComp)
-        {
-            ActiveSlot = Char->SpellCasterComp->SpellGroups.GetActiveLoadout().ActiveIndex;
-            const FSpellArray& Spell = Char->SpellCasterComp->SpellGroups.GetActiveLoadout().GetSlot(ActiveSlot);
-            if (Spell.Blocks && !Spell.Blocks->IsEmpty())
-                Graph->FromBlockNodes(*Spell.Blocks);
-            EdWidget->SetSpellName(Spell.Name);
-        }
-        EdWidget->SetActiveSlot(ActiveSlot);
-        EdWidget->OnSaveSpell.BindUObject(this, &ASkillCreatorPlayerController::OnBlockEditorSave);
-
-        BlockEditorOverlay =
-            SNew(SBox)
-            .HAlign(HAlign_Fill)
-            .VAlign(VAlign_Fill)
-            [
-                SNew(SBorder)
-                .BorderBackgroundColor(FLinearColor(0.02f, 0.02f, 0.05f, 0.96f))
-                .Padding(FMargin(0.f))
-                [
-                    EdWidget
-                ]
-            ];
-
-        GEngine->GameViewport->AddViewportWidgetContent(
-            BlockEditorOverlay.ToSharedRef(), 20);
+        BlockEditorWidget->SetVisibility(ESlateVisibility::Visible);
         bBlockEditorOpen = true;
-    }
-    else
-    {
-        bBlockEditorOpen = !bBlockEditorOpen;
-        BlockEditorOverlay->SetVisibility(
-            bBlockEditorOpen ? EVisibility::Visible : EVisibility::Hidden);
-    }
-
-    if (bBlockEditorOpen)
-    {
         SetShowMouseCursor(true);
         SetInputMode(FInputModeUIOnly());
     }
     else
     {
-        SetShowMouseCursor(false);
-        SetInputMode(FInputModeGameAndUI());
+        // 對應 UI 上「← 返回」按鈕的同一條未儲存確認流程（TryExitEditor），E 鍵不開後門
+        // 繞過確認；實際隱藏/還原輸入模式交給 OnBlockEditorClosed（OnCloseRequested 觸發時才做）。
+        BlockEditorWidget->RequestClose();
     }
+}
+
+void ASkillCreatorPlayerController::OnBlockEditorClosed()
+{
+    if (BlockEditorWidget)
+        BlockEditorWidget->SetVisibility(ESlateVisibility::Hidden);
+    bBlockEditorOpen = false;
+    SetShowMouseCursor(false);
+    SetInputMode(FInputModeGameAndUI());
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, int32 SlotIndex)
 {
-    if (!BlockEditorWidget.IsValid()) return;
-
-    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (!Char || !Char->SpellCasterComp) return;
-
-    FSpellLoadout& Loadout = Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
-    if (!Loadout.Slots.IsValidIndex(SlotIndex)) return;
-
-    TArray<TUniquePtr<FBlockNode>> Nodes = BlockEditorWidget->GetBlockNodes();
-    Loadout.Slots[SlotIndex].Name = SpellName;
-    Loadout.Slots[SlotIndex].SetBlocks(MoveTemp(Nodes));
-
+    // UMG 版本的 UBlockEditorWidget::SetEditingSpell 一開始就指向 Loadout.Slots[SlotIndex]
+    // 本體（裸指標直接編輯），驗證通過時資料早已經是最新的，不需要像舊版 Slate
+    // 那樣額外 GetBlockNodes()+SetBlocks() 寫回。
     // 寫入 in-memory SpellGroups 即可——FillSaveData() 在下一次定時/死亡/退出存檔時
     // 會把 SpellGroups 序列化進 SpellGroupJson（見 ASkillCreatorCharacter::FillSaveData）。
-    UE_LOG(LogTemp, Log, TEXT("[儲存技能整構] 槽位 %d「%s」已寫入"), SlotIndex + 1, *SpellName);
+    UE_LOG(LogTemp, Log, TEXT("[儲存技能整構] 槽位 %d「%s」已存"), SlotIndex + 1, *SpellName);
 }
-#endif
 
 // ── HUD 面板開關 ──────────────────────────────────────────────────────────
 

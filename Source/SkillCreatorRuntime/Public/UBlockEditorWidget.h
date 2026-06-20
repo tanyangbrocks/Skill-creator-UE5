@@ -49,6 +49,10 @@ public:
     DECLARE_DELEGATE_TwoParams(FOnSaveSpell, const FString&, int32)
     FOnSaveSpell OnSaveSpell;
 
+    // Phase 8：給 PlayerController 用的「請求關閉」入口——跟 UI 上的 ← 返回按鈕走同一條
+    // TryExitEditor() 未儲存確認流程，E 鍵不開後門繞過確認。
+    void RequestClose() { TryExitEditor(); }
+
 protected:
     virtual void NativeConstruct() override;
 

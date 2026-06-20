@@ -27,16 +27,18 @@ private:
     // 熱鍵欄 0~9（數字鍵 1~9/0，對應 Godot Key1~Key9/Key0）
     void OnHotbar1(); void OnHotbar2(); void OnHotbar3(); void OnHotbar4(); void OnHotbar5();
     void OnHotbar6(); void OnHotbar7(); void OnHotbar8(); void OnHotbar9(); void OnHotbar0();
-    // 積木編輯器 (E) — 切換遊戲內積木 overlay
+    // 積木編輯器 (E) — 切換遊戲內積木 overlay。
+    // Phase 8（積木編輯器 UI 重做）：改用 runtime UMG UBlockEditorWidget，取代
+    // Editor-only 的 SGraphEditor/SBlockEditorWidget，移除 #if WITH_EDITOR——這正是
+    // 整個重做的核心驗收標準：封裝後的 Shipping build E 鍵也要能用。
     void OnOpenEditor();
 
-#if WITH_EDITOR
-    TSharedPtr<SWidget> BlockEditorOverlay;
-    TSharedPtr<class SBlockEditorWidget> BlockEditorWidget;
+    UPROPERTY()
+    TObjectPtr<class UBlockEditorWidget> BlockEditorWidget;
     bool bBlockEditorOpen = false;
     void ToggleBlockEditorOverlay();
     void OnBlockEditorSave(const FString& SpellName, int32 SlotIndex);
-#endif
+    void OnBlockEditorClosed();
     // 面板開關
     void OnOpenSettings();       // B
     void OnOpenShapeMenu();      // N
