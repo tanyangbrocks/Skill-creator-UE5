@@ -260,10 +260,17 @@ void FSpellCompiler::EmitBlock(const FBlockNode& Block,
         // ── 圖騰積木（查 Tsm 轉 SlotRef）─────────────────────────
         case EBlockType::Totem:
         {
-            FInvokeTotemArgs A;
-            ReadArgs(Block, A);
-            if (!A.SlotRef.IsNone())
-                Code.Add(MakeI(EOpCode::InvokeTotem, A));
+            FTotemBlockArgs A;
+            if (ReadArgs(Block, A) && !A.TotemId.IsNone())
+            {
+                FName SlotRef = Tsm.FindRef(A.TotemId);
+                if (!SlotRef.IsNone())
+                {
+                    FInvokeTotemArgs Invoke;
+                    Invoke.SlotRef = SlotRef;
+                    Code.Add(MakeI(EOpCode::InvokeTotem, Invoke));
+                }
+            }
             break;
         }
 
