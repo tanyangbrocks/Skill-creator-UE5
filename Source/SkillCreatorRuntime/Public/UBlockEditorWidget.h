@@ -65,6 +65,27 @@ private:
     FSpellArray* CurrentSpell = nullptr;
     TArray<TUniquePtr<FBlockNode>>* CurrentBlocks = nullptr;
 
+    // ── Phase 6：容器巢狀導覽（對應 Godot AbilityEditorUI.cs:29-34 _navStack）─────
+    FSpellArray* RootSpell = nullptr;
+    TArray<TPair<FSpellArray*, FString>> NavStack;
+    TObjectPtr<UBorder> ConfirmOverlay; // 進入容器效果前的確認彈窗
+
+    void RefreshHeaderState(); // 對應 Godot RefreshHeaderState：返回鈕文字+麵包屑顯示/隱藏
+    FString BuildBreadcrumb() const;
+    void EnterContainerEffect(FBlockNode* EngravingBlock);
+
+    // 通用確認彈窗（Phase 6 進入容器效果 / Phase 7 未儲存確認 共用）。
+    // 對應 Godot ConfirmationDialog（AbilityEditorUI.cs:363-383 / 264-327）。
+    void ShowConfirmDialog(const FString& Title, const FString& Message,
+                           const FString& ConfirmLabel, const FString& CancelLabel,
+                           TFunction<void()> OnConfirm, TFunction<void()> OnCancel = nullptr);
+    // FOnButtonClickedEvent 是 dynamic multicast，不支援 AddLambda，所以待決回呼存成
+    // member，固定綁兩個 UFUNCTION 轉呼叫
+    TFunction<void()> PendingDialogConfirm;
+    TFunction<void()> PendingDialogCancel;
+    UFUNCTION() void OnConfirmDialogConfirmClicked();
+    UFUNCTION() void OnConfirmDialogCancelClicked();
+
     // ── Phase 5：右側統計面板 ────────────────────────────────────
     TObjectPtr<UTextBlock>   ApValueLabel;
     TObjectPtr<UProgressBar> ApBar;

@@ -162,14 +162,27 @@ void UBlockCardWidget::NativeConstruct()
     Super::NativeConstruct();
 }
 
-void UBlockCardWidget::Setup(FBlockNode* InBlock, TArray<TUniquePtr<FBlockNode>>* InParentList, int32 InIndex,
-                              int32 InIndent, TFunction<void()> InOnChanged)
+FReply UBlockCardWidget::NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    Block         = InBlock;
-    ParentList    = InParentList;
-    IndexInParent = InIndex;
-    Indent        = InIndent;
-    OnChanged     = MoveTemp(InOnChanged);
+    // 對應 Godot ScratchCanvas.BlockDoubleClicked（AbilityEditorUI.cs:918-928）
+    if (Block && OnDoubleClicked)
+    {
+        OnDoubleClicked(Block);
+        return FReply::Handled();
+    }
+    return Super::NativeOnMouseButtonDoubleClick(InGeometry, InMouseEvent);
+}
+
+void UBlockCardWidget::Setup(FBlockNode* InBlock, TArray<TUniquePtr<FBlockNode>>* InParentList, int32 InIndex,
+                              int32 InIndent, TFunction<void()> InOnChanged,
+                              TFunction<void(FBlockNode*)> InOnDoubleClicked)
+{
+    Block           = InBlock;
+    ParentList      = InParentList;
+    IndexInParent   = InIndex;
+    Indent          = InIndent;
+    OnChanged       = MoveTemp(InOnChanged);
+    OnDoubleClicked = MoveTemp(InOnDoubleClicked);
 
     UVerticalBox* Outer = WidgetTree->ConstructWidget<UVerticalBox>();
     WidgetTree->RootWidget = Outer;
@@ -336,7 +349,7 @@ UWidget* UBlockCardWidget::BuildBranchPanel(const FString& Label, TArray<TUnique
     HdrLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.40f, 0.70f, 0.40f)));
     VBox->AddChildToVerticalBox(HdrLbl);
 
-    BuildBlockList(this, VBox, BranchBlocks, Indent + 1, OnChanged);
+    BuildBlockList(this, VBox, BranchBlocks, Indent + 1, OnChanged, OnDoubleClicked);
 
     // 「＋ 加入積木」按鈕（對應 ScratchCanvas.cs:233-247，預設新增 InvokeTotem 佔位積木）
     UButton* AddBtn = WidgetTree->ConstructWidget<UButton>();
@@ -377,7 +390,8 @@ void UBlockCardWidget::OnAddToBranch1Clicked() { AddDefaultBlockTo(AddBranchTarg
 
 void UBlockCardWidget::BuildBlockList(UWidget* WidgetContext, UVerticalBox* Container,
                                        TArray<TUniquePtr<FBlockNode>>& Blocks, int32 Indent,
-                                       const TFunction<void()>& OnChanged)
+                                       const TFunction<void()>& OnChanged,
+                                       const TFunction<void(FBlockNode*)>& OnDoubleClicked)
 {
     if (!WidgetContext || !Container) return;
 
@@ -393,7 +407,7 @@ void UBlockCardWidget::BuildBlockList(UWidget* WidgetContext, UVerticalBox* Cont
     for (int32 i = 0; i < Blocks.Num(); ++i)
     {
         UBlockCardWidget* Card = CreateWidget<UBlockCardWidget>(WidgetContext, UBlockCardWidget::StaticClass());
-        Card->Setup(Blocks[i].Get(), &Blocks, i, Indent, OnChanged);
+        Card->Setup(Blocks[i].Get(), &Blocks, i, Indent, OnChanged, OnDoubleClicked);
         if (UVerticalBoxSlot* S = Container->AddChildToVerticalBox(Card))
             S->SetHorizontalAlignment(HAlign_Fill);
 

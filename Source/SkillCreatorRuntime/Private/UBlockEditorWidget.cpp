@@ -3,6 +3,8 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/SizeBox.h"
 #include "Components/Border.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBox.h"
@@ -22,6 +24,8 @@
 #include "AbilityPointCalculator.h"
 #include "SpellDescriptionGenerator.h"
 #include "ManaTypeRegistry.h"
+#include "SafetyGuard.h"
+#include "Instruction.h"
 #include "Components/ProgressBar.h"
 #include "Components/SpinBox.h"
 
@@ -86,8 +90,16 @@ void UBlockEditorWidget::BuildLayout()
     Background->SetBrushColor(FLinearColor(0.11f, 0.11f, 0.14f, 0.98f));
     RootSize->SetContent(Background);
 
+    // Overlay 讓 Phase 6/7 的確認彈窗能疊在整個編輯器上層
+    UOverlay* RootOverlay = WidgetTree->ConstructWidget<UOverlay>();
+    Background->SetContent(RootOverlay);
+
     UVerticalBox* MainVBox = WidgetTree->ConstructWidget<UVerticalBox>();
-    Background->SetContent(MainVBox);
+    if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(MainVBox))
+    {
+        S->SetHorizontalAlignment(HAlign_Fill);
+        S->SetVerticalAlignment(VAlign_Fill);
+    }
 
     if (UVerticalBoxSlot* HeaderSlot = MainVBox->AddChildToVerticalBox(BuildHeader()))
         HeaderSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -96,6 +108,16 @@ void UBlockEditorWidget::BuildLayout()
     {
         BodySlot->SetHorizontalAlignment(HAlign_Fill);
         BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    }
+
+    // 確認彈窗用的全螢幕遮罩，初始隱藏（Phase 6/7 共用 ShowConfirmDialog 顯示）
+    ConfirmOverlay = WidgetTree->ConstructWidget<UBorder>();
+    ConfirmOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.65f));
+    ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(ConfirmOverlay))
+    {
+        S->SetHorizontalAlignment(HAlign_Fill);
+        S->SetVerticalAlignment(VAlign_Fill);
     }
 }
 
@@ -231,6 +253,19 @@ UWidget* UBlockEditorWidget::BuildBody()
 
 void UBlockEditorWidget::OnBackClicked()
 {
+    // 對應 Godot AbilityEditorUI.cs:163-171：有巢狀層就 Pop，否則才是真正離開
+    if (NavStack.Num() > 0)
+    {
+        NavStack.Pop();
+        FSpellArray* Active = NavStack.Num() > 0 ? NavStack.Last().Key : RootSpell;
+        CurrentSpell = Active;
+        if (CurrentSpell && !CurrentSpell->Blocks.IsValid())
+            CurrentSpell->SetBlocks({});
+        CurrentBlocks = CurrentSpell ? CurrentSpell->Blocks.Get() : nullptr;
+        RebuildList();
+        RefreshHeaderState();
+        return;
+    }
     // Phase 7 補：root 層時若 bIsDirty 要先彈確認對話框（對應 Godot TryExitEditor）
     OnCloseRequested.ExecuteIfBound();
 }
@@ -501,11 +536,14 @@ void UBlockEditorWidget::OnSubTab10Clicked() { ActiveSubTab = 10; RebuildPalette
 
 void UBlockEditorWidget::SetEditingSpell(FSpellArray* InSpell)
 {
+    RootSpell = InSpell;
+    NavStack.Reset(); // 換一個技能整構時清空巢狀導覽（對應 Godot SwitchEditorGroup _navStack.Clear()）
     CurrentSpell = InSpell;
     if (CurrentSpell && !CurrentSpell->Blocks.IsValid())
         CurrentSpell->SetBlocks({}); // 全新技能整構：先給空陣列，Palette 拖拉才有東西可插入
     CurrentBlocks = CurrentSpell ? CurrentSpell->Blocks.Get() : nullptr;
     RebuildList();
+    RefreshHeaderState();
 }
 
 void UBlockEditorWidget::RebuildList()
@@ -518,7 +556,9 @@ void UBlockEditorWidget::RebuildList()
         return;
     }
 
-    UBlockCardWidget::BuildBlockList(this, CenterList, *CurrentBlocks, 0, [this]() { RebuildList(); });
+    UBlockCardWidget::BuildBlockList(this, CenterList, *CurrentBlocks, 0,
+        [this]() { RebuildList(); },
+        [this](FBlockNode* B) { EnterContainerEffect(B); });
 
     // 對應 Godot 每次 canvas 變動後呼叫 SyncSlotsFromBlocks（AbilityEditorUI.cs:866 附近），
     // 讓 Slots/GlobalEngravings/Container 跟積木樹保持同步，AP/MP 數字才能即時反映變動
@@ -657,4 +697,145 @@ void UBlockEditorWidget::OnBaseMpChanged(float NewValue)
     if (!CurrentSpell) return;
     CurrentSpell->BaseMpCost = NewValue;
     RefreshStatsPanel();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Phase 6：容器巢狀導覽（對應 Godot AbilityEditorUI.cs:29-34/363-404）
+// ══════════════════════════════════════════════════════════════════
+
+FString UBlockEditorWidget::BuildBreadcrumb() const
+{
+    // 對應 Godot BuildBreadcrumb（AbilityEditorUI.cs:394-404）
+    TArray<FString> Parts;
+    Parts.Add(RootSpell && !RootSpell->Name.IsEmpty() ? RootSpell->Name : TEXT("（未命名）"));
+    for (const TPair<FSpellArray*, FString>& Entry : NavStack)
+        Parts.Add(Entry.Value);
+    return FString::Join(Parts, TEXT(" › "));
+}
+
+void UBlockEditorWidget::RefreshHeaderState()
+{
+    // 對應 Godot RefreshHeaderState（AbilityEditorUI.cs:385-391）
+    const bool bInContainer = NavStack.Num() > 0;
+    if (BackButton)
+    {
+        // UButton 沒有直接 SetText；改設內部 TextBlock —— 這裡簡化只用 Tooltip/不變更文字，
+        // 真正可變文字交給 BreadcrumbLabel 顯示巢狀狀態即可（按鈕本身意圖不變：返回/上一層）
+    }
+    if (BreadcrumbLabel)
+    {
+        BreadcrumbLabel->SetVisibility(bInContainer ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+        if (bInContainer)
+            BreadcrumbLabel->SetText(FText::FromString(BuildBreadcrumb()));
+    }
+}
+
+void UBlockEditorWidget::EnterContainerEffect(FBlockNode* EngravingBlock)
+{
+    // 對應 Godot BlockDoubleClicked + EnterContainerEffect（AbilityEditorUI.cs:363-383,918-928）
+    if (!EngravingBlock || EngravingBlock->Type != EBlockType::Engraving) return;
+    if (NavStack.Num() >= FSafetyGuard::MaxContainerDepth) return;
+
+    const FInstancedStruct* IS = EngravingBlock->Params.Find(TEXT("args"));
+    const FEngravingBlockArgs* Args = IS ? IS->GetPtr<FEngravingBlockArgs>() : nullptr;
+    if (!Args || Args->EngraveId.IsNone()) return;
+    if (!FTotemLibrary::ContainerActionIds().Contains(Args->EngraveId)) return;
+
+    const FEngraveData* Data = FTotemLibrary::FindEngraving(Args->EngraveId);
+    const FString DisplayName = Data ? Data->DisplayName.ToString() : Args->EngraveId.ToString();
+
+    ShowConfirmDialog(
+        TEXT("進入容器效果"),
+        FString::Printf(TEXT("編輯「%s」的內部效果？"), *DisplayName),
+        TEXT("進入"), TEXT("取消"),
+        [this, DisplayName]()
+        {
+            if (!CurrentSpell) return;
+            if (!CurrentSpell->ContainerEffect.IsValid())
+                CurrentSpell->ContainerEffect = MakeShared<FSpellArray>();
+            FSpellArray* Next = CurrentSpell->ContainerEffect.Get();
+            NavStack.Add({ Next, DisplayName });
+            CurrentSpell = Next;
+            if (!CurrentSpell->Blocks.IsValid())
+                CurrentSpell->SetBlocks({});
+            CurrentBlocks = CurrentSpell->Blocks.Get();
+            RebuildList();
+            RefreshHeaderState();
+        });
+}
+
+void UBlockEditorWidget::ShowConfirmDialog(const FString& Title, const FString& Message,
+                                            const FString& ConfirmLabel, const FString& CancelLabel,
+                                            TFunction<void()> OnConfirm, TFunction<void()> OnCancel)
+{
+    if (!ConfirmOverlay) return;
+    ConfirmOverlay->ClearChildren();
+
+    UBorder* DialogBox = WidgetTree->ConstructWidget<UBorder>();
+    DialogBox->SetBrushColor(FLinearColor(0.14f, 0.14f, 0.18f, 1.f));
+    DialogBox->SetPadding(FMargin(16.f));
+
+    UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>();
+    DialogBox->SetContent(VBox);
+
+    UTextBlock* TitleLbl = WidgetTree->ConstructWidget<UTextBlock>();
+    TitleLbl->SetText(FText::FromString(Title));
+    TitleLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.88f, 0.95f)));
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(TitleLbl))
+        S->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+
+    UTextBlock* MsgLbl = WidgetTree->ConstructWidget<UTextBlock>();
+    MsgLbl->SetText(FText::FromString(Message));
+    MsgLbl->SetAutoWrapText(true);
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(MsgLbl))
+        S->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+
+    UHorizontalBox* BtnRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+    VBox->AddChildToVerticalBox(BtnRow);
+
+    UButton* ConfirmBtn = WidgetTree->ConstructWidget<UButton>();
+    ConfirmBtn->SetBackgroundColor(FLinearColor(0.20f, 0.45f, 0.25f, 1.f));
+    {
+        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+        Txt->SetText(FText::FromString(ConfirmLabel));
+        ConfirmBtn->AddChild(Txt);
+    }
+    PendingDialogConfirm = MoveTemp(OnConfirm);
+    ConfirmBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnConfirmDialogConfirmClicked);
+    if (UHorizontalBoxSlot* S = BtnRow->AddChildToHorizontalBox(ConfirmBtn))
+        S->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
+
+    UButton* CancelBtn = WidgetTree->ConstructWidget<UButton>();
+    CancelBtn->SetBackgroundColor(FLinearColor(0.30f, 0.20f, 0.20f, 1.f));
+    {
+        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+        Txt->SetText(FText::FromString(CancelLabel));
+        CancelBtn->AddChild(Txt);
+    }
+    ConfirmOverlay->SetVisibility(ESlateVisibility::Visible);
+    PendingDialogCancel = MoveTemp(OnCancel);
+    CancelBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnConfirmDialogCancelClicked);
+    BtnRow->AddChildToHorizontalBox(CancelBtn);
+
+    ConfirmOverlay->SetContent(DialogBox);
+    ConfirmOverlay->SetHorizontalAlignment(HAlign_Center);
+    ConfirmOverlay->SetVerticalAlignment(VAlign_Center);
+}
+
+void UBlockEditorWidget::OnConfirmDialogConfirmClicked()
+{
+    if (ConfirmOverlay) ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    TFunction<void()> Callback = MoveTemp(PendingDialogConfirm);
+    PendingDialogConfirm = nullptr;
+    PendingDialogCancel  = nullptr;
+    if (Callback) Callback();
+}
+
+void UBlockEditorWidget::OnConfirmDialogCancelClicked()
+{
+    if (ConfirmOverlay) ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    TFunction<void()> Callback = MoveTemp(PendingDialogCancel);
+    PendingDialogConfirm = nullptr;
+    PendingDialogCancel  = nullptr;
+    if (Callback) Callback();
 }
