@@ -4,6 +4,8 @@
 #include "TotemLibrary.h"
 #include "UCardDragHandleWidget.h"
 #include "UBlockDropZoneWidget.h"
+#include "BlockUIDescriptor.h"
+#include "UParamControlWidgets.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -15,66 +17,8 @@
 #include "Components/Button.h"
 
 // ── 卡片顏色/名稱（對應 Godot ScratchCanvas.BlockColor/BlockName）─────────────────
-// ⚠️ 跟 UBlockEditorWidget.cpp 的 BlockCategoryColor 暫時各自一份（同樣的「每類別一色」
-// 簡化版），Phase 4 建 FBlockUIDescriptor 集中表時兩處都會改成呼叫同一份逐型別精確表。
-
-static int32 GetBlockCategoryIndex(EBlockType T)
-{
-    switch (T)
-    {
-        case EBlockType::InvokeTotem: case EBlockType::InvokeSpell: return 0;
-        case EBlockType::If: case EBlockType::Evaluate: case EBlockType::RepeatN:
-        case EBlockType::RepeatWhile: case EBlockType::ForEachNearby: case EBlockType::Wait:
-        case EBlockType::Sleep: case EBlockType::Die: case EBlockType::RandomChoice:
-        case EBlockType::SequentialGate: return 1;
-        case EBlockType::RisingEdge: case EBlockType::FallingEdge:
-        case EBlockType::SinglePulse: case EBlockType::AlternateTrigger: return 2;
-        case EBlockType::DetectHpThreshold: case EBlockType::DetectMpThreshold:
-        case EBlockType::DetectHitReceived: case EBlockType::DetectEntityEnter:
-        case EBlockType::DetectProjectile: case EBlockType::DetectAttack:
-        case EBlockType::DetectStatusChange: return 3;
-        case EBlockType::SetActivationInstant: case EBlockType::SetActivationDeclare:
-        case EBlockType::SetActivationSustained: return 4;
-        case EBlockType::EffectLabel: case EBlockType::OnEffectStart: case EBlockType::OnEffectEnd: return 5;
-        case EBlockType::EndOfChain: case EBlockType::Discard: return 6;
-        case EBlockType::SetVar: case EBlockType::GetVar: case EBlockType::Compare:
-        case EBlockType::SetVarBool: case EBlockType::GetVarBool: return 7;
-        case EBlockType::ListCreate: case EBlockType::ListAppend: case EBlockType::ListPop:
-        case EBlockType::ListDequeue: case EBlockType::ListGet: case EBlockType::ListSet:
-        case EBlockType::ListLength: case EBlockType::ListContains: case EBlockType::ListRemoveAt:
-        case EBlockType::ListClear: return 8;
-        case EBlockType::QueryNear: case EBlockType::QueryNearest:
-        case EBlockType::GetEntityProp: case EBlockType::SetEntityProp: return 9;
-        case EBlockType::Broadcast: case EBlockType::BroadcastAndWait: case EBlockType::OnReceive: return 10;
-        case EBlockType::TaskCounterSet: case EBlockType::TaskCounterAdd: case EBlockType::TaskCounterGet:
-        case EBlockType::TaskCounterOnReach: case EBlockType::TaskCounterReset: return 11;
-        case EBlockType::GetBattleStat: case EBlockType::GetComboCount:
-        case EBlockType::LoopcastIndex: case EBlockType::SuccessCount: return 12;
-        case EBlockType::VecMake: case EBlockType::VecGetComp: case EBlockType::VecAdd:
-        case EBlockType::VecSub: case EBlockType::VecScale: case EBlockType::VecNegate:
-        case EBlockType::VecNorm: case EBlockType::VecLength: case EBlockType::VecDot:
-        case EBlockType::VecCross: case EBlockType::VecFromEntity: case EBlockType::FocalPoint:
-        case EBlockType::Raycast: return 13;
-        case EBlockType::DamageShield: case EBlockType::DeathGuard: return 14;
-        case EBlockType::Anchor: case EBlockType::Rollback: return 15;
-        default: return 1;
-    }
-}
-
-static FLinearColor BlockCategoryColor(int32 CatIndex)
-{
-    static const FLinearColor Colors[16] = {
-        FLinearColor(1.00f, 0.72f, 0.35f), FLinearColor(0.65f, 0.95f, 0.30f),
-        FLinearColor(0.38f, 0.88f, 0.88f), FLinearColor(1.00f, 0.42f, 0.42f),
-        FLinearColor(0.55f, 0.80f, 1.00f), FLinearColor(0.38f, 0.88f, 0.48f),
-        FLinearColor(0.75f, 0.75f, 0.75f), FLinearColor(1.00f, 0.88f, 0.28f),
-        FLinearColor(1.00f, 0.65f, 0.20f), FLinearColor(0.55f, 0.80f, 1.00f),
-        FLinearColor(0.80f, 0.38f, 1.00f), FLinearColor(0.95f, 0.65f, 0.95f),
-        FLinearColor(0.95f, 0.65f, 0.95f), FLinearColor(0.30f, 0.88f, 0.80f),
-        FLinearColor(0.90f, 0.30f, 0.30f), FLinearColor(0.55f, 0.65f, 0.75f),
-    };
-    return Colors[FMath::Clamp(CatIndex, 0, 15)];
-}
+// 一般積木走 Phase 4 的 FBlockUIRegistry 集中表（逐型別精確色+中文名）；
+// Totem/Engraving 因為顏色/名稱取決於積木實例攜帶的子型別資料，仍在此特殊處理。
 
 static FLinearColor TotemTypeColorOf(ETotemType T)
 {
@@ -137,9 +81,8 @@ static FText GetBlockDisplayName(const FBlockNode& B)
                 return FText::FromString(TEXT("◆ ") + Data->DisplayName.ToString());
         return FText::FromString(TEXT("◆ ?"));
     }
-    // 其餘積木：Phase 4 前用 UENUM 識別字串（英文）暫頂，跟 Palette 同樣的已知簡化
-    const UEnum* EnumPtr = StaticEnum<EBlockType>();
-    return FText::FromString(EnumPtr->GetNameStringByValue(static_cast<int64>(B.Type)));
+    // Phase 4：FBlockUIRegistry 集中表精確中文名（取代 Phase 2/3 的英文 UENUM 名稱）
+    return FBlockUIRegistry::Get(B.Type).DisplayName;
 }
 
 static FLinearColor GetBlockDisplayColor(const FBlockNode& B)
@@ -159,7 +102,8 @@ static FLinearColor GetBlockDisplayColor(const FBlockNode& B)
                 return EngraveColorOf(Data->Color);
         return EngraveColorOf(EEngraveColor::Action);
     }
-    return BlockCategoryColor(GetBlockCategoryIndex(B.Type));
+    // Phase 4：FBlockUIRegistry 集中表精確色（取代 Phase 2/3 的「每類別一色」近似版）
+    return FBlockUIRegistry::Get(B.Type).Color;
 }
 
 // ── 巢狀分支規格（對應 Godot BuildBlockCard 內各 BlockType 的分支標籤）───────────────
@@ -277,7 +221,64 @@ void UBlockCardWidget::BuildCardRow(UVerticalBox* Outer)
         S->SetVerticalAlignment(VAlign_Center);
     }
 
-    // Phase 4 補：AddParams(row, block,...) 參數控制項
+    // 參數控制項（對應 Godot ScratchCanvas.AddParams，ScratchCanvas.cs:290-305）
+    if (Block->Type == EBlockType::Totem)
+    {
+        // Totem 特殊 UI：自訂名稱輸入（totemId=="custom" 才顯示）+ MP 類型輸入
+        // （非被動才顯示）。對應 Godot ScratchCanvas.cs:818-842。
+        FInstancedStruct& IS = Block->Params.FindOrAdd(TEXT("args"));
+        if (!IS.IsValid() || !IS.GetPtr<FTotemBlockArgs>())
+            IS = FInstancedStruct::Make<FTotemBlockArgs>(FTotemBlockArgs{});
+        if (FTotemBlockArgs* Args = IS.GetMutablePtr<FTotemBlockArgs>())
+        {
+            if (Args->TotemId.ToString().Equals(TEXT("custom"), ESearchCase::IgnoreCase))
+            {
+                UParamTextEditWidget* NameEdit = CreateWidget<UParamTextEditWidget>(this);
+                NameEdit->Setup(Args->CustomName.ToString(), FText::FromString(TEXT("技能因子名稱")), 80.f,
+                    [Args](const FString& T) { Args->CustomName = FText::FromString(T); });
+                if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(NameEdit))
+                    S->SetVerticalAlignment(VAlign_Center);
+            }
+            if (Args->TotemType != ETotemType::Passive)
+            {
+                UParamTextEditWidget* ManaEdit = CreateWidget<UParamTextEditWidget>(this);
+                ManaEdit->Setup(Args->ManaTypeKey.ToString(), FText::FromString(TEXT("MP 類型")), 64.f,
+                    [Args](const FString& T) { Args->ManaTypeKey = FName(*T); });
+                if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(ManaEdit))
+                    S->SetVerticalAlignment(VAlign_Center);
+            }
+        }
+    }
+    else if (Block->Type == EBlockType::Engraving)
+    {
+        // Engraving 特殊 UI：投入點數（對應 Godot ScratchCanvas.cs:1003-1004「投入 N pt」）
+        FInstancedStruct& IS = Block->Params.FindOrAdd(TEXT("args"));
+        if (!IS.IsValid() || !IS.GetPtr<FEngravingBlockArgs>())
+            IS = FInstancedStruct::Make<FEngravingBlockArgs>(FEngravingBlockArgs{});
+        if (FEngravingBlockArgs* Args = IS.GetMutablePtr<FEngravingBlockArgs>())
+        {
+            UParamTinyLabelWidget* Lbl = CreateWidget<UParamTinyLabelWidget>(this);
+            Lbl->Setup(FText::FromString(TEXT("投入")));
+            if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Lbl))
+                S->SetVerticalAlignment(VAlign_Center);
+
+            UParamSpinWidget* PtsSpin = CreateWidget<UParamSpinWidget>(this);
+            PtsSpin->Setup(Args->Points, 0.f, 100.f, 1.f, 36.f, [Args](float V) { Args->Points = V; });
+            if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(PtsSpin))
+                S->SetVerticalAlignment(VAlign_Center);
+
+            UParamTinyLabelWidget* PtLbl = CreateWidget<UParamTinyLabelWidget>(this);
+            PtLbl->Setup(FText::FromString(TEXT("pt")));
+            if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(PtLbl))
+                S->SetVerticalAlignment(VAlign_Center);
+        }
+    }
+    else
+    {
+        const FBlockUIDescriptor& Desc = FBlockUIRegistry::Get(Block->Type);
+        if (Desc.BuildParamsUI)
+            Desc.BuildParamsUI(this, Row, *Block, OnChanged);
+    }
 
     // 彈性間隔，把刪除鈕推到最右
     UBorder* Flex = WidgetTree->ConstructWidget<UBorder>();

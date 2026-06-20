@@ -16,6 +16,7 @@
 #include "UBlockCardWidget.h"
 #include "TotemLibrary.h"
 #include "FBlockNode.h"
+#include "BlockUIDescriptor.h"
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -54,30 +55,6 @@ static FLinearColor EngraveClrOf(EEngraveColor C)
     }
 }
 
-// 積木分頁的「每類別一色」近似色表（對應 Godot ScratchCanvas.cs 逐型別色表的簡化版；
-// Phase 4 建 FBlockUIDescriptor 集中表時會補上逐積木型別精確色，這裡先用類別色頂著）
-static FLinearColor BlockCategoryColor(int32 CatIndex)
-{
-    static const FLinearColor Colors[16] = {
-        FLinearColor(1.00f, 0.72f, 0.35f), // 0 呼叫（橙）
-        FLinearColor(0.65f, 0.95f, 0.30f), // 1 控制流（黃綠）
-        FLinearColor(0.38f, 0.88f, 0.88f), // 2 觸發條件（青）
-        FLinearColor(1.00f, 0.42f, 0.42f), // 3 偵測（紅）
-        FLinearColor(0.55f, 0.80f, 1.00f), // 4 發動模式（淺藍）
-        FLinearColor(0.38f, 0.88f, 0.48f), // 5 效果標示（綠）
-        FLinearColor(0.75f, 0.75f, 0.75f), // 6 執行時機（灰）
-        FLinearColor(1.00f, 0.88f, 0.28f), // 7 變數（黃）
-        FLinearColor(1.00f, 0.65f, 0.20f), // 8 列表（深橙）
-        FLinearColor(0.55f, 0.80f, 1.00f), // 9 實體（淺藍）
-        FLinearColor(0.80f, 0.38f, 1.00f), // 10 廣播（紫）
-        FLinearColor(0.95f, 0.65f, 0.95f), // 11 計數器（淺紫）
-        FLinearColor(0.95f, 0.65f, 0.95f), // 12 統計（淺紫）
-        FLinearColor(0.30f, 0.88f, 0.80f), // 13 向量（青綠）
-        FLinearColor(0.90f, 0.30f, 0.30f), // 14 攔截（深紅）
-        FLinearColor(0.55f, 0.65f, 0.75f), // 15 快照（藍灰）
-    };
-    return Colors[FMath::Clamp(CatIndex, 0, 15)];
-}
 
 void UBlockEditorWidget::NativeConstruct()
 {
@@ -472,7 +449,6 @@ void UBlockEditorWidget::RebuildPaletteContent()
             { 0, 1 }, { 2, 3 }, { 4, 5, 6 }, { 7 }, { 8 }, { 9 }, { 10 }, { 11, 12 }, { 13 }, { 14 }, { 15 },
         };
         const TArray<int32>& CatIdx = Groups[FMath::Clamp(ActiveSubTab, 0, 10)];
-        const UEnum* BlockTypeEnum = StaticEnum<EBlockType>();
 
         for (int32 ci : CatIdx)
         {
@@ -482,14 +458,12 @@ void UBlockEditorWidget::RebuildPaletteContent()
             CatLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.62f)));
             PaletteContentList->AddChild(CatLabel);
 
-            const FLinearColor Color = BlockCategoryColor(ci);
             for (EBlockType BT : Cat.Types)
             {
-                // Phase 4 前的暫用顯示名：直接用 UENUM 識別字串（英文）；Phase 4 建立
-                // FBlockUIDescriptor 集中表時補上逐型別中文名（對應 Godot ScratchCanvas._descs）。
-                const FString Name = BlockTypeEnum->GetNameStringByValue(static_cast<int64>(BT));
+                // Phase 4：FBlockUIRegistry 集中表精確中文名+色（取代之前的英文名+類別色）
+                const FBlockUIDescriptor& Desc = FBlockUIRegistry::Get(BT);
                 UPaletteItemWidget* Item = CreateWidget<UPaletteItemWidget>(this);
-                Item->Setup(FText::FromString(TEXT("  ") + Name), Color, false,
+                Item->Setup(FText::FromString(TEXT("  ") + Desc.DisplayName.ToString()), Desc.Color, false,
                     [BT](UBlockDragDropOp& Op) { Op.PaletteBlockType = BT; });
                 PaletteContentList->AddChild(Item);
             }
