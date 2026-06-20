@@ -25,6 +25,13 @@ public:
     UPROPERTY() FName      PaletteEngraveId;
     UPROPERTY() EBlockType PaletteBlockType = EBlockType::If;
 
+    // 既有卡片搬移模式（bFromPalette=false，Phase 3）：來源清單+索引，Drop 端從這裡
+    // 移除節點（對應 Godot BlockDrag.BeginMove(idx, src, block)，ScratchCanvas.cs:917）。
+    // 純 C++ member（非 UPROPERTY，TArray<TUniquePtr<>>* 不可反射）；生命週期只在拖拉
+    // 手勢期間有效，指向 UBlockEditorWidget 持有的 FSpellArray.Blocks 樹，不會跨越該樹的生命週期。
+    TArray<TUniquePtr<FBlockNode>>* SourceList  = nullptr;
+    int32                           SourceIndex = -1;
+
     // 依上面欄位建立一個新的 FBlockNode（對應 Godot ScratchCanvas.MakeDefaultBlock /
     // AbilityEditorUI.cs:637-645,789-796,825-833 三種來源各自的 BlockNode 建構）
     TUniquePtr<FBlockNode> CreateBlockNode() const;

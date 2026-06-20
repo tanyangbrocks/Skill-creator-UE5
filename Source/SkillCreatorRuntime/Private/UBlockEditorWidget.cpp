@@ -13,7 +13,9 @@
 #include "Components/EditableTextBox.h"
 #include "UPaletteItemWidget.h"
 #include "UBlockDragDropOp.h"
+#include "UBlockCardWidget.h"
 #include "TotemLibrary.h"
+#include "FBlockNode.h"
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -510,3 +512,16 @@ void UBlockEditorWidget::OnSubTab7Clicked()  { ActiveSubTab = 7;  RebuildPalette
 void UBlockEditorWidget::OnSubTab8Clicked()  { ActiveSubTab = 8;  RebuildPaletteContent(); }
 void UBlockEditorWidget::OnSubTab9Clicked()  { ActiveSubTab = 9;  RebuildPaletteContent(); }
 void UBlockEditorWidget::OnSubTab10Clicked() { ActiveSubTab = 10; RebuildPaletteContent(); }
+
+// ══════════════════════════════════════════════════════════════════
+//  Phase 3：中央積木卡片清單（對應 Godot ScratchCanvas::Rebuild/SyncFrom）
+// ══════════════════════════════════════════════════════════════════
+
+void UBlockEditorWidget::RebuildList()
+{
+    if (!CenterList) return;
+    CenterList->ClearChildren();
+    if (!CurrentBlocks) return;
+
+    UBlockCardWidget::BuildBlockList(this, CenterList, *CurrentBlocks, 0, [this]() { RebuildList(); });
+}

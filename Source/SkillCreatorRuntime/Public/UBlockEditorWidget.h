@@ -11,6 +11,7 @@ class UEditableTextBox;
 class UHorizontalBox;
 class UVerticalBox;
 class UScrollBox;
+struct FBlockNode;
 
 // 積木編輯器主視窗（runtime UMG，取代 Editor-only 的 SBlockEditorWidget/SGraphEditor）。
 // 整體版面對齊 Godot AbilityEditorUI.cs:123-145：
@@ -27,6 +28,12 @@ public:
 
     // 玩家等級（鎖等級判斷用，Phase 8 由 PlayerController 帶入真實值）
     int32 PlayerLevel = 1;
+
+    // Phase 3：指向正在編輯的積木樹（FSpellArray.Blocks 解開的裸指標，Phase 7/8 由
+    // PlayerController/SwitchEditorGroup 設定）。不持有任何「視覺節點」中介物件——
+    // 卡片清單直接讀寫這份樹本身。
+    void SetEditingBlocks(TArray<TUniquePtr<FBlockNode>>* InBlocks) { CurrentBlocks = InBlocks; RebuildList(); }
+    void RebuildList();
 
 protected:
     virtual void NativeConstruct() override;
@@ -49,6 +56,9 @@ private:
     TObjectPtr<UScrollBox>      CenterScroll;
     TObjectPtr<UVerticalBox>    CenterList;
     TObjectPtr<UBorder>         RightPanel;
+
+    // Phase 3：正在編輯的積木樹（不擁有，指向 FSpellArray.Blocks）
+    TArray<TUniquePtr<FBlockNode>>* CurrentBlocks = nullptr;
 
     UFUNCTION() void OnBackClicked();
     UFUNCTION() void OnGroupDot0Clicked();
