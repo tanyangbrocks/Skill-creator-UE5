@@ -193,6 +193,9 @@ private:
     void OnMineReleased();
     void OnPlaceReleased();
 
+    // 放置目標格是否被玩家/敵人佔據（對應 Main.cs:1654 OccupiedByEntity）
+    bool IsTileOccupiedByEntity(const FIntVector& Pos) const;
+
     // ── 採掘狀態（對應 Godot PlayerController.cs MiningTarget/MiningProgress）──
     // 漸進式採掘：換目標重置進度；達到材質 Hardness 才真正摧毀中心格。
     TOptional<FIntVector> MiningTarget;

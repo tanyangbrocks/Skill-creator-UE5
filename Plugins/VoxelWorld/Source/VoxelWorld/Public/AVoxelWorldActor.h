@@ -55,6 +55,9 @@ public:
     // ── Accessors ─────────────────────────────────────────────────
     FTileWorld3D* GetTileWorld() { return &TileWorld; }
 
+    // CreateWorld 首次進入時的出生點地形預生成用（GameMode::StartGameplayWithWorld）
+    FMapGenerator3D& GetMapGenerator() { return Streaming.GetMapGenerator(); }
+
     static AVoxelWorldActor* FindInWorld(UWorld* World);
 
     // ── 採掘高亮 ──────────────────────────────────────────────────

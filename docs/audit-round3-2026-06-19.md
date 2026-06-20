@@ -3,7 +3,7 @@
 **建立時間**：2026-06-19  
 **目標**：對照 Godot 原始碼（C:\skill-creator\Scripts\）逐一核實 issues.md 所有「已實作」標記是否真正正確實作，並修復不符的地方。
 
-> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。直接看下方「⭐ 待修速查表」，按優先序動手修，不需重讀 Agent 段落。修完每項後在速查表勾選 [x] 並在 `實作進度.md` 加一列。
+> **下個 AI 接手規則（2026-06-20 更新）**：稽核全部完成（A~K 11 個 agent）。⭐ 待修速查表第一層（可立即動手 5 項：J-16/J-19/K-20/K-7/I-7）已全部完成，詳見下方表格狀態欄。直接看「🟡 中範圍」與「🟡 積木編輯器 UI」兩層接續，不需重讀 Agent 段落。修完每項後在速查表勾選並在 `實作進度.md` 加一列。
 
 ---
 
@@ -11,15 +11,15 @@
 
 > **狀態說明**：🔴 高優先 / 🟡 中優先 / ⚪ 低優先（⚠️ 注意下方 🔴 已全修，新待修均為 🟡）
 
-### 🟡 可立即動手（小範圍 C++ 修改）
+### 🟡 可立即動手（小範圍 C++ 修改）— 全部完成 ✅（2026-06-20）
 
-| # | 項目 | 修法摘要 | Godot 依據 | UE5 檔案 |
-|---|-----|---------|-----------|---------|
-| J-16 | `EnterWorld()` 缺 LastPlayed 更新 | `UGameFlowWidget::EnterWorld()` 在 `OnEnterGame()` 前加 `Meta.LastPlayed=FDateTime::Now()` 再呼叫 SaveMeta | `GameFlowUI.cs:379` | `UGameFlowWidget.cpp` |
-| J-19 | CreateWorld 缺地形預生成 | `ASkillCreatorGameMode::StartGameplayWithWorld()` 偵測 `bIsFirstEnter==true` → 呼叫 `MapGenerator3D` 生成 + `TileWorld3D::SaveAllLoadedChunks` + 設 `bIsFirstEnter=false` | `GameFlowUI.cs:451-502` | `ASkillCreatorGameMode.cpp` |
-| K-20 | AutoSave 30 秒計時器 | `ASkillCreatorCharacter::Tick` 加 `AutoSaveTimer+=dt`，≥30f 時呼叫 `GameMode->SaveAll()` | `Main.cs` _Process 每幀倒數 | `ASkillCreatorCharacter.cpp` |
-| K-7 | 放置 OccupiedByEntity 缺失 | `Tick()` 更新 TW 佔用格（玩家+敵人格 IsOccupied）；`OnPlace` 前加 `!TW->IsOccupied(target)` | `Main.cs PlaceBlock` | `ASkillCreatorCharacter.cpp` + `TileWorld3D` |
-| I-7 | 敵人復活延遲 5f vs Godot 8f | `AEnemy.h:116` RespawnDelay 5.f→8.f | `Enemy.cs:47 RespawnTime=8f` | `AEnemy.h` |
+| # | 項目 | 修法摘要 | Godot 依據 | UE5 檔案 | 狀態 |
+|---|-----|---------|-----------|---------|------|
+| J-16 | `EnterWorld()` 缺 LastPlayed 更新 | `UGameFlowWidget::EnterWorld()` 在 `OnEnterGame()` 前加 `Meta.LastPlayed=FDateTime::Now()` 再呼叫 SaveMeta | `GameFlowUI.cs:379` | `UGameFlowWidget.cpp` | ✅ |
+| J-19 | CreateWorld 缺地形預生成 | `ASkillCreatorGameMode::StartGameplayWithWorld()` 偵測 `bIsFirstEnter==true` → 呼叫 `MapGenerator3D` 生成 + `TileWorld3D::SaveDirtyChunks` + 設 `bIsFirstEnter=false` | `GameFlowUI.cs:451-502` | `ASkillCreatorGameMode.cpp` + `MapGenerator3D.h` + `ChunkStreamingManager.h` + `AVoxelWorldActor.h` | ✅（順手修復 `WorldSaveDir` 從未綁定玩家選定世界目錄的既有 bug） |
+| K-20 | AutoSave 30 秒計時器 | ~~`ASkillCreatorCharacter::Tick` 加 `AutoSaveTimer+=dt`~~ | `Main.cs` _Process 每幀倒數 | `ASkillCreatorCharacter.cpp` | ✅ 確認誤判：`ASkillCreatorGameMode.cpp` Round 1（commit 10390bc）已用 `PeriodicSaveHandle` 30 秒 Timer 呼叫 `PerformSave()`，效果等同，不需重做 |
+| K-7 | 放置 OccupiedByEntity 缺失 | 新增 `ASkillCreatorCharacter::IsTileOccupiedByEntity()`，`OnPlace()` 逐格放置前檢查 | `Main.cs:1654 OccupiedByEntity` | `ASkillCreatorCharacter.h/.cpp` | ✅（玩家檢查額外補 Z 軸比對，修正 Godot 2D→3D 遺留的缺口） |
+| I-7 | 敵人復活延遲 5f vs Godot 8f | `AEnemy.h:116` `StartRespawn` 預設 5.f→8.f | `Enemy.cs:47 RespawnTime=8f` | `AEnemy.h` | ✅ |
 
 ### 🟡 中範圍（需較多工程，建議單獨 session）
 

@@ -27,6 +27,9 @@ public:
 
     const FString& GetWorldDir() const { return WorldDir; }
 
+    // CreateWorld 出生點預生成需要直接驅動 MapGen（EnsureChunksAround/ApplyPendingChunks）
+    FMapGenerator3D& GetMapGenerator() { return MapGen; }
+
 private:
     FMapGenerator3D  MapGen;
     FString          WorldDir;

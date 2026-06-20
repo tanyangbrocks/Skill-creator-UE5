@@ -582,6 +582,10 @@ void UGameFlowWidget::EnterWorld(const FString& WorldId)
     if (!FFlowSaveSystem::LoadWorldMeta(Found->WorldDir, Meta)) return;
     Meta.WorldDir = Found->WorldDir;
 
+    // Godot GameFlowUI.cs:379 — 進入世界時更新最後遊玩時間並落地存檔
+    Meta.LastPlayed = FDateTime::Now();
+    Meta.SaveMeta(FFlowSaveSystem::MetaPath(Meta.WorldDir));
+
     if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
         if (UGameSessionSubsystem* Sub = GI->GetSubsystem<UGameSessionSubsystem>())
             Sub->SetPendingWorld(Meta);

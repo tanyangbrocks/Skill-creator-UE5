@@ -12,6 +12,9 @@
 #include "Blueprint/UserWidget.h"
 #include "FlowSaveSystem.h"
 #include "TimerManager.h"
+#include "WorldScale.h"
+#include "GridPos.h"
+#include "HAL/PlatformProcess.h"
 
 ASkillCreatorGameMode::ASkillCreatorGameMode()
 {
@@ -84,7 +87,39 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
     CurrentCharacterSave = Character;
     bGameplayStarted     = true;
 
-    SpawnWorldAndMobs(World.Seed);
+    SpawnWorldAndMobs(World.Seed, World.Id);
+
+    AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld());
+
+    // Godot GameFlowUI.cs:451-502（PregenerateWorld）/ Main.cs:284-291：
+    // 新世界第一次進入時，預先生成出生點周圍地形、寫入磁碟、記錄出生點，
+    // 之後永遠走「磁碟讀取 / Streaming 懶生成」路徑，不再重算。
+    FIntVector WorldSpawnTile = CurrentWorldSave.PlayerSpawn;
+    if (CurrentWorldSave.bIsFirstEnter && VW)
+    {
+        FMapGenerator3D& Gen = VW->GetMapGenerator();
+        FTileWorld3D*    TW  = VW->GetTileWorld();
+
+        const FSpawnData Spawn = Gen.ComputeSpawnPoint(*TW);
+        WorldSpawnTile = Spawn.PlayerSpawn;
+
+        const int32 CCX = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.X) / WorldScale::ChunkSize);
+        const int32 CCY = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.Y) / WorldScale::ChunkSize);
+        const int32 CCZ = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.Z) / WorldScale::ChunkSize);
+
+        Gen.EnsureChunksAround(*TW, CCX, CCY, CCZ, /*Radius=*/2, /*MaxPerCall=*/999);
+        while (Gen.HasPendingChunks())
+        {
+            FPlatformProcess::Sleep(0.005f);
+            Gen.ApplyPendingChunks(*TW, /*MaxPerFrame=*/999);
+        }
+
+        TW->SaveDirtyChunks(World.WorldDir);
+
+        CurrentWorldSave.PlayerSpawn   = WorldSpawnTile;
+        CurrentWorldSave.bIsFirstEnter = false;
+        CurrentWorldSave.SaveMeta(FFlowSaveSystem::MetaPath(World.WorldDir));
+    }
 
     // 角色在 BeginPlay 當下（選世界之前）就已經 spawn 了，
     // 那時 AVoxelWorldActor 還不存在，CachedVoxelWorld 會是 null，必須在這裡補一次重新綁定，
@@ -94,6 +129,16 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
         {
             Char->RebindWorldSystems();
             Char->ApplyCharacterSaveData(Character);
+
+            // 角色自己的存檔位置優先（回流玩家，FillSaveData 寫入的 TilePosition）；
+            // 沒有（新角色 / 新世界）則退回世界出生點，避免一律落在關卡 PlayerStart。
+            if (VW)
+            {
+                const FIntVector PlacementTile =
+                    (Character.TilePosition != FIntVector::ZeroValue) ? Character.TilePosition : WorldSpawnTile;
+                Char->SetActorLocation(WorldScale::TileToWorld(
+                    FGridPos(PlacementTile.X, PlacementTile.Y, PlacementTile.Z), VW->WorldHeight));
+            }
 
             Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::PerformSave);
         }
@@ -132,7 +177,7 @@ void ASkillCreatorGameMode::PerformSave()
         FFlowSaveSystem::SaveAll(*VW->GetTileWorld(), CurrentWorldSave);
 }
 
-void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed)
+void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& WorldId)
 {
     // 若 MainMap 裡沒有手動放置的 AVoxelWorldActor，自動生成一個（用選定的 Seed）
     AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld());
@@ -142,7 +187,11 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed)
         VW = GetWorld()->SpawnActorDeferred<AVoxelWorldActor>(AVoxelWorldActor::StaticClass(), T);
         if (VW)
         {
-            VW->WorldSeed = WorldSeed;
+            VW->WorldSeed     = WorldSeed;
+            // 修正既有缺口：WorldSaveDir 從未從玩家選定的世界目錄設定，永遠用 class default
+            // "World_0001"，導致多世界的 chunk streaming 全部讀寫同一個資料夾。
+            // FFlowSaveSystem::WorldRoot(Id) == ProjectSaved/Worlds/{Id}，與 WorldId 同義。
+            VW->WorldSaveDir  = WorldId;
             VW->FinishSpawning(T);
         }
     }

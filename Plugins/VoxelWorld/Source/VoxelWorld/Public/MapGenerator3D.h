@@ -33,6 +33,9 @@ public:
 
     bool IsChunkGenerated(FIntVector CC) const { return GeneratedChunks.Contains(CC); }
 
+    // 是否還有已排程但尚未套用的背景 thread chunk（CreateWorld 同步預生成等待用）
+    bool HasPendingChunks() const { return !InFlightChunks.IsEmpty(); }
+
     // 連通性後處理（主執行緒，初始 chunk 群全部 Apply 後呼叫）
     // FloodFill3D 確認可達空間，對孤立洞穴打通垂直通道
     void PostProcessRegion(FTileWorld3D& World, FIntVector ChunkMin, FIntVector ChunkMax);

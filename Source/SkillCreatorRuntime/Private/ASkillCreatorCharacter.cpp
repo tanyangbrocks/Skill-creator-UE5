@@ -883,22 +883,22 @@ void ASkillCreatorCharacter::OnPlace()
 
     const FGridPos PlayerPos = GetPosition();
 
-    // 已知缺口：Godot 每格還會檢查 !OccupiedByEntity(p)（玩家/敵人佔用格不可放置，
-    // Main.cs:1270 + 1654-1661）。UE5 的 FTileWorld3D::SetOccupied/IsOccupied 目前
-    // 從未被 SkillCreatorRuntime 呼叫填入玩家/敵人位置（純 CA 用途），故此處暫不
-    // 重現該檢查，留待之後接通 AEnemyManager::GetEnemies() 一併處理。
     int32 Placed = 0;
     for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
     {
         const FIntVector P = PlaceCenter + Off;
         const FGridPos PGrid(P.X, P.Y, P.Z);
 
+        // 玩家/敵人佔用格不可放置（對應 Main.cs:1270 !OccupiedByEntity(p)）
+        if (IsTileOccupiedByEntity(P))
+            continue;
+
         // 每格距離限制（對應 Main.cs:1271 _player.Position.DistanceTo(p) <= MiningRange）
         if (PlayerPos.EuclideanDistance(PGrid) > static_cast<float>(WorldScale::MiningRangeTiles))
             continue;
 
         // 每格放置合法性（對應 Main.cs:1272 PlacementValidator.CanPlace；
-        // Registry 參數留空 = 暫不檢查 PlacedObjectRegistry 佔用，見上方已知缺口說明）
+        // Registry 參數留空 = 暫不檢查 PlacedObjectRegistry 佔用，屬另一已知缺口 K-5）
         if (!FPlacementValidator::CanPlace(*TW, { P }, Data.PlaceAs))
             continue;
 
@@ -912,6 +912,35 @@ void ASkillCreatorCharacter::OnPlace()
         InventoryComp->Consume(Idx, 1);
         PlaceCooldown = 0.12f; // 對應 Main.cs:1282
     }
+}
+
+// 對應 Godot Main.cs:1654 OccupiedByEntity（玩家/敵人佔用格不可放置）。
+// 玩家檢查刻意補上 Z 比對：Godot 該函式只比 X/Y（2D→3D 遷移殘留，Main.cs:1656-1658
+// 沒有 e.Position.Z 那種精確比對，會把同 X/Y 不同 Z 層的格子誤判為玩家佔用）；
+// UE5 世界原生 3D，沿用會在多層地形放置時誤擋鄰層格子，故補 Pos.Z == PP.Z。
+bool ASkillCreatorCharacter::IsTileOccupiedByEntity(const FIntVector& Pos) const
+{
+    const FGridPos PP = GetPosition();
+    if (Pos.X >= PP.X && Pos.X < PP.X + WorldScale::PlayerW &&
+        Pos.Y >= PP.Y && Pos.Y < PP.Y + WorldScale::PlayerH &&
+        Pos.Z == PP.Z)
+        return true;
+
+    if (CachedEnemyMgr)
+    {
+        for (const AEnemy* E : CachedEnemyMgr->GetEnemies())
+        {
+            if (!E || !E->IsAlive()) continue;
+            const FGridPos EP = E->GetPosition();
+            const int32 EW = (E->Type == EEnemyType::Heavy) ? 2 : 1;
+            const int32 EH = (E->Type == EEnemyType::Heavy) ? 2 : 1;
+            if (Pos.X >= EP.X && Pos.X < EP.X + EW &&
+                Pos.Y >= EP.Y - (EH - 1) && Pos.Y <= EP.Y &&
+                Pos.Z == EP.Z)
+                return true;
+        }
+    }
+    return false;
 }
 
 // 滑鼠左鍵鬆開 / 輸入中斷：取消採掘進度（對應 Main.cs:1244-1247 else 分支）

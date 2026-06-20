@@ -43,5 +43,5 @@ private:
     UFUNCTION()
     void PerformSave();
 
-    void SpawnWorldAndMobs(int32 WorldSeed);
+    void SpawnWorldAndMobs(int32 WorldSeed, const FString& WorldId);
 };

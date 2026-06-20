@@ -113,7 +113,7 @@ public:
     void TakeDamageAmount(float Amount);
     void ForceDespawn() { Hp = 0.f; }
     void Respawn();
-    void StartRespawn(float DelaySeconds = 5.f);
+    void StartRespawn(float DelaySeconds = 8.f);
     void TickRespawn(float /*DeltaTime*/) {}  // 保留 API；計時器由 FTimerHandle 驅動
     void ForceRevive();
     void ApplyGravity();
