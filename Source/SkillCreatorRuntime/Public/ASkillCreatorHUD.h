@@ -71,6 +71,10 @@ public:
     EMaterialType ActivePaintMaterial = EMaterialType::Sand;
     int32         PaintBrushRadius    = 2;
 
+    // K-22：游標懸在熱鍵欄格上時阻斷採掘/放置（Godot Main.cs:1198-1199 _mouseOverHotbar）
+    // 由 UPlayerHUDWidget::NativeTick 每幀寫入
+    bool bMouseOverHotbar = false;
+
     // ── 面板開關 API（PlayerController 呼叫）────────────────────────
     void ToggleSettings();
     void ToggleShapeMenu();

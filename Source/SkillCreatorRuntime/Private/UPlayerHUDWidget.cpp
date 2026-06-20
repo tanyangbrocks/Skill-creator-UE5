@@ -1,4 +1,5 @@
 #include "UPlayerHUDWidget.h"
+#include "ASkillCreatorHUD.h"
 #include "UCharacterStateComponent.h"
 #include "ItemStack.h"
 #include "ItemRegistry.h"
@@ -544,6 +545,29 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
         BreakthroughLabel->SetColorAndOpacity(FSlateColor(C));
         if (BreakthroughTimer <= 0.f)
             BreakthroughLabel->SetVisibility(ESlateVisibility::Hidden);
+    }
+
+    // K-22：偵測游標是否在熱鍵欄格上，每幀寫入 ASkillCreatorHUD::bMouseOverHotbar
+    // （對應 Godot Main.cs:831-836 panel.MouseEntered → _mouseOverHotbar = true）
+    if (APlayerController* PC = GetOwningPlayer())
+    {
+        if (ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
+        {
+            float MX, MY;
+            PC->GetMousePosition(MX, MY);
+            FVector2D MouseAbs(MX, MY);
+            bool bOver = false;
+            for (UBorder* B : ItemSlotBorders)
+            {
+                if (!B) continue;
+                const FGeometry& G = B->GetCachedGeometry();
+                const FVector2D Local = G.AbsoluteToLocal(MouseAbs);
+                const FVector2D Sz    = G.GetLocalSize();
+                if (Local.X >= 0.f && Local.X <= Sz.X && Local.Y >= 0.f && Local.Y <= Sz.Y)
+                { bOver = true; break; }
+            }
+            HUD->bMouseOverHotbar = bOver;
+        }
     }
 }
 

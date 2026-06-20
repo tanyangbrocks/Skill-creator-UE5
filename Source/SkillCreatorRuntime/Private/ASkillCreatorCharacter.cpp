@@ -756,6 +756,10 @@ void ASkillCreatorCharacter::OnMine()
     APlayerController* PC = Cast<APlayerController>(GetController());
     if (!PC) { CancelMining(); return; }
 
+    // K-22：游標在熱鍵欄格上時阻斷採掘（Godot Main.cs:1198-1199 _mouseOverHotbar）
+    if (const ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
+        if (HUD->bMouseOverHotbar) { CancelMining(); return; }
+
     FVector CamLoc;
     FRotator CamRot;
     PC->GetPlayerViewPoint(CamLoc, CamRot);
@@ -877,6 +881,8 @@ void ASkillCreatorCharacter::OnPlace()
     // （對應 Main.cs:1250-1255）。HUD->bHoldToPlace 預設 false（rising-edge），
     // Enhanced Input 的 Triggered 事件每幀觸發，故節流邏輯需要角色自己持有計時器。
     ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD());
+    // K-22：游標在熱鍵欄格上時阻斷放置（Godot Main.cs:1256 _mouseOverHotbar）
+    if (HUD && HUD->bMouseOverHotbar) return;
     const bool bHoldToPlace = HUD && HUD->bHoldToPlace;
 
     if (bHoldToPlace)
