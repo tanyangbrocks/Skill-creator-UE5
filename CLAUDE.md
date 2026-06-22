@@ -158,8 +158,11 @@ SkillCreatorUE5/
 
 ### 新增 UI Widget
 
-- 不需要 `.uasset`：在 C++ 繼承 `UUserWidget`，在 `NativeConstruct()` 呼叫 `BuildLayout()` 程式化建立 WidgetTree，用 `CreateWidget<T>(PC, T::StaticClass())` 實例化
-- 參考：`UGameFlowWidget` / `UInputSettingsWidget` / `USpellListWidget`
+- 不需要 `.uasset`：在 C++ 繼承 `UUserWidget`，**在 `NativeOnInitialized()`（不是 `NativeConstruct()`！）**呼叫 `BuildLayout()` 程式化建立 WidgetTree，用 `CreateWidget<T>(PC, T::StaticClass())` 實例化
+- 參考：`UGameFlowWidget`（已修正用 `NativeOnInitialized()`）。**不要**再參考 `UInputSettingsWidget` / `USpellListWidget`——這兩個目前還是 `NativeConstruct()` 呼叫 `BuildLayout()` 的舊寫法，已知中同一個 bug，待稽核修正（見下方系統性風險提醒）
+
+🔴 **絕對不要在 `NativeConstruct()` 裡呼叫 `BuildLayout()`**：引擎原始碼 `UserWidget.cpp:1203` `RebuildWidget()` 會在 `WidgetTree->RootWidget` 為 null 時回退成空的 `SNew(SSpacer)`，而這個檢查發生在第一次 `AddToViewport()` 觸發的 `TakeWidget_Private()` 裡，順序是「先呼叫 `RebuildWidget()`（這時候抓到 null）→ 結果定型快取 → 才呼叫 `OnWidgetRebuilt()` → `NativeConstruct()`」。也就是說在 `NativeConstruct()` 裡才設定 `RootWidget` 永遠太晚，第一次顯示必定是空畫面，而且因為 `MyWidget` 一旦快取就不會重建，這個空白是永久性的（GameFlowWidget 2026-06-21 踩過，詳見 `docs/開發血汗錄.md` 第 1 案）。`NativeOnInitialized()` 在 `Initialize()`（`CreateWidget()` 當下、早於 `AddToViewport()`）執行，已確認 `CreateWidget<T>(PC, Class)` 一定會先 `SetPlayerContext()` 才 `Initialize()`，保證 `NativeOnInitialized()` 會被呼叫。
+⚠️ 專案內舊有用 `NativeConstruct()` 寫的 widget（Inventory/Equipment/Settings/ShapeMenu/SpellGroup/Stats/InputSettings/SpellList/DebugPaint/BlockEditor）可能都中同一個 bug，待逐一稽核改用 `NativeOnInitialized()`。
 
 ### 世界尺度說明（給未來 AI）
 
