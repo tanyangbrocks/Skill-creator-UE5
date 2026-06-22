@@ -7,6 +7,7 @@
 #include "GridPos.h"
 #include "SnapshotTypes.h"
 #include "ActionBus.h"
+#include "CharacterStats.h"
 #include "AEnemy.generated.h"
 
 class UElementalAuraComponent;
@@ -87,6 +88,11 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Enemy")
     int32 FacingZ = 0;
 
+    // ── 完整數值（B-系列，所有生物共用 stats 管線）──────────────
+    // 預設值在 AEnemy::BeginPlay() 依 Type 設定
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats")
+    FCharacterStats Stats;
+
     // ── 組件 ──────────────────────────────────────────────────────
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UElementalAuraComponent> AuraComp;
@@ -118,6 +124,12 @@ public:
     int32 GetAttackRange()      const;
     int32 GetDetectRange()      const;
     float GetXpReward()         const;
+
+    // ── 傷害管線（B-3，與 ASkillCreatorCharacter 同一套公式）────
+    // 包含：命中/閃避 → 防禦/減傷 → 暴擊判定 → TakeDamageAmount
+    // AttackerStats = nullptr 時跳過暴擊/閃避（純防禦計算）
+    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
+    void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
 
     // ── 生命週期 ──────────────────────────────────────────────────
     void TakeDamageAmount(float Amount);

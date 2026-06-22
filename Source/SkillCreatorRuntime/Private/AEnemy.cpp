@@ -109,6 +109,98 @@ void AEnemy::BeginPlay()
     Hp = MaxHp;
 
     SpawnGridPos = GridPosition;
+
+    // 依 Type 設預設 Stats（攻防數值）
+    // 這些只是初始值，Editor 或 Manager 可以覆寫
+    Stats.MaxHpBase = MaxHp;    // 與 Hp/MaxHp 系統同步上限供 UI/技能公式讀取
+    switch (Type)
+    {
+    case EEnemyType::Heavy:
+        Stats.PhysicalDefense = 8.f;
+        Stats.CritRate        = 0.02f;
+        Stats.Power           = 25.f;
+        break;
+    case EEnemyType::Ranged:
+        Stats.CritRate        = 0.10f;
+        Stats.Power           = 0.f;    // 傷害來自投射物（M-5 定義）
+        break;
+    case EEnemyType::Patrol:
+        Stats.DodgeRate       = 0.05f;
+        Stats.Power           = 6.f;
+        break;
+    default:    // Melee
+        Stats.Power           = 8.f;
+        break;
+    }
+}
+
+// B-3：物理傷害管線（與 ASkillCreatorCharacter::TakePhysicalDamage 邏輯相同）
+// 終點呼叫 TakeDamageAmount()（繼續套用 AuraComp bonus + ActionBus 攔截）
+void AEnemy::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
+{
+    if (Atk)
+    {
+        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
+        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
+        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
+        if (FMath::FRand() < EffDodge) return;
+    }
+
+    float Step1 = FMath::Max(0.f, PhysAtk - Stats.PhysicalDefense);
+    float Final = FMath::Max(0.f, Step1   - Stats.PhysicalDamageReduction);
+
+    if (Atk && Final > 0.f)
+    {
+        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
+        if (FMath::FRand() < EffCritRate)
+        {
+            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
+            Final *= EffCritMult;
+            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
+            if (FMath::FRand() < EffSuperRate)
+            {
+                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
+                Final *= EffSuperMult;
+            }
+        }
+    }
+
+    TakeDamageAmount(Final);
+}
+
+// B-3：能量傷害管線（4 步防禦，與玩家端一致）
+void AEnemy::TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk)
+{
+    if (Atk)
+    {
+        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
+        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
+        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
+        if (FMath::FRand() < EffDodge) return;
+    }
+
+    float Step1 = FMath::Max(0.f, EnergyAtk - Stats.GetMpDefense(ManaTypeKey));
+    float Step2 = FMath::Max(0.f, Step1      - Stats.EnergyDefense);
+    float Step3 = FMath::Max(0.f, Step2      - Stats.GetMpDamageReduction(ManaTypeKey));
+    float Final = FMath::Max(0.f, Step3      - Stats.EnergyDamageReduction);
+
+    if (Atk && Final > 0.f)
+    {
+        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
+        if (FMath::FRand() < EffCritRate)
+        {
+            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
+            Final *= EffCritMult;
+            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
+            if (FMath::FRand() < EffSuperRate)
+            {
+                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
+                Final *= EffSuperMult;
+            }
+        }
+    }
+
+    TakeDamageAmount(Final);
 }
 
 void AEnemy::TakeDamageAmount(float Amount)

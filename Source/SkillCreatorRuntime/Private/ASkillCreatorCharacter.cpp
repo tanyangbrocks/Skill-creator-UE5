@@ -199,6 +199,17 @@ void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Da
     if (SpellCasterComp && !Data.SpellGroupJson.IsEmpty())
         FSpellSaveSystem::LoadGroupFromString(Data.SpellGroupJson, SpellCasterComp->SpellGroups);
 
+    // B-1 + 設計問題1：W-10 基礎能力點存檔→Stats，並計算衍生值
+    // 暫定公式：1點肌力 = 20力量（無種族係數，用戶確認）
+    Stats.ConstitutionPoints = Data.BasePoint_Physique;
+    Stats.StrengthPoints     = Data.BasePoint_Strength;
+    Stats.EndurancePoints    = Data.BasePoint_Endurance;
+    Stats.AgilityPoints      = Data.BasePoint_Agility;
+    Stats.WisdomPoints       = Data.BasePoint_Intellect;
+    Stats.CharismaPoints     = Data.BasePoint_Charisma;
+    Stats.LuckPoints         = Data.BasePoint_Luck;
+    Stats.Strength           = Stats.StrengthPoints * 20.f;
+
     OnHpChanged.Broadcast(CurrentHp);
 }
 
