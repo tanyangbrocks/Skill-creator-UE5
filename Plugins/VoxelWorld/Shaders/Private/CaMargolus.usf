@@ -1,0 +1,208 @@
+// M-10 Phase 1：Margolus block CA（Powder/Liquid 重力 + 液體橫向擴散）。
+// 逐行對照 Godot C:\skill-creator\Scripts\World\CaGpuSimulator.cs 第 290-468 行的 GLSL
+// 原始碼翻譯，函式結構/變數命名盡量保持一一對應，方便之後對照除錯（docs/plan-m10-gpu-ca.md §2）。
+// Gas（火/蒸汽）、Static（木燃燒）、元素反應仍在 CPU，這個 shader 只處理 Powder/Liquid 重力。
+//
+// 2026-06-21：原本用 GLSL 原始碼一樣的 `uint c[2][2][2]` 三維區域陣列，DXC 編譯這個 shader
+// 時在 minification 階段拋出 `Assertion failed: !Member.bIsBindable`（ShaderCompilerCommon.cpp:828）
+// 直接讓整個 ShaderCompileWorker 崩潰。改成扁平的 `uint c[8]` + LocalIdx() 手動算 index，
+// 避開三維區域陣列這個比較少見的 HLSL 寫法，邏輯完全不變，只是索引方式不同。
+
+#include "/Engine/Public/Platform.ush"
+
+// ── Push constants（對應 Godot struct Params）─────────────────────────────
+// 一行一個變數宣告：UE5 shader parameter 解析器（比對 C++ SHADER_PARAMETER 跟 .usf 全域
+// 變數）疑似無法正確解析 `int W, H, D;` 這種逗號分隔的多變數宣告，曾經因此撞到
+// `Assertion failed: !Member.bIsBindable`（ShaderCompilerCommon.cpp:828，AddUnboundShaderParameterError
+// 內部——代表 C++ 端宣告的某個參數在 .usf 裡找不到對應，但這個錯誤路徑本身又斷言失敗），
+// 拆開來一行一個就正常了。
+int W;             // 主動區域寬（格）
+int H;             // 主動區域高（格）
+int D;             // 主動區域深（格）
+int Phase;         // 0 或 1（Margolus 偏移）
+uint Rng;          // per-frame 亂數種子
+int ZFrom;         // E-3 子區間起點（GPU-local Z，0 = 從頭）
+int ZCount;        // E-3 子區間大小（= D 時等同全域）
+
+// ── World buffer（對應 Godot buffer World { uint cells[]; }）─────────────
+// bits  0- 7 : MaterialType
+// bits  8- 9 : physCompact (0=靜/空, 1=粉末, 2=液體)
+// bits 10-13 : density4 (0-15)
+// bit  14    : dirty flag
+// bits 16-23 : Timer（GPU 不修改，交換時原封不動）
+// bits 24-30 : Variant（同上）
+RWStructuredBuffer<uint> Cells;
+
+// ── Helper functions（逐行對應 GLSL）───────────────────────────────────────
+
+uint CellMat(uint c)  { return c & 0xFFu; }
+uint CellPhys(uint c) { return (c >> 8) & 0x3u; }   // 0=靜 1=粉末 2=液體
+uint CellDens(uint c) { return (c >> 10) & 0xFu; }
+
+bool IsEmpty(uint c)  { return CellMat(c) == 0u; }
+bool IsPowder(uint c) { return CellPhys(c) == 1u; }
+bool IsLiquid(uint c) { return CellPhys(c) == 2u; }
+bool IsMobile(uint c) { uint p = CellPhys(c); return p == 1u || p == 2u; }
+
+// mover 能否取代 target？
+bool CanDisplace(uint mover, uint target)
+{
+    if (IsEmpty(target)) return IsMobile(mover);
+    if (IsLiquid(mover) && IsLiquid(target)) return CellDens(mover) > CellDens(target);
+    return false;
+}
+
+int WIdx(int x, int y, int z)
+{
+    return z * H * W + y * W + x;
+}
+
+bool InBounds(int x, int y, int z)
+{
+    return x >= 0 && x < W && y >= 0 && y < H && z >= 0 && z < D;
+}
+
+// OOB 視為不透明靜態（matType=1, physCompact=0 → 不可移動，不可被取代）
+static const uint SOLID_CELL = 1u;
+
+uint ReadCell(int x, int y, int z)
+{
+    return InBounds(x, y, z) ? Cells[WIdx(x, y, z)] : SOLID_CELL;
+}
+
+// block 內 2x2x2 本地座標 → 扁平陣列 index（取代三維區域陣列）
+int LocalIdx(int lx, int ly, int lz)
+{
+    return lx + ly * 2 + lz * 4;
+}
+
+// ── main（對應 GLSL main()）─────────────────────────────────────────────────
+
+[numthreads(4, 4, 4)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+    int3 Gid = int3(DispatchThreadId);
+
+    // Block 起點（GPU-local Z，加 ZFrom 偏移到子區間起點）
+    int bx = Gid.x * 2 + Phase;
+    int by = Gid.y * 2 + Phase;
+    int bz = Gid.z * 2 + Phase + ZFrom;  // E-3 子區間 Z 偏移
+
+    if (bx >= W || by >= H || bz >= D) return;
+    if (bz >= ZFrom + ZCount) return;    // E-3 子區間上界裁切
+
+    // 讀取 2x2x2 block 的 8 個格子到本地陣列（扁平化，索引透過 LocalIdx()）
+    // 本地座標: (lx,ly,lz)，ly=0=頂（低 Y 索引），ly=1=底（高 Y，重力方向 Y+）
+    uint c[8];
+    uint orig[8];
+    for (int lx = 0; lx < 2; lx++)
+    for (int ly = 0; ly < 2; ly++)
+    for (int lz = 0; lz < 2; lz++)
+    {
+        uint v = ReadCell(bx + lx, by + ly, bz + lz) & ~(1u << 14); // 清除舊 dirty
+        c[LocalIdx(lx, ly, lz)]    = v;
+        orig[LocalIdx(lx, ly, lz)] = v;
+    }
+
+    // ── Per-block 亂數：決定 XZ 處理順序 ─────────────────────────────────
+    uint r = uint(bx * 1619 + by * 31337 + bz * 6473) ^ Rng;
+
+    // Fisher-Yates shuffle，4 個 XZ 位置 (0,0)(1,0)(0,1)(1,1)
+    int order[4] = { 0, 1, 2, 3 };
+    {
+        int t;
+        int i0 = int(r & 3u); r >>= 2;
+        if (i0 > 0) { t = order[0]; order[0] = order[i0]; order[i0] = t; }
+        int i1 = 1 + int(r & 1u); r >>= 1;
+        if (i1 != 1) { t = order[1]; order[1] = order[i1]; order[i1] = t; }
+        if ((r & 1u) != 0u) { t = order[2]; order[2] = order[3]; order[3] = t; }
+        r >>= 1;
+    }
+
+    // ── Pass 1：重力（頂層 ly=0 → 底層 ly=1）────────────────────────────
+
+    for (int oi = 0; oi < 4; oi++)
+    {
+        int lx = order[oi] & 1;
+        int lz = order[oi] >> 1;
+        uint top = c[LocalIdx(lx, 0, lz)];
+        if (!IsMobile(top)) continue;
+
+        // 直接下落
+        if (CanDisplace(top, c[LocalIdx(lx, 1, lz)]))
+        {
+            uint tmp = c[LocalIdx(lx, 0, lz)];
+            c[LocalIdx(lx, 0, lz)] = c[LocalIdx(lx, 1, lz)];
+            c[LocalIdx(lx, 1, lz)] = tmp;
+            continue;
+        }
+
+        // 粉末：對角線下落（在 2x2 XZ 範圍內嘗試）
+        if (IsPowder(top))
+        {
+            int dlx = 1 - lx, dlz = 1 - lz;
+
+            if (CanDisplace(top, c[LocalIdx(dlx, 1, lz)]))
+            {
+                uint tmp = c[LocalIdx(lx, 0, lz)];
+                c[LocalIdx(lx, 0, lz)] = c[LocalIdx(dlx, 1, lz)];
+                c[LocalIdx(dlx, 1, lz)] = tmp;
+                continue;
+            }
+            if (CanDisplace(top, c[LocalIdx(lx, 1, dlz)]))
+            {
+                uint tmp = c[LocalIdx(lx, 0, lz)];
+                c[LocalIdx(lx, 0, lz)] = c[LocalIdx(lx, 1, dlz)];
+                c[LocalIdx(lx, 1, dlz)] = tmp;
+                continue;
+            }
+        }
+    }
+
+    // ── Pass 2：液體水平擴散（底層 XZ）───────────────────────────────────
+    // 只對「這幀未被重力移動過」的液體格做擴散，防止震盪。
+    {
+        bool xFirst = (r & 1u) != 0u;
+        bool zFirst = (r & 2u) != 0u;
+        for (int xi = 0; xi < 2; xi++)
+        for (int zi = 0; zi < 2; zi++)
+        {
+            int lx = xFirst ? xi : (1 - xi);
+            int lz = zFirst ? zi : (1 - zi);
+            // 只擴散「本幀 ly=1 格子未被替換」的液體
+            if (!IsLiquid(c[LocalIdx(lx, 1, lz)])) continue;
+            if (c[LocalIdx(lx, 1, lz)] != orig[LocalIdx(lx, 1, lz)]) continue; // 剛被重力填入，跳過
+
+            int dlx = 1 - lx;
+            // 嘗試 X 方向擴散
+            if (IsEmpty(c[LocalIdx(dlx, 1, lz)]))
+            {
+                uint tmp = c[LocalIdx(lx, 1, lz)];
+                c[LocalIdx(lx, 1, lz)] = c[LocalIdx(dlx, 1, lz)];
+                c[LocalIdx(dlx, 1, lz)] = tmp;
+                continue;
+            }
+            // 嘗試 Z 方向擴散
+            int dlz = 1 - lz;
+            if (IsEmpty(c[LocalIdx(lx, 1, dlz)]))
+            {
+                uint tmp = c[LocalIdx(lx, 1, lz)];
+                c[LocalIdx(lx, 1, lz)] = c[LocalIdx(lx, 1, dlz)];
+                c[LocalIdx(lx, 1, dlz)] = tmp;
+            }
+        }
+    }
+
+    // ── 回寫變動格子（設 dirty flag）────────────────────────────────────────
+
+    for (int wlx = 0; wlx < 2; wlx++)
+    for (int wly = 0; wly < 2; wly++)
+    for (int wlz = 0; wlz < 2; wlz++)
+    {
+        int li = LocalIdx(wlx, wly, wlz);
+        if (c[li] == orig[li]) continue;
+        int wx = bx + wlx, wy = by + wly, wz = bz + wlz;
+        if (InBounds(wx, wy, wz))
+            Cells[WIdx(wx, wy, wz)] = c[li] | (1u << 14);
+    }
+}

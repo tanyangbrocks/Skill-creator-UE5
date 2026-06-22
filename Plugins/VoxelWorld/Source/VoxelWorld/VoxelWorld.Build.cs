@@ -13,7 +13,10 @@ public class VoxelWorld : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "RenderCore", "RHI",
             "SkillCreatorCore", "RealtimeMeshComponent",
-            "Json", "JsonUtilities"
+            "Json", "JsonUtilities",
+            // M-10：shader 類型實際註冊在獨立的 VoxelWorldShaders 模組（PostConfigInit，
+            // 見該模組 Build.cs 開頭註解），這裡只是呼叫它公開的 dispatch 函式
+            "VoxelWorldShaders"
         });
     }
 }

@@ -280,6 +280,5 @@ void ASkillCreatorHUD::DrawHUD()
     if (EquipmentPanel && EquipmentPanel->GetVisibility() == ESlateVisibility::Visible)
         EquipmentPanel->Refresh(Char->EquipmentComp);
 
-    if (SpellListPanel && SpellListPanel->GetVisibility() == ESlateVisibility::Visible)
-        SpellListPanel->RefreshSpellList();
+    // SpellListPanel 不在 DrawHUD 每幀刷新；RefreshSpellList 只在面板開啟和切換組別時呼叫。
 }

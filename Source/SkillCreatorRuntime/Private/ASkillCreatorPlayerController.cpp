@@ -164,6 +164,24 @@ void ASkillCreatorPlayerController::OnOpenEditor()
     if (!bSpellListSlotClickBound)
     {
         HUD->SpellListPanel->OnSlotClicked.BindUObject(this, &ASkillCreatorPlayerController::OnSpellListSlotClicked);
+        // 對應 Godot Main.cs:1801-1820 OnListAddSpellClicked：點「+」→ 找第一個空槽位開積木編輯器
+        HUD->SpellListPanel->OnAddSpellRequested.BindLambda([this]()
+        {
+            ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+            if (!Char || !Char->SpellCasterComp) return;
+            const FSpellLoadout& Loadout = Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
+            int32 EmptySlot = -1;
+            for (int32 i = 0; i < FSpellLoadout::MaxSlots; ++i)
+            {
+                if (!Loadout.Slots.IsValidIndex(i) || !Loadout.Slots[i].IsValid())
+                { EmptySlot = i; break; }
+            }
+            if (EmptySlot < 0) return;
+            if (ASkillCreatorHUD* H = GetHUD<ASkillCreatorHUD>())
+                if (H->SpellListPanel)
+                    H->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
+            OpenBlockEditorForSlot(EmptySlot);
+        });
         bSpellListSlotClickBound = true;
     }
 
@@ -173,7 +191,10 @@ void ASkillCreatorPlayerController::OnOpenEditor()
         HUD->SpellListPanel->RefreshSpellList(); // 對應 Godot Main.cs:1777 _spellList.Refresh()
         HUD->SpellListPanel->SetVisibility(ESlateVisibility::Visible);
         SetShowMouseCursor(true);
-        SetInputMode(FInputModeUIOnly());
+        // 使用 GameAndUI 而非 UIOnly：UIOnly 會封鎖所有 InputComponent->BindKey 事件，
+        // 導致再按 E 無法觸發 OnOpenEditor() 來關閉面板。GameAndUI 保留遊戲輸入同時
+        // 允許滑鼠事件傳給 UMG，讓 E 鍵和圓球點擊都能正常運作。
+        SetInputMode(FInputModeGameAndUI());
     }
     else
     {
@@ -221,7 +242,7 @@ void ASkillCreatorPlayerController::OpenBlockEditorForSlot(int32 SlotIndex)
     BlockEditorWidget->SetVisibility(ESlateVisibility::Visible);
     bBlockEditorOpen = true;
     SetShowMouseCursor(true);
-    SetInputMode(FInputModeUIOnly());
+    SetInputMode(FInputModeGameAndUI());
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorClosed()

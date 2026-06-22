@@ -50,8 +50,10 @@ public:
     void UpdateGpuOrigin(int32 wx, int32 wy, int32 wz);
     // 是否在目前 GPU 模擬區範圍內
     bool InGpuZone(int32 x, int32 y, int32 z) const;
-    // 將 GPU readback 的一格寫入世界（由 FCaGpuSimulator::Download 回呼）
-    void SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte);
+    // 將 GPU readback 的一格寫入世界（由 FCaGpuSimulator::Download 回呼）。
+    // PackedCell 是 CaCellPacking::Pack() 格式（不是純 MaterialID byte——Phase 2 改了
+    // FCaGpuSimulator::Download 的回呼簽名，這裡跟著改，原本的 uint8 版本不夠用）。
+    void SetCellFromGpu(int32 x, int32 y, int32 z, uint32 PackedCell);
 
     // --- Gameplay ---
     // 摧毀格（設為 Air），並觸發 OnTileDestroyed 回呼（掉落物 / 特效使用）
@@ -114,6 +116,9 @@ private:
     void MarkUpdated(int32 x, int32 y, int32 z);
     bool IsOccupied(int32 x, int32 y, int32 z) const;
     void MarkNeighborsDirty(FIntVector CC, int32 lx, int32 ly, int32 lz);
+
+    // --- GPU CA（M-10 Phase 3）：每幀對目前 GPU zone 做一次完整 Upload→Simulate→Download ---
+    void TickGpuZone();
 
     // --- CA 物理 ---
     bool TryMove(int32 fx, int32 fy, int32 fz, int32 tx, int32 ty, int32 tz);

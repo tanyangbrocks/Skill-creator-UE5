@@ -16,6 +16,11 @@
             "Name": "VoxelWorld",
             "Type": "Runtime",
             "LoadingPhase": "Default"
+        },
+        {
+            "Name": "VoxelWorldShaders",
+            "Type": "Runtime",
+            "LoadingPhase": "PostConfigInit"
         }
     ]
 }

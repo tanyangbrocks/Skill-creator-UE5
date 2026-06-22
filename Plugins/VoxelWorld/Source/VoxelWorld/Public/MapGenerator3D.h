@@ -36,6 +36,9 @@ public:
     // 是否還有已排程但尚未套用的背景 thread chunk（CreateWorld 同步預生成等待用）
     bool HasPendingChunks() const { return !InFlightChunks.IsEmpty(); }
 
+    // 還有幾個 chunk 在背景執行緒算、尚未套用（UI 進度顯示用，例如 GameFlowWidget 的世界生成 loading）
+    int32 GetPendingChunkCount() const { return InFlightChunks.Num(); }
+
     // 連通性後處理（主執行緒，初始 chunk 群全部 Apply 後呼叫）
     // FloodFill3D 確認可達空間，對孤立洞穴打通垂直通道
     void PostProcessRegion(FTileWorld3D& World, FIntVector ChunkMin, FIntVector ChunkMax);

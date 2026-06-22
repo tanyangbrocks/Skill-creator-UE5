@@ -1,0 +1,19 @@
+// M-10 Phase 0：最小驗證 spike，不含真正 CA 邏輯。
+// 目的：確認「建 buffer → dispatch → CPU 讀回」這條 RDG 路徑在這個專案能正常編譯、執行。
+// 每個 thread 把自己的 index*2 寫進輸出 buffer，CPU 端比對結果是否正確。
+
+// UE5 規定每個 shader 檔案都要 include 這個（設定平台相關 macro/型別），不然編譯器直接拒絕。
+#include "/Engine/Public/Platform.ush"
+
+RWStructuredBuffer<uint> OutputBuffer;
+uint Count;
+
+[numthreads(64, 1, 1)]
+void MainCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+    uint Index = DispatchThreadId.x;
+    if (Index < Count)
+    {
+        OutputBuffer[Index] = Index * 2u;
+    }
+}

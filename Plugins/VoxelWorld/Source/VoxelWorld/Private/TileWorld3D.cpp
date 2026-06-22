@@ -2,6 +2,7 @@
 #include "Misc/Paths.h"
 #include "HAL/FileManager.h"
 #include "ElementalReactionTable.h"
+#include "CaCellPacking.h"
 
 // ============================================================
 // 構造 / 解構
@@ -40,9 +41,49 @@ bool FTileWorld3D::InGpuZone(int32 x, int32 y, int32 z) const
            FMath::Abs(z - GpuSim.GetOriginZ()) <= FCaGpuSimulator::ZoneD / 2;
 }
 
-void FTileWorld3D::SetCellFromGpu(int32 x, int32 y, int32 z, uint8 MaterialByte)
+void FTileWorld3D::SetCellFromGpu(int32 x, int32 y, int32 z, uint32 PackedCell)
 {
-    SetTile(x, y, z, static_cast<EMaterialType>(MaterialByte));
+    // 只覆寫 GPU 會動到的欄位（MaterialID/CA_State/Variant），保留現有 Category——
+    // GPU shader 完全不知道 ETileCategory，這個欄位的賦值權責不在這裡（見
+    // docs/plan-m10-gpu-ca.md §五決策 1：目前全專案都還沒有任何地方真的填 Category）。
+    FTileCell Cell = GetCell(x, y, z);
+    Cell.MaterialID = CaCellPacking::UnpackMaterialID(PackedCell);
+    Cell.CA_State    = CaCellPacking::UnpackTimer(PackedCell);
+    Cell.Variant     = CaCellPacking::UnpackVariant(PackedCell);
+    WriteCell(x, y, z, Cell);
+}
+
+void FTileWorld3D::TickGpuZone()
+{
+    // Zone 中心是玩家所在格（UpdateGpuOrigin 設的），這裡反推 zone 的世界座標最小角。
+    const int32 OX = GpuSim.GetOriginX() - FCaGpuSimulator::ZoneW / 2;
+    const int32 OY = GpuSim.GetOriginY() - FCaGpuSimulator::ZoneH / 2;
+    const int32 OZ = GpuSim.GetOriginZ() - FCaGpuSimulator::ZoneD / 2;
+    constexpr int32 W = FCaGpuSimulator::ZoneW;
+    constexpr int32 H = FCaGpuSimulator::ZoneH;
+    constexpr int32 D = FCaGpuSimulator::ZoneD;
+
+    // 把 zone 內現有 CPU chunk 資料打包成扁平 uint32 陣列上傳 GPU（對應 Godot
+    // CaGpuSimulator.cs 的 Upload() 呼叫端：每幀重新從 TileWorld 撈一次 zone 快照，
+    // 不維護額外的常駐 GPU-side 影子狀態）。
+    TArray<uint32> PackedCells;
+    PackedCells.SetNumUninitialized(W * H * D);
+    for (int32 z = 0; z < D; ++z)
+    for (int32 y = 0; y < H; ++y)
+    for (int32 x = 0; x < W; ++x)
+    {
+        const FTileCell Cell = GetCell(OX + x, OY + y, OZ + z);
+        PackedCells[z * H * W + y * W + x] = CaCellPacking::Pack(Cell.MaterialID, Cell.CA_State, Cell.Variant);
+    }
+
+    if (!GpuSim.Upload(PackedCells, W, H, D)) return; // zone 內全靜態/空，跳過
+
+    GpuSim.Simulate(static_cast<uint32>(Frame));
+
+    GpuSim.Download([this, OX, OY, OZ](int32 lx, int32 ly, int32 lz, uint32 PackedCell)
+    {
+        SetCellFromGpu(OX + lx, OY + ly, OZ + lz, PackedCell);
+    });
 }
 
 void FTileWorld3D::DestroyTile(int32 x, int32 y, int32 z, EDestroyReason Reason)
@@ -218,6 +259,18 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
 {
     ++Frame;
 
+    // M-10 Phase 3：GPU CA zone 跟著玩家所在 chunk 移動（ActiveCX/Y/Z 就是呼叫端算好的玩家
+    // chunk 座標，見 AVoxelWorldActor.cpp 的 PCX/PCY/PCZ），取 chunk 中心當 zone 中心。
+    // 跟 CPU 主迴圈不一樣，GPU zone 涵蓋範圍跟 chunk dirty 篩選無關，每幀固定做一次。
+    if (GpuSim.IsAvailable())
+    {
+        const int32 PlayerWX = ActiveCX * FChunk3D::Size + FChunk3D::Size / 2;
+        const int32 PlayerWY = ActiveCY * FChunk3D::Size + FChunk3D::Size / 2;
+        const int32 PlayerWZ = ActiveCZ * FChunk3D::Size + FChunk3D::Size / 2;
+        UpdateGpuOrigin(PlayerWX, PlayerWY, PlayerWZ);
+        TickGpuZone();
+    }
+
     // 快照待模擬 chunk（從 DirtyChunks 篩選半徑內）
     TArray<FIntVector> ToProcess;
     ToProcess.Reserve(DirtyChunks.Num());
@@ -276,10 +329,17 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
             int32 wy = CC.Y * FChunk3D::Size + ly;
             int32 wz = CC.Z * FChunk3D::Size + lz;
 
+            // GPU zone 內的 Powder/Liquid 這幀已經由 TickGpuZone() 算過，CPU 不要重算一次
+            // （否則同一格被 CPU/GPU 各動一次，行為打架）。Gas/Static 維持全 CPU——GPU
+            // shader 只做 Margolus 重力，火/蒸汽/燃燒等化學反應不在 GPU 範圍內。
             switch (FMaterialRegistry::GetPhysics(Cell.MaterialID))
             {
-                case EPhysicsCategory::Powder: UpdatePowder(wx, wy, wz); break;
-                case EPhysicsCategory::Liquid: UpdateLiquid(wx, wy, wz); break;
+                case EPhysicsCategory::Powder:
+                    if (!InGpuZone(wx, wy, wz)) UpdatePowder(wx, wy, wz);
+                    break;
+                case EPhysicsCategory::Liquid:
+                    if (!InGpuZone(wx, wy, wz)) UpdateLiquid(wx, wy, wz);
+                    break;
                 case EPhysicsCategory::Gas:    UpdateGas(wx, wy, wz);    break;
                 case EPhysicsCategory::Static: UpdateStatic(wx, wy, wz); break;
                 default: break;

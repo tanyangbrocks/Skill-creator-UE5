@@ -102,6 +102,21 @@ void AVoxelWorldActor::BeginPlay()
 
     Streaming.Init(WorldWidth, WorldHeight, WorldDepth, WorldSeed, AbsWorldDir);
 
+    // M-10 Phase 3：世界建立後初始化一次 GPU CA 模擬器（RHI 不可用時 IsAvailable()=false，
+    // Tick() 會整段跳過 GPU 路徑，照舊全 CPU 模擬，不會出錯）。
+    //
+    // 2026-06-22 暫時停用：使用者實機 PIE 回報「遊戲嚴重延遲、卡頓」。追查後發現
+    // TileWorld3D::TickGpuZone() 每個 tick 都會對整個 GPU zone（ZoneW×ZoneH×ZoneD =
+    // 128×256×128 = 4,194,304 格）做一次完整 GetCell() 掃描＋打包＋GPU
+    // Upload→Simulate→Download（含同步 FlushRenderingCommands() GPU stall），這是
+    // Phase 0~3 單元測試只用 4×4×4 小 zone 測過、從未在真實 ZoneW/H/D 尺度量過效能的
+    // 熱路徑——原計畫就是把效能驗證留到 Phase 4（見 docs/plan-m10-gpu-ca.md），但這次
+    // 在 BeginPlay() 呼叫 InitGpu() 讓它在 Phase 4 驗證完成前就提前在正式環境跑了起來。
+    // 先不呼叫 InitGpu()，讓 GpuSim.IsAvailable() 維持 false，Tick() 整段跳過 GPU 路徑、
+    // 照舊全 CPU 模擬（跟 Phase 3 之前一樣安全），等 Phase 4 把 TickGpuZone() 改成不要
+    // 每 tick 全量掃描（例如只在 zone 真的移動時重建、或分批次跑）後再重新啟用。
+    // TileWorld.InitGpu();
+
     // M-6 / AR-B RMC init.
     // 每個 EMaterialType 值對應一個 material slot（PolyGroup = MaterialID）。
     // Registry 未建立或某 slot 為 null 時，fallback 到 VoxelMaterial。
