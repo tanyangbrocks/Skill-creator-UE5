@@ -267,7 +267,8 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
             PC->GetPlayerViewPoint(CamLoc, CamRot);
             FRaycastResult3D H = TW->Raycast(
                 WorldScale::WorldToTileF(CamLoc, TW->Height),
-                WorldScale::DirToVoxel(CamRot.Vector()), 10.f);
+                WorldScale::DirToVoxel(CamRot.Vector()),
+                static_cast<float>(WorldScale::MiningRangeTiles));
             if (H.bHit)
                 CachedVoxelWorld->ShowHighlight(FGridPos(H.HitCell.X, H.HitCell.Y, H.HitCell.Z));
             else
@@ -307,7 +308,7 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
             case ECameraMode::ThirdPerson:  ModeStr = TEXT("第三人稱"); break;
             case ECameraMode::FirstPerson:  ModeStr = TEXT("第一人稱"); break;
             case ECameraMode::Isometric:    ModeStr = TEXT("等角視角"); break;
-            case ECameraMode::SideScroll2D: ModeStr = TEXT("橫向2.5D"); break;
+            case ECameraMode::SideScroll2D: ModeStr = TEXT("橫向2D"); break; // 對應 Godot CameraMode.SideScroll2D，原始碼/文件從未出現「2.5D」這個說法
         }
 
         // 羅盤方向（對應 Godot ddx/ddy）
@@ -540,10 +541,16 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     // 滑鼠視角：MouseX→X, MouseY→Y
     IMC->MapKey(IA_Look, EKeys::MouseX);
     {
+        // 2026-06-22 修正上下反向：原始 EKeys::MouseY 滑鼠往上移動時數值是負的（螢幕座標
+        // Y 往下為正），但 AddControllerPitchInput()（PlayerController.h:1567 doc comment
+        // 寫明「正值 = look up」）要正值才會往上看，沒加 Negate 會變成滑鼠往上、鏡頭往下，
+        // 使用者實測回報「游標上下相反」。
         FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Look, EKeys::MouseY);
         UInputModifierSwizzleAxis* Sw = NewObject<UInputModifierSwizzleAxis>(IMC);
         Sw->Order = EInputAxisSwizzle::YXZ;
         M.Modifiers.Add(Sw);
+        UInputModifierNegate* Neg = NewObject<UInputModifierNegate>(IMC);
+        M.Modifiers.Add(Neg);
     }
 
     // 其他按鍵
@@ -641,10 +648,17 @@ static FCameraModeParams DefaultParamsFor(ECameraMode Mode)
         case ECameraMode::Isometric:
             P.ArmLength = 1200.f; P.PitchDeg = -55.f; P.bUsePawnControlRotation = false;
             P.FixedYawDeg = 45.f;
+            // Godot CameraController.cs:164-171 ApplyProjection()：Isometric 用正交投影。
+            P.bOrthographic = true; P.OrthoWidth = 900.f;
             break;
         case ECameraMode::SideScroll2D:
-            P.ArmLength = 900.f; P.PitchDeg = -10.f; P.bUsePawnControlRotation = false;
+            // 對應 Godot CameraController.cs:219-226：相機在 -Z 側直接朝 +Z 看玩家，
+            // Pitch=0（沒有俯角，純水平側視才是真 2D），加正交投影——2026-06-22 修正：
+            // 原本 PitchDeg=-10 帶俯角、又是透視投影，兩個原因疊加讓 2D 視角看起來像
+            // 「2.5D」（有透視深度線索 + 微俯角讓人看到地面延伸）。
+            P.ArmLength = 900.f; P.PitchDeg = 0.f; P.bUsePawnControlRotation = false;
             P.FixedYawDeg = 90.f;
+            P.bOrthographic = true; P.OrthoWidth = 900.f;
             break;
         default: break;
     }
@@ -661,6 +675,13 @@ void ASkillCreatorCharacter::SetCameraMode(ECameraMode NewMode)
 
     SpringArm->TargetArmLength           = Params.ArmLength;
     SpringArm->bUsePawnControlRotation   = Params.bUsePawnControlRotation;
+
+    // 對應 Godot CameraController.cs:164-171 ApplyProjection()。
+    Camera->SetProjectionMode(Params.bOrthographic
+        ? ECameraProjectionMode::Orthographic
+        : ECameraProjectionMode::Perspective);
+    if (Params.bOrthographic)
+        Camera->SetOrthoWidth(Params.OrthoWidth);
 
     if (NewMode == ECameraMode::FirstPerson)
     {
@@ -815,7 +836,9 @@ void ASkillCreatorCharacter::OnMine()
     const FVector TileStart = WorldScale::WorldToTileF(CamLoc, TW->Height);
     const FVector VoxDir    = WorldScale::DirToVoxel(CamDir);
 
-    FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, 10.f);
+    // Godot Main.cs:1012 Raycast 最遠 50 game-units；UE5 tile 換算後應至少到 MiningRangeTiles。
+    // 舊值 10.f tiles = 62.5cm，遠小於 MiningRangeTiles(192 tiles=12m)，玩家完全採不到任何方塊。
+    FRaycastResult3D Hit = TW->Raycast(TileStart, VoxDir, static_cast<float>(WorldScale::MiningRangeTiles));
     if (!Hit.bHit) { CancelMining(); return; }
 
     // 採掘距離限制（Godot PlayerController.cs:42 MiningRange => BodyH * 6f）

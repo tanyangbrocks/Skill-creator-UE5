@@ -15,8 +15,10 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
+#include "Styling/SlateTypes.h"
 
 // ── Static layout helper ──────────────────────────────────────────────────
 
@@ -108,12 +110,12 @@ FLinearColor UPlayerHUDWidget::ItemIconColor(EItemId Id)
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// NativeConstruct
+// NativeOnInitialized
 // ══════════════════════════════════════════════════════════════════════════
 
-void UPlayerHUDWidget::NativeConstruct()
+void UPlayerHUDWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     // 如果 Blueprint 子類已綁定 widget，僅調整位置後退出
     if (HpBar)
@@ -185,12 +187,15 @@ void UPlayerHUDWidget::NativeConstruct()
     // ⑦ 動態法力條 VBox（底部左側，向上生長）
     BuildManaHud(Root);
 
-    // ⑧ 法術熱鍵欄文字（底部中央）
+    // ⑧ 法術熱鍵欄文字（底部中央）—— 2026-06-22 使用者要求不要顯示這個文字提示，
+    // 直接 Collapsed。底層 UpdateSpellHotBar() 邏輯不變，繼續更新 HotBarBox 的子項，
+    // 只是整個容器不可見，不影響施法（U/I/O/P 偵測在 HandleSpellInput() 是獨立的）。
     HotBarBox = WidgetTree->ConstructWidget<UVerticalBox>(
         UVerticalBox::StaticClass(), TEXT("HotBarBox"));
     Root->AddChild(HotBarBox);
     Pin(HotBarBox, { 0.f, -60.f }, { 400.f, 48.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), { 0.5f, 1.f });
+    HotBarBox->SetVisibility(ESlateVisibility::Collapsed);
 
     // ⑨ 形狀指示器
     ShapeLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ShapeLabel"));
@@ -265,11 +270,22 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         PinBL(HotbarBorder, { X, StartY }, { SlotW, SlotH });
         ItemSlotBorders.Add(HotbarBorder);
 
+        // UBorder 只能一個子節點（UContentWidget），用內層 CanvasPanel 承載 Icon/Count/Key
+        // （Bug H-1：原本直接 HotbarBorder->AddChild(X) 後的 Slot 型別是 UBorderSlot，
+        //  Cast<UCanvasPanelSlot> 永遠 null，SetOffsets 從未執行）
+        UCanvasPanel* SlotCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+        HotbarBorder->AddChild(SlotCanvas);
+        if (UBorderSlot* BS = Cast<UBorderSlot>(SlotCanvas->Slot))
+        {
+            BS->SetHorizontalAlignment(HAlign_Fill);
+            BS->SetVerticalAlignment(VAlign_Fill);
+        }
+
         // 物品色塊圖示（左上）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Icon->SetBrushColor(FLinearColor(0.18f, 0.18f, 0.22f));
         Icon->SetPadding(FMargin(0.f));
-        HotbarBorder->AddChild(Icon);
+        SlotCanvas->AddChild(Icon);
         if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
             IS->SetOffsets(FMargin(6.f, 6.f, 36.f, 28.f));
         ItemIconBorders.Add(Icon);
@@ -281,7 +297,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         }
         Cnt->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
         Cnt->SetJustification(ETextJustify::Right);
-        HotbarBorder->AddChild(Cnt);
+        SlotCanvas->AddChild(Cnt);
         if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(Cnt->Slot))
             CS->SetOffsets(FMargin(28.f, 34.f, 18.f, 12.f));
         ItemCountLabels.Add(Cnt);
@@ -293,7 +309,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         }
         Key->SetText(FText::FromString(i == 9 ? TEXT("0") : FString::Printf(TEXT("%d"), i + 1)));
         Key->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.60f)));
-        HotbarBorder->AddChild(Key);
+        SlotCanvas->AddChild(Key);
         if (UCanvasPanelSlot* KS = Cast<UCanvasPanelSlot>(Key->Slot))
             KS->SetOffsets(FMargin(3.f, 2.f, 14.f, 12.f));
         ItemKeyLabels.Add(Key);
@@ -659,9 +675,22 @@ void UPlayerHUDWidget::UpdateItemHotbar(const TArray<FItemStack>& Slots, int32 A
     {
         bool bActive = (i == ActiveIdx);
         if (ItemSlotBorders[i])
-            ItemSlotBorders[i]->SetBrushColor(bActive
+        {
+            // Bug H-2：原本只改 BrushColor（背景），active slot 的金黃邊框從未設定。
+            // 對應 Godot RefreshHotbar() BorderColor=(0.95,0.80,0.20) + BorderWidth=2 for active slot。
+            FSlateBrush Brush;
+            Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+            Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+            Brush.OutlineSettings.CornerRadii  = FVector4(0, 0, 0, 0);
+            Brush.TintColor = FSlateColor(bActive
                 ? FLinearColor(0.18f, 0.18f, 0.28f)
                 : FLinearColor(0.10f, 0.10f, 0.15f));
+            Brush.OutlineSettings.Color = FSlateColor(bActive
+                ? FLinearColor(0.95f, 0.80f, 0.20f)  // Godot 金黃邊框
+                : FLinearColor(0.22f, 0.22f, 0.30f)); // 非 active 深灰邊框
+            Brush.OutlineSettings.Width = bActive ? 2.f : 0.f;
+            ItemSlotBorders[i]->SetBrush(Brush);
+        }
 
         if (ItemIconBorders[i])
             ItemIconBorders[i]->SetBrushColor(Slots[i].IsEmpty()
