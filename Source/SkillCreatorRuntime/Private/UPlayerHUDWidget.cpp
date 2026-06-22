@@ -20,6 +20,16 @@
 #include "Components/SizeBox.h"
 #include "Styling/SlateTypes.h"
 
+// ── 純色筆刷輔助（UBorder 只有 SetBrush({RoundedBox,TintColor}) 才保證無貼圖渲染，
+//    SetBrushColor 依賴 T_DefaultDiffuse_D 存在，UE5.7 失效 → 全改走此路徑）
+static FSlateBrush MakeSolid(FLinearColor C)
+{
+    FSlateBrush B;
+    B.DrawAs   = ESlateBrushDrawType::RoundedBox;
+    B.TintColor = FSlateColor(C);
+    return B;
+}
+
 // ── Static layout helper ──────────────────────────────────────────────────
 
 void UPlayerHUDWidget::Pin(UWidget* W, FVector2D Pos, FVector2D Size,
@@ -239,7 +249,7 @@ void UPlayerHUDWidget::BuildCrosshair(UCanvasPanel* Root)
     for (const auto& P : Parts)
     {
         UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        B->SetBrushColor(P.Color);
+        B->SetBrush(MakeSolid(P.Color));
         B->SetPadding(FMargin(0.f));
         Root->AddChild(B);
         Pin(B, P.Pos, P.Size,
@@ -286,7 +296,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
 
         // 物品色塊圖示（左上）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Icon->SetBrushColor(FLinearColor(0.18f, 0.18f, 0.22f));
+        Icon->SetBrush(MakeSolid(FLinearColor(0.18f, 0.18f, 0.22f)));
         Icon->SetPadding(FMargin(0.f));
         SlotCanvas->AddChild(Icon);
         if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
@@ -351,17 +361,20 @@ void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
         PinBL(NmLbl, { StartX, Y }, { LblW, RowH });
 
         UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        BarBg->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.16f));
+        BarBg->SetBrush(MakeSolid(FLinearColor(0.10f, 0.10f, 0.16f)));
         BarBg->SetPadding(FMargin(0.f));
         Root->AddChild(BarBg);
-        PinBL(BarBg, { StartX + LblW + 2.f, Y + (RowH - BarH) * 0.5f }, { BarW, BarH });
+        const float FillX = StartX + LblW + 2.f, FillY = Y + (RowH - BarH) * 0.5f;
+        PinBL(BarBg, { FillX, FillY }, { BarW, BarH });
 
+        // Fill 直接加到 Root（與 BarBg 同位置，因此 Root 的渲染順序讓 Fill 蓋在 BarBg 上）。
+        // Bug H-4 修復：Fill 若放在 BarBg->AddChild() 裡，Slot 型別是 UBorderSlot，
+        // Cast<UCanvasPanelSlot> 永遠 null，UpdateSurvival 的 SetSize 從未執行。
         UBorder* Fill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Fill->SetBrushColor(Defs[i].Fill);
+        Fill->SetBrush(MakeSolid(Defs[i].Fill));
         Fill->SetPadding(FMargin(0.f));
-        BarBg->AddChild(Fill);
-        if (UCanvasPanelSlot* FS = Cast<UCanvasPanelSlot>(Fill->Slot))
-            FS->SetOffsets(FMargin(0.f, 0.f, BarW, BarH));
+        Root->AddChild(Fill);
+        PinBL(Fill, { FillX, FillY }, { BarW, BarH });
         SurvivalBarFills.Add(Fill);
 
         UTextBlock* Val = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
@@ -435,18 +448,18 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
 
     // XP 條背景 y=-262 h=7
     UBorder* XpBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpBg"));
-    XpBg->SetBrushColor(FLinearColor(0.12f, 0.12f, 0.18f));
+    XpBg->SetBrush(MakeSolid(FLinearColor(0.12f, 0.12f, 0.18f)));
     XpBg->SetPadding(FMargin(0.f));
     Root->AddChild(XpBg);
     PinBL(XpBg, { 10.f, -262.f }, { XpBarMaxWidth, 7.f });
 
-    // XP 填充
+    // XP 填充（Bug H-4 修復：直接加到 Root 而非 XpBg->AddChild，
+    // 確保 Slot 型別是 UCanvasPanelSlot，UpdateLevelHUD 可呼叫 SetSize 調整進度）
     XpBarFill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpFill"));
-    XpBarFill->SetBrushColor(FLinearColor(0.25f, 0.65f, 0.95f));
+    XpBarFill->SetBrush(MakeSolid(FLinearColor(0.25f, 0.65f, 0.95f)));
     XpBarFill->SetPadding(FMargin(0.f));
-    XpBg->AddChild(XpBarFill);
-    if (UCanvasPanelSlot* XS = Cast<UCanvasPanelSlot>(XpBarFill->Slot))
-        XS->SetOffsets(FMargin(0.f, 0.f, 0.f, 7.f));
+    Root->AddChild(XpBarFill);
+    PinBL(XpBarFill, { 10.f, -262.f }, { 0.f, 7.f });  // 初始寬度 0，由 UpdateLevelHUD 設
 }
 
 void UPlayerHUDWidget::BuildManaHud(UCanvasPanel* Root)
@@ -454,15 +467,17 @@ void UPlayerHUDWidget::BuildManaHud(UCanvasPanel* Root)
     ManaHudVBox = WidgetTree->ConstructWidget<UVerticalBox>(
         UVerticalBox::StaticClass(), TEXT("ManaHud"));
     Root->AddChild(ManaHudVBox);
-    // 底部左側，由下往上生長 → anchor bottom-left，position y=-30
+    // 底部左側，由下往上生長 → anchor bottom-left，Align(0,1)=pivot 在 widget 底部
+    // 若 Align=(0,0)（預設）：widget 頂邊在 y=720-30=690，往下延伸到 890，完全超出畫面。
+    // Align=(0,1)：widget 底邊在 y=720-30=690，往上延伸到 490，正確在畫面內。
     Pin(ManaHudVBox, { 10.f, -30.f }, { 160.f, 200.f },
-        FAnchors(0.f, 1.f, 0.f, 1.f));
+        FAnchors(0.f, 1.f, 0.f, 1.f), { 0.f, 1.f });
 }
 
 void UPlayerHUDWidget::BuildDeathScreenOverlay(UCanvasPanel* Root)
 {
     DeathScreen = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DeathScreen"));
-    DeathScreen->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.72f));
+    DeathScreen->SetBrush(MakeSolid(FLinearColor(0.f, 0.f, 0.f, 0.72f)));
     DeathScreen->SetPadding(FMargin(0.f));
     DeathScreen->SetVisibility(ESlateVisibility::Hidden);
     Root->AddChild(DeathScreen);
@@ -521,7 +536,7 @@ void UPlayerHUDWidget::BuildFloatTooltip(UCanvasPanel* Root)
 {
     FloatTooltipPanel = WidgetTree->ConstructWidget<UBorder>(
         UBorder::StaticClass(), TEXT("FloatTip"));
-    FloatTooltipPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f));
+    FloatTooltipPanel->SetBrush(MakeSolid(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f)));
     FloatTooltipPanel->SetPadding(FMargin(8.f, 4.f));
     FloatTooltipPanel->SetVisibility(ESlateVisibility::Hidden);
     Root->AddChild(FloatTooltipPanel);
@@ -696,9 +711,9 @@ void UPlayerHUDWidget::UpdateItemHotbar(const TArray<FItemStack>& Slots, int32 A
         }
 
         if (ItemIconBorders[i])
-            ItemIconBorders[i]->SetBrushColor(Slots[i].IsEmpty()
+            ItemIconBorders[i]->SetBrush(MakeSolid(Slots[i].IsEmpty()
                 ? FLinearColor(0.18f, 0.18f, 0.22f)
-                : ItemIconColor(Slots[i].ItemId));
+                : ItemIconColor(Slots[i].ItemId)));
 
         if (ItemCountLabels[i])
             ItemCountLabels[i]->SetText(Slots[i].IsEmpty()
@@ -818,21 +833,44 @@ void UPlayerHUDWidget::UpdateManaSlots(const TArray<FManaSlot>& Slots)
             if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(NmLbl))
                 HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 
-            UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-            BarBg->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.14f));
-            BarBg->SetPadding(FMargin(0.f));
-            if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(BarBg))
+            // Bug H-4 修復：Fill 若放在 BarBg(UBorder)->AddChild() 裡，Slot=UBorderSlot，
+            // Cast<UCanvasPanelSlot> null，UpdateManaSlots 的 SetSize 從未執行。
+            // 改用 USizeBox(強制尺寸) + UCanvasPanel(絕對定位) + BarBg + Fill 結構，
+            // Fill->Slot 型別為 UCanvasPanelSlot，可正常調整寬度。
+            USizeBox* BarSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+            BarSizeBox->SetWidthOverride(BarW);
+            BarSizeBox->SetHeightOverride(BarH);
+            if (UHorizontalBoxSlot* HS = Row->AddChildToHorizontalBox(BarSizeBox))
             {
                 HS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
                 HS->SetPadding(FMargin(3.f, 0.f));
             }
+            UCanvasPanel* BarCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+            BarSizeBox->AddChild(BarCanvas);
+
+            UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+            BarBg->SetBrush(MakeSolid(FLinearColor(0.08f, 0.08f, 0.14f)));
+            BarBg->SetPadding(FMargin(0.f));
+            BarCanvas->AddChild(BarBg);
+            if (UCanvasPanelSlot* BS = Cast<UCanvasPanelSlot>(BarBg->Slot))
+            {
+                BS->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+                BS->SetPosition(FVector2D::ZeroVector);
+                BS->SetSize(FVector2D(BarW, BarH));
+                BS->SetAlignment(FVector2D::ZeroVector);
+            }
 
             UBorder* Fill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-            Fill->SetBrushColor(C);
+            Fill->SetBrush(MakeSolid(C));
             Fill->SetPadding(FMargin(0.f));
-            BarBg->AddChild(Fill);
+            BarCanvas->AddChild(Fill);
             if (UCanvasPanelSlot* FS = Cast<UCanvasPanelSlot>(Fill->Slot))
-                FS->SetSize(FVector2D(BarW, BarH));
+            {
+                FS->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+                FS->SetPosition(FVector2D::ZeroVector);
+                FS->SetSize(FVector2D(BarW, BarH));  // 初始滿格，UpdateManaSlots 按比例縮減
+                FS->SetAlignment(FVector2D::ZeroVector);
+            }
             ManaBarFills.Add(Fill);
 
             UTextBlock* Val = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());

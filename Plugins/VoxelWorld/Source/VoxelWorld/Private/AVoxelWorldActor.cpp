@@ -11,6 +11,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TileMaterialRegistry.h"
 #include "MaterialType.h"
+#include "DrawDebugHelpers.h"
 
 // ============================================================
 // 構造
@@ -63,11 +64,16 @@ AVoxelWorldActor* AVoxelWorldActor::FindInWorld(UWorld* World)
 void AVoxelWorldActor::ShowHighlight(FGridPos TilePos)
 {
     if (!HighlightMesh) return;
-    // Cube mesh 預設 100×100×100 cm；縮放至一個 tile
     const float S = WorldScale::TileSizeCm / 100.f;
-    HighlightMesh->SetWorldScale3D(FVector(S + 0.02f));  // 稍微放大 0.02 避免 z-fighting
-    HighlightMesh->SetWorldLocation(WorldScale::TileToWorld(TilePos, TileWorld.Height));
+    HighlightMesh->SetWorldScale3D(FVector(S + 0.02f));
+    FVector Center = WorldScale::TileToWorld(TilePos, TileWorld.Height);
+    HighlightMesh->SetWorldLocation(Center);
     HighlightMesh->SetVisibility(true);
+
+    // DrawDebugBox 確保在任何材質狀態下均可見（高亮框以青色線框呈現）
+    const float Half = WorldScale::TileSizeCm * 0.5f + 0.5f;
+    DrawDebugBox(GetWorld(), Center, FVector(Half), FQuat::Identity,
+                 FColor::Cyan, false, 0.05f, 0, 1.5f);
 }
 
 void AVoxelWorldActor::HideHighlight()
@@ -116,6 +122,12 @@ void AVoxelWorldActor::BeginPlay()
     // 照舊全 CPU 模擬（跟 Phase 3 之前一樣安全），等 Phase 4 把 TickGpuZone() 改成不要
     // 每 tick 全量掃描（例如只在 zone 真的移動時重建、或分批次跑）後再重新啟用。
     // TileWorld.InitGpu();
+
+    // AR-B 保險措施：Blueprint 子類可能將 TileMaterialRegistry 覆蓋為 null（若 BP 建立時
+    // 尚未有此欄位、或 BeginPlay 前尚未熱重載），在此強制重載。
+    if (!TileMaterialRegistry)
+        TileMaterialRegistry = LoadObject<UTileMaterialRegistry>(nullptr,
+            TEXT("/Game/Data/DA_TileMaterialRegistry.DA_TileMaterialRegistry"));
 
     // M-6 / AR-B RMC init.
     // 每個 EMaterialType 值對應一個 material slot（PolyGroup = MaterialID）。
