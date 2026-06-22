@@ -263,8 +263,11 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         float X = StartX + i * (SlotW + Gap);
 
         // 外框
+        // Bug H-3 修復：不在此設 SetBrushColor——BrushColor 預設 White，
+        // 若同時呼叫 SetBrushColor(dark) 和 UpdateItemHotbar 的 SetBrush(TintColor=dark)，
+        // Slate 渲染 BrushColor × TintColor ≈ 0.01（近黑，完全不可見）。
+        // UpdateItemHotbar 每幀呼叫 SetBrush() 設定正確 TintColor，BrushColor 維持 White。
         UBorder* HotbarBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        HotbarBorder->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
         HotbarBorder->SetPadding(FMargin(0.f));
         Root->AddChild(HotbarBorder);
         PinBL(HotbarBorder, { X, StartY }, { SlotW, SlotH });

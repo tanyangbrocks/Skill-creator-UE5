@@ -57,6 +57,18 @@ plan-worldlore-integration.md 有自己的完成狀態標記。
 ### 🔴 Build 必須 0 錯誤 0 警告
 每次改完 C++ 都跑 Build，有錯立刻修。
 
+### 🔴 Build / Rebuild 完成後必須順便打包 Standalone
+使用者一律用 Standalone 執行檔測試（節省記憶體，不用 PIE）。
+每次 Build 或 Rebuild 通過後，立刻用以下命令打包：
+
+```
+& "C:\Program Files\Epic Games\UE_5.7\Engine\Build\BatchFiles\RunUAT.bat" BuildCookRun -project="C:\SkillCreatorUE5\SkillCreatorUE5.uproject" -noP4 -platform=Win64 -clientconfig=Development -cook -build -stage -pak -archive -archivedirectory="C:\SkillCreatorUE5\Packaged" -utf8output
+```
+
+輸出執行檔：`C:\SkillCreatorUE5\Packaged\Windows\SkillCreatorUE5.exe`  
+首次打包約 20~40 分鐘（Cook 所有資產），後續增量 Cook 較快。  
+打包過程本身包含 Build 步驟（`-build` flag），所以 .h UPROPERTY 變更也會一起編譯進去，不需要另行 Rebuild。
+
 ### 🔴 修改 .h 標頭檔（UCLASS/UPROPERTY/UENUM）必須關 Editor + 完整 Rebuild
 不能用 Live Coding 熱編譯 .h 變更（UHT 反射資料不會更新，會無預警 crash）。
 只有修改 .cpp 純邏輯才允許 Live Coding。
