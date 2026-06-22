@@ -130,14 +130,6 @@ void USpellListWidget::BuildLayout()
     {
         UHorizontalBox* DotBox = WidgetTree->ConstructWidget<UHorizontalBox>();
         GroupDotButtons.SetNum(GMaxGroups);
-        void (USpellListWidget::*GroupHandlers[GMaxGroups])() =
-        {
-            &USpellListWidget::OnGroupBtn0Clicked,
-            &USpellListWidget::OnGroupBtn1Clicked,
-            &USpellListWidget::OnGroupBtn2Clicked,
-            &USpellListWidget::OnGroupBtn3Clicked,
-            &USpellListWidget::OnGroupBtn4Clicked,
-        };
         for (int32 gi = 0; gi < GMaxGroups; ++gi)
         {
             UButton* Dot = WidgetTree->ConstructWidget<UButton>();
@@ -149,7 +141,16 @@ void USpellListWidget::BuildLayout()
             Num->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.75f, 0.85f)));
             Dot->AddChild(Num);
 
-            Dot->OnClicked.AddDynamic(this, GroupHandlers[gi]);
+            // AddDynamic 是巨集，不能用陣列變數（會把 "GroupHandlers[gi]" 當字面字串導致 assert）
+            switch (gi)
+            {
+            case 0: Dot->OnClicked.AddDynamic(this, &USpellListWidget::OnGroupBtn0Clicked); break;
+            case 1: Dot->OnClicked.AddDynamic(this, &USpellListWidget::OnGroupBtn1Clicked); break;
+            case 2: Dot->OnClicked.AddDynamic(this, &USpellListWidget::OnGroupBtn2Clicked); break;
+            case 3: Dot->OnClicked.AddDynamic(this, &USpellListWidget::OnGroupBtn3Clicked); break;
+            case 4: Dot->OnClicked.AddDynamic(this, &USpellListWidget::OnGroupBtn4Clicked); break;
+            default: break;
+            }
 
             USizeBox* DotSize = WidgetTree->ConstructWidget<USizeBox>();
             DotSize->SetWidthOverride (28.f);
