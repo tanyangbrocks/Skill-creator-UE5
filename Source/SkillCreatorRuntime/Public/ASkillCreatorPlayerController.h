@@ -50,6 +50,11 @@ private:
     // 這些「圓球列表裡點擊」的回呼才會把 _editor.Visible 設 true）。
     void OnOpenEditor();
 
+    // Shift 游標模式：true 時顯示系統游標並凍結鏡頭旋轉，再按 Shift 切回準心模式。
+    // 開啟面板（積木編輯器/技能列表）不影響此標記——面板關閉後仍維持此模式的狀態。
+    bool bCursorMode = false;
+    void ToggleCursorMode();
+
     UPROPERTY()
     TObjectPtr<class UBlockEditorWidget> BlockEditorWidget;
     bool bBlockEditorOpen = false;

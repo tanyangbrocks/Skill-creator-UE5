@@ -68,6 +68,9 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::C, &ASkillCreatorPlayerController::OnOpenStats);
     Bind(EKeys::Q, &ASkillCreatorPlayerController::OnEquipItem);
 
+    // Shift 游標模式（按一下顯示系統游標且鏡頭凍結，再按切回準心操控）
+    Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCursorMode);
+
     // Tab / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
 }
 
@@ -199,7 +202,7 @@ void ASkillCreatorPlayerController::OnOpenEditor()
     else
     {
         HUD->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
-        SetShowMouseCursor(false);
+        SetShowMouseCursor(bCursorMode);  // 面板關閉後恢復 Shift 游標模式的狀態
         SetInputMode(FInputModeGameAndUI());
     }
 }
@@ -250,8 +253,17 @@ void ASkillCreatorPlayerController::OnBlockEditorClosed()
     if (BlockEditorWidget)
         BlockEditorWidget->SetVisibility(ESlateVisibility::Hidden);
     bBlockEditorOpen = false;
-    SetShowMouseCursor(false);
+    SetShowMouseCursor(bCursorMode);  // 面板關閉後恢復 Shift 游標模式的狀態
     SetInputMode(FInputModeGameAndUI());
+}
+
+void ASkillCreatorPlayerController::ToggleCursorMode()
+{
+    bCursorMode = !bCursorMode;
+    SetShowMouseCursor(bCursorMode);
+    // SetIgnoreLookInput 是計數器（+1/-1）而非布林值：
+    // true → counter++（鏡頭凍結），false → counter--（鏡頭恢復）
+    SetIgnoreLookInput(bCursorMode);
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, int32 SlotIndex)
