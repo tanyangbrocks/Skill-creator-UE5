@@ -4,10 +4,15 @@
 #include "USpellListWidget.generated.h"
 
 class ASkillCreatorCharacter;
-class UVerticalBox;
+class UCanvasPanel;
+class UScrollBox;
 class UHorizontalBox;
+class UBorder;
 class UTextBlock;
+class UButton;
+class USpellCircleWidget;
 
+// SpellSlot 顯示資訊（GetCachedSlots() 的公開 API 保持不變）
 USTRUCT(BlueprintType)
 struct FSpellSlotDisplayInfo
 {
@@ -22,46 +27,69 @@ struct FSpellSlotDisplayInfo
     UPROPERTY(BlueprintReadOnly) bool    bIsPassive    = false;
 };
 
-// SpellList + SpellGroup 圓點 Widget（對應 Godot SpellListUI.cs）。
-// 不需要 Blueprint 子類或 WBP .uasset，
-// 直接 CreateWidget<USpellListWidget>(PC, USpellListWidget::StaticClass())。
-// 如需客製化外觀，建立 Blueprint 子類並覆寫 BlueprintNativeEvent。
+// 技能創建空間圓球列表（對應 Godot SpellListUI.cs）。
+// 不需要 WBP .uasset，直接 CreateWidget<USpellListWidget>(PC, USpellListWidget::StaticClass())。
 UCLASS()
 class SKILLCREATORRUNTIME_API USpellListWidget : public UUserWidget
 {
     GENERATED_BODY()
 public:
+    // ── 公開 API ────────────────────────────────────────────────────────────────
     UFUNCTION(BlueprintCallable, Category="SpellList")
     void RefreshSpellList();
+
     UFUNCTION(BlueprintCallable, BlueprintPure, Category="SpellList")
     int32 GetActiveGroupIndex() const;
+
     UFUNCTION(BlueprintCallable, Category="SpellList")
     void SetActiveGroup(int32 GroupIndex);
+
     UFUNCTION(BlueprintCallable, BlueprintPure, Category="SpellList")
     const TArray<FSpellSlotDisplayInfo>& GetCachedSlots() const { return CachedSlots; }
 
-    // C++ 有預設實作；Blueprint 子類可覆寫以客製化外觀
-    UFUNCTION(BlueprintNativeEvent, Category="SpellList")
-    void OnSpellListRefreshed(const TArray<FSpellSlotDisplayInfo>& Slots, int32 ActiveGroup);
-    virtual void OnSpellListRefreshed_Implementation(const TArray<FSpellSlotDisplayInfo>& Slots, int32 ActiveGroup);
+    // 點擊主動技能圓球 → 通知 PlayerController 切換到積木編輯器（對應 Godot ActiveSpellClicked 信號）
+    DECLARE_DELEGATE_OneParam(FOnSlotClicked, int32 /*SlotIndex*/)
+    FOnSlotClicked OnSlotClicked;
 
-    UFUNCTION(BlueprintNativeEvent, Category="SpellList")
-    void OnSlotHovered(const FSpellSlotDisplayInfo& HoveredSlot);
-    virtual void OnSlotHovered_Implementation(const FSpellSlotDisplayInfo& HoveredSlot);
+    // 點擊「+」圓球 → 通知 PlayerController 新增技能（對應 Godot AddSpellRequested 信號）
+    DECLARE_DELEGATE(FOnAddSpellRequested)
+    FOnAddSpellRequested OnAddSpellRequested;
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
+    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
-    // BuildLayout 時建立，RefreshSpellList 時只更新文字（不重建樹）
-    UPROPERTY() TObjectPtr<UHorizontalBox> SlotContainer     = nullptr;
-    UPROPERTY() TObjectPtr<UHorizontalBox> GroupDotContainer = nullptr;
-    UPROPERTY() TObjectPtr<UTextBlock>     SlotTooltipText   = nullptr;
-    UPROPERTY() TArray<TObjectPtr<UTextBlock>> SlotTexts;       // 10 個插槽標籤
-    UPROPERTY() TArray<TObjectPtr<UTextBlock>> GroupDotTexts;   // 5 個組別圓點
+    // ── 靜態 UI 元素（BuildLayout 建立一次） ────────────────────────────────────
+    UPROPERTY() TObjectPtr<UCanvasPanel>   RootCanvas      = nullptr;
+    UPROPERTY() TObjectPtr<UHorizontalBox> CircleRow       = nullptr;  // RebuildCircles 動態填入
+    UPROPERTY() TObjectPtr<UBorder>        TooltipPanel    = nullptr;
+    UPROPERTY() TObjectPtr<UTextBlock>     TooltipLabel    = nullptr;
+    UPROPERTY() TObjectPtr<UTextBlock>     MsgLabel        = nullptr;
 
+    // 5 個技能組切換按鈕（標題列同一行，對應 Godot SpellListUI.cs:99-111）
+    UPROPERTY() TArray<TObjectPtr<UButton>> GroupDotButtons;
+
+    // ── 快取 ────────────────────────────────────────────────────────────────────
     UPROPERTY() TArray<FSpellSlotDisplayInfo> CachedSlots;
+    float MsgTimer = 0.f;
 
+    // ── 內部方法 ─────────────────────────────────────────────────────────────────
     void BuildLayout();
+    void RebuildCircles();
+    void RefreshGroupDots();
+    void ShowMsg(const FString& Msg);
+    void ShowTooltip(const FString& Text);
+    void HideTooltip();
+
     ASkillCreatorCharacter* GetOwnerCharacter() const;
+    bool IsAtLimit(const struct FSpellLoadout& Loadout) const;
+    int32 CountActiveNamed(const struct FSpellLoadout& Loadout) const;
+
+    // 5 個組別按鈕 UFUNCTION（dynamic delegate 不接受 lambda）
+    UFUNCTION() void OnGroupBtn0Clicked();
+    UFUNCTION() void OnGroupBtn1Clicked();
+    UFUNCTION() void OnGroupBtn2Clicked();
+    UFUNCTION() void OnGroupBtn3Clicked();
+    UFUNCTION() void OnGroupBtn4Clicked();
 };
