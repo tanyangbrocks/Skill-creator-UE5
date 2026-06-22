@@ -4,9 +4,9 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Blueprint/WidgetTree.h"
 
-void UFloatingDamageWidget::NativeConstruct()
+void UFloatingDamageWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     BuildLayout();
 }
 

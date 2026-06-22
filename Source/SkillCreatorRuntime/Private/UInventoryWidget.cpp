@@ -33,11 +33,11 @@ FLinearColor UInventoryWidget::GetItemColor(EItemId Id) const
     }
 }
 
-// ── NativeConstruct ─────────────────────────────────────────────────────────
+// ── NativeOnInitialized ─────────────────────────────────────────────────────
 
-void UInventoryWidget::NativeConstruct()
+void UInventoryWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     constexpr float SlotW = 38.f, SlotH = 38.f, GapX = 3.f, GapY = 3.f;
     constexpr float PadX  = 8.f,  PadY  = 8.f;

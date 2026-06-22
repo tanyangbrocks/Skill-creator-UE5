@@ -37,9 +37,9 @@ FString UDebugPaintWidget::MatName(EMaterialType Mat)
     }
 }
 
-void UDebugPaintWidget::NativeConstruct()
+void UDebugPaintWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;

@@ -23,7 +23,7 @@ public:
     TDelegate<void(int32)>         OnBrushRadiusSelected;
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     static const int32 MatCount   = 6;

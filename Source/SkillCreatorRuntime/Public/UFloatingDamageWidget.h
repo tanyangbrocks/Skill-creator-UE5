@@ -19,7 +19,7 @@ public:
     void SetAlpha(float Alpha);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     void BuildLayout();

@@ -7,11 +7,30 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "UBlockEditorWidget.h"
+#include "USpellListWidget.h"
 #include "SpellGroup.h"
 
 void ASkillCreatorPlayerController::BeginPlay()
 {
     Super::BeginPlay();
+}
+
+void ASkillCreatorPlayerController::SpawnDefaultHUD()
+{
+    // 不呼叫 Super::SpawnDefaultHUD()——它會用 GetWorld()->GetAuthGameMode()->HUDClass，
+    // 而那個值可能來自 BP_SkillCreatorGameMode_C（World Settings 覆寫）的 CDO，
+    // 進而連到舊版 WBP_PlayerHUD_C，導致準心/物品熱鍵欄消失（見標頭檔註解）。
+    // 這裡複製引擎原始邏輯（NetMode 檢查 + 已有 HUD 則跳過），但 HUD 類別永遠強制
+    // 用純 C++ ASkillCreatorHUD，不管 GameMode CDO 設了什麼。
+    if (MyHUD != nullptr || GetNetMode() == NM_DedicatedServer)
+        return;
+
+    FActorSpawnParameters SpawnInfo;
+    SpawnInfo.Owner            = this;
+    SpawnInfo.Instigator       = GetInstigator();
+    SpawnInfo.ObjectFlags     |= RF_Transient;
+    SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+    MyHUD = GetWorld()->SpawnActor<AHUD>(ASkillCreatorHUD::StaticClass(), SpawnInfo);
 }
 
 void ASkillCreatorPlayerController::SetupInputComponent()
@@ -123,10 +142,58 @@ void ASkillCreatorPlayerController::OnHotbar0() { SetActiveHotbarIndex(9); }
 
 void ASkillCreatorPlayerController::OnOpenEditor()
 {
-    ToggleBlockEditorOverlay();
+    // 對應 Godot Main.cs:1772-1791 ToggleEditor()：E 鍵切換的是「圓球列表」首頁
+    // （_spellList.Visible = !_editorOpen），不是直接開積木編輯器本體（_editor 只在
+    // 列表裡點擊某個圓球後才顯示，見 Main.cs:1794-1829 OnListActiveSpellClicked 等）。
+    // 2026-06-22 修復：之前這裡直接呼叫 ToggleBlockEditorOverlay()，等同把 Godot 兩層
+    // 畫面（列表首頁 → 點擊進入編輯器）疊成一層，玩家按 E 會直接跳進積木編輯器本體，
+    // 跳過原本「先看到整組技能、決定要編輯哪一格或切換哪個技能組」的首頁。
+    if (bBlockEditorOpen)
+    {
+        // 已經在編輯器本體裡：E 鍵走「← 返回」同一條未儲存確認流程關閉整個編輯流程
+        // （對應 Godot _backBtn.Pressed 在 _navStack 空的狀況下呼叫 TryExitEditor()）。
+        if (BlockEditorWidget) BlockEditorWidget->RequestClose();
+        return;
+    }
+
+    ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>();
+    if (!HUD || !HUD->SpellListPanel) return;
+
+    // 只需要綁一次：圓球列表裡點擊任一槽位 → 隱藏列表、開啟積木編輯器編輯該槽位
+    // （對應 Godot Main.cs:436 _spellList.ActiveSpellClicked += OnListActiveSpellClicked）
+    if (!bSpellListSlotClickBound)
+    {
+        HUD->SpellListPanel->OnSlotClicked.BindUObject(this, &ASkillCreatorPlayerController::OnSpellListSlotClicked);
+        bSpellListSlotClickBound = true;
+    }
+
+    const bool bListVisible = HUD->SpellListPanel->GetVisibility() == ESlateVisibility::Visible;
+    if (!bListVisible)
+    {
+        HUD->SpellListPanel->RefreshSpellList(); // 對應 Godot Main.cs:1777 _spellList.Refresh()
+        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Visible);
+        SetShowMouseCursor(true);
+        SetInputMode(FInputModeUIOnly());
+    }
+    else
+    {
+        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
+        SetShowMouseCursor(false);
+        SetInputMode(FInputModeGameAndUI());
+    }
 }
 
-void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
+// 對應 Godot Main.cs:1794-1799 OnListActiveSpellClicked：圓球列表裡點擊主動技能槽位
+// → 隱藏列表、開啟積木編輯器編輯該槽位。
+void ASkillCreatorPlayerController::OnSpellListSlotClicked(int32 SlotIndex)
+{
+    ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>();
+    if (HUD && HUD->SpellListPanel)
+        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
+    OpenBlockEditorForSlot(SlotIndex);
+}
+
+void ASkillCreatorPlayerController::OpenBlockEditorForSlot(int32 SlotIndex)
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
     if (!Char || !Char->SpellCasterComp) return;
@@ -141,27 +208,20 @@ void ASkillCreatorPlayerController::ToggleBlockEditorOverlay()
         BlockEditorWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
     }
 
-    if (!bBlockEditorOpen)
-    {
-        // 載入目前選中槽位既有的積木樹 + 名稱（UBlockEditorWidget::SetEditingSpell 直接指向
-        // Loadout.Slots[ActiveSlot] 本體，不像舊版 Slate 需要 FromBlockNodes() 額外轉換）
-        FSpellGroup& Groups = Char->SpellCasterComp->SpellGroups;
-        const int32 ActiveSlot = Groups.GetActiveLoadout().ActiveIndex;
-        BlockEditorWidget->SetSpellGroups(&Groups);
-        BlockEditorWidget->SetActiveSlot(ActiveSlot);
-        BlockEditorWidget->SetEditingSpell(&Groups.GetActiveLoadout().Slots[ActiveSlot]);
+    // 載入指定槽位既有的積木樹 + 名稱（UBlockEditorWidget::SetEditingSpell 直接指向
+    // Loadout.Slots[SlotIndex] 本體，不像舊版 Slate 需要 FromBlockNodes() 額外轉換）
+    FSpellGroup& Groups = Char->SpellCasterComp->SpellGroups;
+    FSpellLoadout& Loadout = Groups.GetActiveLoadout();
+    const int32 ClampedSlot = FMath::Clamp(SlotIndex, 0, FSpellLoadout::MaxSlots - 1);
+    Loadout.ActiveIndex = ClampedSlot; // 對應 Godot SelectEditorSlot/OpenSlot：_activeEditorSlot = i
+    BlockEditorWidget->SetSpellGroups(&Groups);
+    BlockEditorWidget->SetActiveSlot(ClampedSlot);
+    BlockEditorWidget->SetEditingSpell(&Loadout.Slots[ClampedSlot]);
 
-        BlockEditorWidget->SetVisibility(ESlateVisibility::Visible);
-        bBlockEditorOpen = true;
-        SetShowMouseCursor(true);
-        SetInputMode(FInputModeUIOnly());
-    }
-    else
-    {
-        // 對應 UI 上「← 返回」按鈕的同一條未儲存確認流程（TryExitEditor），E 鍵不開後門
-        // 繞過確認；實際隱藏/還原輸入模式交給 OnBlockEditorClosed（OnCloseRequested 觸發時才做）。
-        BlockEditorWidget->RequestClose();
-    }
+    BlockEditorWidget->SetVisibility(ESlateVisibility::Visible);
+    bBlockEditorOpen = true;
+    SetShowMouseCursor(true);
+    SetInputMode(FInputModeUIOnly());
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorClosed()

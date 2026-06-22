@@ -30,7 +30,7 @@ public:
     void HideFloatTooltip();
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
     virtual void NativeTick(const FGeometry& Geo, float Delta) override;
     virtual FReply NativeOnMouseButtonDown(const FGeometry& Geo, const FPointerEvent& Ev) override;
     virtual FReply NativeOnMouseButtonUp(const FGeometry& Geo, const FPointerEvent& Ev) override;

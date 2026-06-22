@@ -21,7 +21,7 @@ public:
     void SetActiveGroup(int32 Idx);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     TObjectPtr<UButton>    GroupButtons[MaxGroups];

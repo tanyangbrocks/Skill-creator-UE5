@@ -17,6 +17,19 @@
 | CA + 每 tile 物理 | 需要 GPU Compute Shader 卸載模擬，Godot 沒有成熟方案 |
 | **結論** | UE5 是唯一合理的長期目標平台 |
 
+> ⚠️ **2026-06-22 開發期降級記錄**：上面這行「Lumen 動態光照」是當初選 UE5 而不是 Godot 的
+> 長期願景之一，**不是**「現在開發階段預設值就該開到最高」的決定——`DefaultEngine.ini`
+> 當時不知道為什麼把 Lumen（`r.DynamicGlobalIlluminationMethod`）/Ray Tracing
+> （`r.RayTracing`+`RayTracingProxies`）/Virtual Shadow Maps（`r.Shadow.Virtual.Enable`）
+> 全部開到最高，但目前實際開發機是 Intel 內顯（僅 128MB 專用顯存），這組設定讓
+> `RealtimeMeshComponent` 動態生成的 voxel chunk mesh 完全建不出 RT 加速結構，造成嚴重
+> 卡頓直到卡死（詳見 `實作進度.md` 同日期條目）。已把這 5 個 CVar 全部降回傳統管線
+> （GI/Reflection=0、RayTracing 兩項=False、VSM=0）。**這個降級只是「現在開發機跑不動，先
+> 關掉」，不是放棄 Lumen/Nanite/RT 這個長期視覺目標**——之後如果換到有獨立顯卡的機器測試，
+> 或要準備最終發布的視覺品質，應該回來重新評估要不要把這 5 個設定開回去（開回去之前，
+> 至少要先確認 `RealtimeMeshComponent` 那個 RT 加速結構建立失敗的問題本身有沒有解法，
+> 否則同樣的卡死會在任何硬體上、只是換成不同的卡頓程度再發生一次）。
+
 ---
 
 ## 二、關鍵技術決策
@@ -630,6 +643,12 @@ Build 確認 0 錯誤，進入 M-2。
 ### M-10 — GPU CA（Compute Shader，長期目標）
 
 > 目標：Grain 64+ 世界 CA 模擬達到可接受幀率
+> 2026-06-21：已有逐行對照 Godot `CaGpuSimulator.cs` 寫的詳細實作計畫，見
+> [plan-m10-gpu-ca.md](plan-m10-gpu-ca.md)——盤點發現 UE5 這邊骨架（`ETileCategory`、
+> `FCaGpuSimulator` stub、`FTileWorld3D` 的 `GpuSim`/`InGpuZone`/`SetCellFromGpu`）比下面這份
+> 舊版計畫描述的更完整，新文件也發現 Godot 參照實作其實是「同步阻塞」而非真正 async，
+> 建議分階段先做同步版本求正確再考慮升級成 async——下面的雙軌制架構決策仍然有效，細節以新
+> 計畫文件為準。
 
 #### ⚠️ 雙軌制（Hybrid）架構：CPU authoritative + GPU simulation
 

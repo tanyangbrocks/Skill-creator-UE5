@@ -88,12 +88,12 @@ public:
     void OnActiveSlotChanged(int32 NewSlot);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
     virtual void NativeTick(const FGeometry& Geo, float Delta) override;
 
 private:
     // ── 基本血魔 bars（左上角或舊版）────────────────────────────────
-    // （保留供舊版 Blueprint 子類使用，NativeConstruct 自動建立）
+    // （保留供舊版 Blueprint 子類使用，NativeOnInitialized 自動建立）
 
     // ── 物品熱鍵欄（底部）──────────────────────────────────────────
     TArray<TObjectPtr<UBorder>>    ItemSlotBorders;

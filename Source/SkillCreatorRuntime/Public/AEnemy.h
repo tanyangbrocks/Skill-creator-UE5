@@ -94,6 +94,16 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
 
+    // 2026-06-22 修復：純 C++ AEnemy（及其 BP_Enemy 子類，僅多覆寫 AIControllerClass）
+    // 從未建立任何網格元件——對應 Godot 那邊敵人視覺其實是 Main.cs:1716 CreateEnemyMesh()
+    // 外部建立的 MeshInstance3D（per-type 純色 BoxMesh，邊長 = Grain×TileSize，
+    // SyncEnemyMeshes() 每幀同步位置），Enemy.cs 本體完全沒有視覺元件。UE5 這邊 AEnemy
+    // 本身是 APawn，比照 ASkillCreatorCharacter（ACharacter 內建 Mesh）的作法，直接在
+    // actor 內建一個 StaticMeshComponent 當身體，省去額外的外部 dictionary 同步邏輯——
+    // SetActorLocation() 既有呼叫點不變，掛在 root 上的 mesh 自動跟著移動。
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<class UStaticMeshComponent> MeshComp;
+
     // 傷害攔截管線（對應 Godot Enemy.cs:425 ActionBus.Dispatch(EntityDamageAction)）。
     // Godot 端 ActionBus 是全域靜態，玩家/敵人共用一條管線；UE5 維持既有的 per-instance
     // 設計（同 ASkillCreatorCharacter::ActionBus），讓未來「對敵人的傷害護盾」類效果可註冊。
@@ -117,6 +127,10 @@ public:
     void TickRespawn(float /*DeltaTime*/) {}  // 保留 API；計時器由 FTimerHandle 驅動
     void ForceRevive();
     void ApplyGravity();
+
+    // 依目前 Type 重新上色（AEnemyManager::Spawn 在 SpawnActor 之後才設定 Type，
+    // 此時 BeginPlay 已經跑過一次預設色，需要再呼叫一次套用正確顏色）
+    void ApplyBodyColor();
 
     // ── ISnapshottable ────────────────────────────────────────────
     virtual FEntitySnapshot TakeSnapshot()                              const override;

@@ -48,9 +48,9 @@ static UButton* MakeButton(UWidgetTree* WT, const FString& Txt, float FontSz)
     return Btn;
 }
 
-void USettingsWidget::NativeConstruct()
+void USettingsWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;

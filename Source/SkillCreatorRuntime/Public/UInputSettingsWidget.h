@@ -47,7 +47,7 @@ public:
     virtual void OnBindingsChanged_Implementation(const TArray<FKeyBindingEntry>& UpdatedBindings);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     UPROPERTY() TObjectPtr<UVerticalBox> BindingListContainer = nullptr;

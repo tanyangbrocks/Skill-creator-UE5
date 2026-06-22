@@ -36,9 +36,9 @@ FString UShapeMenuWidget::ShapeName(EPlacementShape S)
     }
 }
 
-void UShapeMenuWidget::NativeConstruct()
+void UShapeMenuWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;

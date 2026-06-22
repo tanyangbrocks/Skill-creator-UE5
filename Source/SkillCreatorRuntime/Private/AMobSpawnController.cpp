@@ -6,6 +6,8 @@
 #include "MaterialType.h"
 #include "EngineUtils.h"
 #include "Math/UnrealMathUtility.h"
+#include "MapGenerator3D.h"
+#include "HAL/PlatformProcess.h"
 
 AMobSpawnController::AMobSpawnController()
 {
@@ -121,12 +123,38 @@ bool AMobSpawnController::TryFindSpawnPos(const FGridPos& Player,
                 continue;
         }
 
-        // 7a: 用 HeightEstimator 取地表高度（回傳第一個固體 tile 的 Y；Y=0 為頂部）
-        int32 SurfaceY = TW->HeightEstimator(TX, TZ);
+        // 2026-06-22 修復（對應 Godot MobSpawnController.cs:124 GetTerrainY?.Invoke(tx,tz)
+        // → Main.cs:413 spawner.GetTerrainY = (wx,wz) => _mapGen.GetHeightAt(wx,wz)）：
+        // 原先用 TW->HeightEstimator(TX,TZ) 掃描「實際已載入的 tile 資料」找地表，但生成點
+        // 距玩家 MinSpawnDist~MaxSpawnDist（32~128 tile）外，幾乎必定還沒被 streaming 載入
+        // chunk（GetTile 對未載入 chunk 一律回傳 Air），導致 HeightEstimator 永遠掃到
+        // Height-1（找不到任何非 Air 格）→ 後面 SurfaceY>=H-1 檢查必定失敗 → continue。
+        // 24 次嘗試全部失敗 → TryFindSpawnPos 永遠回傳 false → 敵人從未真正生成。
+        // Godot 版用 MapGenerator 的純雜訊函數 GetHeightAt() 算地表高度，不依賴任何 chunk
+        // 是否已載入；UE5 對應的 FMapGenerator3D::GetHeightAt() 也是同樣的純函數
+        // （MapGenerator3D.cpp:31-42，只用 WorldSeed+WorldH 算 FastNoiseLite，不查 tile），
+        // 改用它就能在生成點 chunk 還沒載入時也正確算出地表高度。
+        int32 SurfaceY = CachedVoxelWorld->GetMapGenerator().GetHeightAt(TX, TZ);
         if (SurfaceY <= 0 || SurfaceY >= H - 1) continue;
 
-        // 7g: 確保生成點所在 chunk 已載入（未載入時 GetCell 誤回傳 Air，永遠找不到地板）
-        TW->EnsureChunkAt(TX, SurfaceY - 1, TZ);
+        // 確保生成點所在 chunk 真的有地形資料（不是只建立空 chunk）——對應 Godot
+        // EnsureChunkSync()（同步生成或讀檔），這裡用「排程背景生成＋忙等套用」模擬同步：
+        // chunk 數量固定（最多腳下+地表 2 個），生成成本與一般 streaming 單個 chunk 相同，
+        // 此函式呼叫頻率受 BaseInterval（預設 8 秒/SpawnRateMultiplier）節流，可接受短暫等待。
+        FMapGenerator3D& Gen = CachedVoxelWorld->GetMapGenerator();
+        const int32 CCX = FMath::FloorToInt(static_cast<float>(TX) / WorldScale::ChunkSize);
+        const int32 CCY = FMath::FloorToInt(static_cast<float>(SurfaceY - 1) / WorldScale::ChunkSize);
+        const int32 CCZ = FMath::FloorToInt(static_cast<float>(TZ) / WorldScale::ChunkSize);
+        if (!Gen.IsChunkGenerated(FIntVector(CCX, CCY, CCZ)))
+        {
+            Gen.EnsureChunksAround(*TW, CCX, CCY, CCZ, /*Radius=*/0, /*MaxPerCall=*/1);
+            int32 WaitGuard = 0;
+            while (Gen.HasPendingChunks() && WaitGuard++ < 200)
+            {
+                FPlatformProcess::Sleep(0.005f);
+                Gen.ApplyPendingChunks(*TW, /*MaxPerFrame=*/999);
+            }
+        }
 
         // 找可站立位置：腳下 Air（SurfaceY-1），腳下一格固體（SurfaceY）
         int32 TY = SurfaceY - 1;

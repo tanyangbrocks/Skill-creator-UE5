@@ -22,7 +22,7 @@ public:
     void SetActiveShape(EPlacementShape Shape);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     static const int32 ShapeCount = 5;

@@ -111,9 +111,9 @@ void UInputSettingsWidget::BuildLayout()
 
 // ─── 初始化 ──────────────────────────────────────────────────────────────────
 
-void UInputSettingsWidget::NativeConstruct()
+void UInputSettingsWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     BuildLayout();
 
     // 拍攝原始鍵位快照（每個動作取第一個 mapping 的 key）

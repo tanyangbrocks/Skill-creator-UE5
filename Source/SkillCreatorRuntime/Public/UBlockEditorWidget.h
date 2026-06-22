@@ -37,6 +37,14 @@ public:
     // 設定）。不持有任何「視覺節點」中介物件——卡片清單直接讀寫 Spell->Blocks 這份樹本身。
     // Spell->Blocks 若為空（全新技能整構）會自動初始化成空陣列，確保 Palette 拖拉有東西可插入。
     void SetEditingSpell(FSpellArray* InSpell);
+    // 對應 Godot 「結構變動 → 整個重建清單」（AbilityEditorUI.cs 的 _canvas.Changed 處理鏈）。
+    // 2026-06-22 修復拖放消失 bug：這個函式可能從 UBlockDropZoneWidget::NativeOnDrop /
+    // UBlockCardWidget::OnDeleteClicked 等「正在處理該卡片本身輸入事件」的呼叫鏈中被呼叫。
+    // Godot 對應的清單重建用 QueueFree()（C# GDScript 的延遲銷毀，當前 frame 結束才真正刪除），
+    // 所以 Godot 可以在 _DropData 回呼裡安全地觸發整個清單重建，即使重建會銷毀呼叫者自身的節點。
+    // UE5 的 UPanelWidget::ClearChildren() 是同步銷毀——如果直接呼叫，會在 Slate 的拖放事件
+    // 仍在該 widget 呼叫堆疊上時把它整個摧毀，導致拖入的卡片憑空消失（看不到放置結果）。
+    // 因此 RebuildList() 改為「排程到下一個 tick 才真正執行」，公開介面不變，呼叫端不需要修改。
     void RebuildList();
     void RefreshStatsPanel();
 
@@ -54,7 +62,7 @@ public:
     void RequestClose() { TryExitEditor(); }
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     void BuildLayout();
@@ -74,10 +82,18 @@ private:
     TObjectPtr<UScrollBox>      CenterScroll;
     TObjectPtr<UVerticalBox>    CenterList;
     TObjectPtr<UBorder>         RightPanel;
+    // 垃圾桶（對應 Godot ScriptCanvas.cs:104-134 _trashZone，畫布右下角，拖入卡片即刪除）
+    TObjectPtr<class UBlockTrashZoneWidget> TrashZone;
 
     // Phase 3/5：正在編輯的技能整構（不擁有）+ 解開的積木樹裸指標（指向 Spell->Blocks）
     FSpellArray* CurrentSpell = nullptr;
     TArray<TUniquePtr<FBlockNode>>* CurrentBlocks = nullptr;
+
+    // 2026-06-22 修復拖放消失 bug：RebuildList() 真正的重建工作搬到這裡，由
+    // SetTimerForNextTick 延後一個 tick 執行，避免在 NativeOnDrop/OnClicked 呼叫堆疊
+    // 仍在使用某個即將被 ClearChildren() 銷毀的子 widget 時就同步摧毀它。
+    bool bRebuildPending = false;
+    void RebuildListImmediate();
 
     // ── Phase 6：容器巢狀導覽（對應 Godot AbilityEditorUI.cs:29-34 _navStack）─────
     FSpellArray* RootSpell = nullptr;

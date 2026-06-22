@@ -18,7 +18,7 @@ public:
                  const UEquipmentComponent* Equip);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     TObjectPtr<UTextBlock> ContentLabel = nullptr;

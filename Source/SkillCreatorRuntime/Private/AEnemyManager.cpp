@@ -38,6 +38,7 @@ AEnemy* AEnemyManager::Spawn(FGridPos Pos, EEnemyType Type, float MaxHp, ESpawnC
     Enemy->Category     = Cat;
     Enemy->GridPosition = Pos;
     if (MaxHp > 0.f) Enemy->MaxHp = MaxHp;
+    Enemy->ApplyBodyColor(); // Type 在 BeginPlay 跑完之後才設定，這裡再上色一次套用正確顏色
 
     Enemies.Add(Enemy);
     if (Cat == ESpawnCategory::Common || Cat == ESpawnCategory::Area)

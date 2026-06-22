@@ -15,6 +15,7 @@
 #include "UPaletteItemWidget.h"
 #include "UBlockDragDropOp.h"
 #include "UBlockCardWidget.h"
+#include "UBlockTrashZoneWidget.h"
 #include "TotemLibrary.h"
 #include "FBlockNode.h"
 #include "BlockUIDescriptor.h"
@@ -28,6 +29,8 @@
 #include "SpellGroup.h"
 #include "Components/ProgressBar.h"
 #include "Components/SpinBox.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -67,9 +70,9 @@ static FLinearColor EngraveClrOf(EEngraveColor C)
 }
 
 
-void UBlockEditorWidget::NativeConstruct()
+void UBlockEditorWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     BuildLayout();
 }
 
@@ -175,11 +178,11 @@ UWidget* UBlockEditorWidget::BuildHeader()
         S->SetVerticalAlignment(VAlign_Center);
     }
 
-    void (UBlockEditorWidget::*DotHandlers[GroupDotCount])() = {
-        &UBlockEditorWidget::OnGroupDot0Clicked, &UBlockEditorWidget::OnGroupDot1Clicked,
-        &UBlockEditorWidget::OnGroupDot2Clicked, &UBlockEditorWidget::OnGroupDot3Clicked,
-        &UBlockEditorWidget::OnGroupDot4Clicked,
-    };
+    // 2026-06-22 修崩潰：AddDynamic 是巨集，會把第二個參數「原樣字串化」去查 UFunction
+    // 名稱（不是真的在執行期接受函式指標變數）。原本寫 DotHandlers[i] 傳一個陣列元素，
+    // 巨集字串化後變成字面文字 "DotHandlers[i]"，引擎拿這個字串去驗證函式名稱格式時
+    // 直接 assert 崩潰（Delegate.h:474 "'DotHandlers[i]' does not look like a member
+    // function"）——必須在呼叫處直接寫 &Class::Method 這種字面運算式，不能用變數轉發。
     for (int32 i = 0; i < GroupDotCount; ++i)
     {
         UButton* Dot = WidgetTree->ConstructWidget<UButton>();
@@ -190,7 +193,15 @@ UWidget* UBlockEditorWidget::BuildHeader()
             Txt->SetJustification(ETextJustify::Center);
             Dot->AddChild(Txt);
         }
-        Dot->OnClicked.AddDynamic(this, DotHandlers[i]);
+        switch (i)
+        {
+            case 0: Dot->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGroupDot0Clicked); break;
+            case 1: Dot->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGroupDot1Clicked); break;
+            case 2: Dot->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGroupDot2Clicked); break;
+            case 3: Dot->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGroupDot3Clicked); break;
+            case 4: Dot->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGroupDot4Clicked); break;
+            default: break;
+        }
         if (UHorizontalBoxSlot* S = DotRow->AddChildToHorizontalBox(Dot))
         {
             S->SetPadding(FMargin(1.5f));
@@ -225,12 +236,31 @@ UWidget* UBlockEditorWidget::BuildBody()
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
     BuildPalette();
 
-    // 中央積木卡片清單容器（內容於 Phase 3 填入）
+    // 中央積木卡片清單容器（內容於 Phase 3 填入）+ 右下角垃圾桶疊加層
+    // 對應 Godot ScriptCanvas.cs:104-134：_trashZone 是疊在整個畫布 Control 上、錨點
+    // 右下角的 Panel，不是卡片清單本身的子節點。這裡用 UOverlay 包住 CenterScroll，
+    // 讓垃圾桶懸浮在卡片清單上層且不影響清單的捲動/排版。
+    UOverlay* CenterOverlay = WidgetTree->ConstructWidget<UOverlay>();
+    if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(CenterOverlay))
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
     CenterScroll = WidgetTree->ConstructWidget<UScrollBox>();
     CenterList = WidgetTree->ConstructWidget<UVerticalBox>();
     CenterScroll->AddChild(CenterList);
-    if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(CenterScroll))
-        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+    if (UOverlaySlot* S = CenterOverlay->AddChildToOverlay(CenterScroll))
+    {
+        S->SetHorizontalAlignment(HAlign_Fill);
+        S->SetVerticalAlignment(VAlign_Fill);
+    }
+
+    TrashZone = CreateWidget<UBlockTrashZoneWidget>(this);
+    TrashZone->Setup([this]() { RebuildList(); });
+    if (UOverlaySlot* S = CenterOverlay->AddChildToOverlay(TrashZone))
+    {
+        S->SetHorizontalAlignment(HAlign_Right);
+        S->SetVerticalAlignment(VAlign_Bottom);
+        S->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
+    }
 
     // 右側統計面板容器（Godot AbilityEditorUI.cs:936-937，175px，內容於 Phase 5 填入）
     USizeBox* RightSize = WidgetTree->ConstructWidget<USizeBox>();
@@ -284,11 +314,8 @@ void UBlockEditorWidget::BuildPalette()
         S->SetHorizontalAlignment(HAlign_Fill);
 
     static const TCHAR* MainTabNames[3] = { TEXT("技能因子"), TEXT("積木"), TEXT("刻印") };
-    void (UBlockEditorWidget::*MainHandlers[3])() = {
-        &UBlockEditorWidget::OnMainTab0Clicked,
-        &UBlockEditorWidget::OnMainTab1Clicked,
-        &UBlockEditorWidget::OnMainTab2Clicked,
-    };
+    // 2026-06-22 修崩潰：AddDynamic 是巨集會字串化第二個參數，不能傳函式指標變數
+    // （見 BuildHeader() 上方同一個 bug 的詳細註解）。
     for (int32 i = 0; i < 3; ++i)
     {
         UButton* Btn = WidgetTree->ConstructWidget<UButton>();
@@ -296,7 +323,13 @@ void UBlockEditorWidget::BuildPalette()
         Txt->SetText(FText::FromString(MainTabNames[i]));
         Txt->SetJustification(ETextJustify::Center);
         Btn->AddChild(Txt);
-        Btn->OnClicked.AddDynamic(this, MainHandlers[i]);
+        switch (i)
+        {
+            case 0: Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnMainTab0Clicked); break;
+            case 1: Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnMainTab1Clicked); break;
+            case 2: Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnMainTab2Clicked); break;
+            default: break;
+        }
         if (UHorizontalBoxSlot* S = MainTabRow->AddChildToHorizontalBox(Btn))
             S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
         MainTabButtons[i] = Btn;
@@ -310,18 +343,21 @@ void UBlockEditorWidget::BuildPalette()
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
     }
 
+    // Godot AbilityEditorUI.cs:464-497 bodyRow：scroll（內容清單）先 AddChild，subWrap（子標籤欄）
+    // 後 AddChild——HBoxContainer 子節點順序＝視覺順序，先加的在左。之前 UE5 把 SubTabSize 先加進
+    // PaletteBody，導致子標籤欄跑到左邊，內容清單被擠到右邊，跟 Godot 左右相反。交換加入順序修正。
+    UScrollBox* ContentScroll = WidgetTree->ConstructWidget<UScrollBox>();
+    PaletteContentList = WidgetTree->ConstructWidget<UVerticalBox>();
+    ContentScroll->AddChild(PaletteContentList);
+    if (UHorizontalBoxSlot* S = PaletteBody->AddChildToHorizontalBox(ContentScroll))
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
     USizeBox* SubTabSize = WidgetTree->ConstructWidget<USizeBox>();
     SubTabSize->SetWidthOverride(36.f);
     SubTabColumn = WidgetTree->ConstructWidget<UVerticalBox>();
     SubTabSize->SetContent(SubTabColumn);
     if (UHorizontalBoxSlot* S = PaletteBody->AddChildToHorizontalBox(SubTabSize))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-
-    UScrollBox* ContentScroll = WidgetTree->ConstructWidget<UScrollBox>();
-    PaletteContentList = WidgetTree->ConstructWidget<UVerticalBox>();
-    ContentScroll->AddChild(PaletteContentList);
-    if (UHorizontalBoxSlot* S = PaletteBody->AddChildToHorizontalBox(ContentScroll))
-        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
     RebuildSubTabColumn();
     RefreshMainTabHighlight();
@@ -353,15 +389,8 @@ void UBlockEditorWidget::RebuildSubTabColumn()
     else
         Names = { TEXT("行動"), TEXT("白"), TEXT("橙"), TEXT("藍"), TEXT("紅"), TEXT("綠"), TEXT("紫"), TEXT("黃"), TEXT("黑"), TEXT("元素"), TEXT("法則") };
 
-    static void (UBlockEditorWidget::*SubHandlers[11])() = {
-        &UBlockEditorWidget::OnSubTab0Clicked,  &UBlockEditorWidget::OnSubTab1Clicked,
-        &UBlockEditorWidget::OnSubTab2Clicked,  &UBlockEditorWidget::OnSubTab3Clicked,
-        &UBlockEditorWidget::OnSubTab4Clicked,  &UBlockEditorWidget::OnSubTab5Clicked,
-        &UBlockEditorWidget::OnSubTab6Clicked,  &UBlockEditorWidget::OnSubTab7Clicked,
-        &UBlockEditorWidget::OnSubTab8Clicked,  &UBlockEditorWidget::OnSubTab9Clicked,
-        &UBlockEditorWidget::OnSubTab10Clicked,
-    };
-
+    // 2026-06-22 修崩潰：AddDynamic 是巨集會字串化第二個參數，不能傳函式指標變數
+    // （見 BuildHeader() 註解）。
     for (int32 i = 0; i < Names.Num(); ++i)
     {
         UButton* Btn = WidgetTree->ConstructWidget<UButton>();
@@ -372,7 +401,21 @@ void UBlockEditorWidget::RebuildSubTabColumn()
         Txt->SetJustification(ETextJustify::Center);
         Txt->SetColorAndOpacity(FSlateColor(FLinearColor(0.62f, 0.62f, 0.72f)));
         Btn->AddChild(Txt);
-        Btn->OnClicked.AddDynamic(this, SubHandlers[i]);
+        switch (i)
+        {
+            case 0:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab0Clicked);  break;
+            case 1:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab1Clicked);  break;
+            case 2:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab2Clicked);  break;
+            case 3:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab3Clicked);  break;
+            case 4:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab4Clicked);  break;
+            case 5:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab5Clicked);  break;
+            case 6:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab6Clicked);  break;
+            case 7:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab7Clicked);  break;
+            case 8:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab8Clicked);  break;
+            case 9:  Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab9Clicked);  break;
+            case 10: Btn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnSubTab10Clicked); break;
+            default: break;
+        }
         if (UVerticalBoxSlot* S = SubTabColumn->AddChildToVerticalBox(Btn))
             S->SetHorizontalAlignment(HAlign_Fill);
     }
@@ -397,14 +440,20 @@ void UBlockEditorWidget::RebuildPaletteContent()
         for (const FTotemData& T : FTotemLibrary::AllTotems())
         {
             if (T.Type != Filter) continue;
-            const bool bLocked = T.RequiredPlayerLevel > PlayerLevel;
-            const FString LockTag = bLocked ? FString::Printf(TEXT("  🔒LV%d"), T.RequiredPlayerLevel) : TEXT("");
+            // Godot AbilityEditorUI.cs:620-668 BuildTotemContent：RequiredPlayerLevel 只用來
+            // 在文字後面附加「LV{n}+」提示（line 629 lvTag），從未檢查/設定 btn.Disabled 或
+            // 灰階顏色——技能因子（Totem）在這個遊戲階段永遠可點擊/可拖曳，不會被等級鎖住。
+            // 等級鎖只存在於 BuildEngraveContent（line 814 locked = eng.RequiredPlayerLevel > PlayerLevel,
+            // line 820 btn.Disabled = locked）。之前 UE5 把 Engraving 的鎖邏輯誤套用到 Totem 上，
+            // 是純 UE5 發明的限制，Godot 原版完全沒有——移除，只保留提示文字。
+            const FString LvTag = T.RequiredPlayerLevel > 1
+                ? FString::Printf(TEXT("  LV%d+"), T.RequiredPlayerLevel) : TEXT("");
             const FText Label = FText::FromString(FString::Printf(TEXT("  %s%s  %dpt"),
-                *T.DisplayName.ToString(), *LockTag, T.BaseAbilityPointCost));
+                *T.DisplayName.ToString(), *LvTag, T.BaseAbilityPointCost));
 
             UPaletteItemWidget* Item = CreateWidget<UPaletteItemWidget>(this);
             const FName TotemId = T.TotemId;
-            Item->Setup(Label, TotemTypeColor(T.Type), bLocked,
+            Item->Setup(Label, TotemTypeColor(T.Type), /*bInLocked=*/false,
                 [TotemId](UBlockDragDropOp& Op) { Op.bIsTotemBlock = true; Op.PaletteTotemId = TotemId; });
             PaletteContentList->AddChild(Item);
         }
@@ -537,12 +586,48 @@ void UBlockEditorWidget::SetEditingSpell(FSpellArray* InSpell)
     CurrentBlocks = CurrentSpell ? CurrentSpell->Blocks.Get() : nullptr;
     if (SpellNameBox)
         SpellNameBox->SetText(FText::FromString(CurrentSpell ? CurrentSpell->Name : FString()));
-    RebuildList();
-    bIsDirty = false; // 載入既有資料不算「使用者編輯」，RebuildList 內部會先設 true，這裡重置回乾淨狀態
+    // 這裡呼叫 Immediate 版本：SetEditingSpell 不是從某個子卡片/拖放區自己的事件回呼鏈裡呼叫的
+    // （是 PlayerController 開啟編輯器時呼叫），同步重建沒有「正在銷毀呼叫者自身」的風險，
+    // 而且下一行要立刻讀 bIsDirty 並重置回 false，必須在這裡就確定清單已經重建完成。
+    RebuildListImmediate();
+    bIsDirty = false; // 載入既有資料不算「使用者編輯」，RebuildListImmediate 內部會先設 true，這裡重置回乾淨狀態
     RefreshHeaderState();
 }
 
 void UBlockEditorWidget::RebuildList()
+{
+    // 2026-06-22 修復「拖曳調色盤卡片到畫布，卡片憑空消失」：這個函式常被
+    // UBlockDropZoneWidget::NativeOnDrop / UBlockCardWidget::OnDeleteClicked 等
+    // 仍在處理某個子 widget 自身輸入事件的呼叫鏈呼叫。若在這裡直接 ClearChildren()，
+    // 會在 Slate 拖放事件分派堆疊還沒退出該 widget 時就把它整個摧毀——卡片因此「看起來」
+    // 沒有落地，其實是重建時機過早造成的同步銷毀問題，不是 Insert 邏輯本身的 bug。
+    // 對應 Godot 行為：Godot 的等價清單重建用 QueueFree()（延遲到當前 frame 結束才真正
+    // 刪除節點），_DropData 回呼裡可以安全觸發整個重建。UE5 沒有原生等價物，改用
+    // SetTimerForNextTick 延後到下一個 tick 才真正執行 ClearChildren()+重建，
+    // 讓目前這一輪的 Slate 事件分派先完整結束。bRebuildPending 避免同一 tick 內重複排程。
+    if (bRebuildPending) return;
+    bRebuildPending = true;
+    if (UWorld* World = GetWorld())
+    {
+        TWeakObjectPtr<UBlockEditorWidget> WeakThis(this);
+        World->GetTimerManager().SetTimerForNextTick([WeakThis]()
+        {
+            if (UBlockEditorWidget* Self = WeakThis.Get())
+            {
+                Self->bRebuildPending = false;
+                Self->RebuildListImmediate();
+            }
+        });
+    }
+    else
+    {
+        // 編輯器/無 World 環境保險：找不到 World 就退回同步執行，至少行為正確
+        bRebuildPending = false;
+        RebuildListImmediate();
+    }
+}
+
+void UBlockEditorWidget::RebuildListImmediate()
 {
     bIsDirty = true; // 對應 Godot 幾乎每個編輯 callback 都設 _isDirty=true；SetEditingSpell 載入後會重置回 false
     if (!CenterList) return;

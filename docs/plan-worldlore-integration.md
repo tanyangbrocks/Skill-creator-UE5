@@ -201,7 +201,9 @@
 - 實作時讀取：`game-setting/功能.md`「裝備」段落
 - 改動：`PlayerEquipment.cs`（大改）、`ItemData.cs`、`ItemRegistry.cs`
 
-**W-10｜角色創建系統**
+**W-10｜角色創建系統**（2026-06-21：已有具體化規格 + 實作計畫，見
+[plan-w10-character-creation.md](plan-w10-character-creation.md)，下面 a~f 僅供分類對照，
+細節以新計畫文件為準）
 
   **W-10a｜種族階級框架**
   - 1 階免費 / 2 階付費解鎖 / 3 階需先解鎖 2 階 / 神族限轉世

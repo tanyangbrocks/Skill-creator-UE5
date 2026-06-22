@@ -40,6 +40,16 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     // Each FSpellArray is serialized by its UPROPERTY fields (Name, Slots, etc.).
     UPROPERTY() TArray<FSpellArray> SpellBook;
 
+    // W-10：角色創建系統（對應 docs/plan-w10-character-creation.md §3.2）
+    UPROPERTY() FName RaceId;
+    UPROPERTY() int32 BasePoint_Physique  = 0; // 體魄
+    UPROPERTY() int32 BasePoint_Strength  = 0; // 肌力
+    UPROPERTY() int32 BasePoint_Endurance = 0; // 耐力
+    UPROPERTY() int32 BasePoint_Agility   = 0; // 敏捷
+    UPROPERTY() int32 BasePoint_Intellect = 0; // 智慧
+    UPROPERTY() int32 BasePoint_Charisma  = 0; // 魅力
+    UPROPERTY() int32 BasePoint_Luck      = 0; // 幸運
+
     // {ProjectSavedDir}/Characters/{Id}.json
     static FString FilePath(const FString& InId);
 

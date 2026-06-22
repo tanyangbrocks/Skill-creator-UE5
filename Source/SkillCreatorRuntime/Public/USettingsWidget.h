@@ -23,7 +23,7 @@ public:
     void SyncState(bool bHold, bool bPerfect);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     TObjectPtr<UCheckBox> HoldCheck    = nullptr;

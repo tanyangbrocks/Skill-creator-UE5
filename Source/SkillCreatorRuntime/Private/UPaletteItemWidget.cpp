@@ -5,15 +5,20 @@
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 
-void UPaletteItemWidget::NativeConstruct()
+void UPaletteItemWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     Bg = WidgetTree->ConstructWidget<UBorder>();
     Bg->SetPadding(FMargin(6.f, 3.f));
     WidgetTree->RootWidget = Bg;
 
+    // Godot Btn() 文字（AbilityEditorUI.cs:630/817 等）本身不自動換行，但 Godot 的列高是
+    // CustomMinimumSize=(0,30)/(0,26) 固定值，文字超寬只會被裁切，視覺上不明顯；UE5 的
+    // UTextBlock 預設不換行則會直接溢出列外蓋住右側子標籤欄。開啟 AutoWrapText 讓較長的
+    // 技能因子/刻印描述（含 LV 標籤、pt 數字）能在 220px 欄寬內完整換行顯示，不裁切文字。
     LabelText = WidgetTree->ConstructWidget<UTextBlock>();
+    LabelText->SetAutoWrapText(true);
     Bg->SetContent(LabelText);
 }
 

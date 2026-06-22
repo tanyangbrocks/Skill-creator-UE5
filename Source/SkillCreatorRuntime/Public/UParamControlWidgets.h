@@ -24,7 +24,7 @@ class SKILLCREATORRUNTIME_API UParamTextEditWidget : public UUserWidget
 public:
     void Setup(const FString& InitialText, const FText& Hint, float Width, TFunction<void(const FString&)> InOnCommit);
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 private:
     TObjectPtr<UEditableTextBox> Box;
     TObjectPtr<USizeBox> SizeBox;
@@ -40,7 +40,7 @@ class SKILLCREATORRUNTIME_API UParamSpinWidget : public UUserWidget
 public:
     void Setup(float InitialValue, float Min, float Max, float Step, float Width, TFunction<void(float)> InOnChanged);
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 private:
     TObjectPtr<USpinBox> Box;
     TFunction<void(float)> OnChanged;
@@ -56,7 +56,7 @@ public:
     void Setup(const TArray<FString>& Values, const TArray<FString>& Labels, const FString& CurrentValue,
                float Width, TFunction<void(const FString&)> InOnChanged);
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 private:
     TObjectPtr<UComboBoxString> Box;
     TArray<FString> ValueList;
@@ -72,7 +72,7 @@ class SKILLCREATORRUNTIME_API UParamCheckboxWidget : public UUserWidget
 public:
     void Setup(bool bInitialValue, const FText& Label, TFunction<void(bool)> InOnChanged);
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 private:
     TObjectPtr<UCheckBox> Box;
     TFunction<void(bool)> OnChanged;
@@ -87,7 +87,7 @@ class SKILLCREATORRUNTIME_API UParamTinyLabelWidget : public UUserWidget
 public:
     void Setup(const FText& InText);
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 private:
     TObjectPtr<UTextBlock> Text;
 };

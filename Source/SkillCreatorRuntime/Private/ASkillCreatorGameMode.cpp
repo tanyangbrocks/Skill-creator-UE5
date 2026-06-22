@@ -14,7 +14,6 @@
 #include "TimerManager.h"
 #include "WorldScale.h"
 #include "GridPos.h"
-#include "HAL/PlatformProcess.h"
 
 ASkillCreatorGameMode::ASkillCreatorGameMode()
 {
@@ -95,31 +94,13 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
     // Godot GameFlowUI.cs:451-502（PregenerateWorld）/ Main.cs:284-291：
     // 新世界第一次進入時，預先生成出生點周圍地形、寫入磁碟、記錄出生點，
     // 之後永遠走「磁碟讀取 / Streaming 懶生成」路徑，不再重算。
+    // 自 2026-06-20 起，UGameFlowWidget 建立世界時已經會立即預生成（對齊 Godot 行為），
+    // 所以這裡通常不會再觸發；保留作為防呆（例如世界目錄手動複製、bIsFirstEnter 殘留 true 的情況）。
     FIntVector WorldSpawnTile = CurrentWorldSave.PlayerSpawn;
     if (CurrentWorldSave.bIsFirstEnter && VW)
     {
-        FMapGenerator3D& Gen = VW->GetMapGenerator();
-        FTileWorld3D*    TW  = VW->GetTileWorld();
-
-        const FSpawnData Spawn = Gen.ComputeSpawnPoint(*TW);
-        WorldSpawnTile = Spawn.PlayerSpawn;
-
-        const int32 CCX = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.X) / WorldScale::ChunkSize);
-        const int32 CCY = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.Y) / WorldScale::ChunkSize);
-        const int32 CCZ = FMath::FloorToInt(static_cast<float>(WorldSpawnTile.Z) / WorldScale::ChunkSize);
-
-        Gen.EnsureChunksAround(*TW, CCX, CCY, CCZ, /*Radius=*/2, /*MaxPerCall=*/999);
-        while (Gen.HasPendingChunks())
-        {
-            FPlatformProcess::Sleep(0.005f);
-            Gen.ApplyPendingChunks(*TW, /*MaxPerFrame=*/999);
-        }
-
-        TW->SaveDirtyChunks(World.WorldDir);
-
-        CurrentWorldSave.PlayerSpawn   = WorldSpawnTile;
-        CurrentWorldSave.bIsFirstEnter = false;
-        CurrentWorldSave.SaveMeta(FFlowSaveSystem::MetaPath(World.WorldDir));
+        FFlowSaveSystem::PregenerateSpawnArea(*VW->GetTileWorld(), VW->GetMapGenerator(), CurrentWorldSave);
+        WorldSpawnTile = CurrentWorldSave.PlayerSpawn;
     }
 
     // 角色在 BeginPlay 當下（選世界之前）就已經 spawn 了，
@@ -143,6 +124,27 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
 
             Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::PerformSave);
         }
+
+    // 2026-06-22 診斷用：使用者回報熱鍵欄/準心/採掘/敵人全部消失，懷疑是 StartGameplayWithWorld()
+    // 沒有真正跑到、或跑到但某個環節綁定失敗。這裡印出關鍵狀態，下次測試時直接看 log 就能
+    // 確認問題出在哪一段，不用再憑空猜——找到根因後這段 log 就可以移除。
+    {
+        int32 EnemyMgrCount = 0, SpawnCtrlCount = 0;
+        for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It) ++EnemyMgrCount;
+        for (TActorIterator<AMobSpawnController> It(GetWorld()); It; ++It) ++SpawnCtrlCount;
+        APlayerController* DiagPC = GetWorld()->GetFirstPlayerController();
+        ASkillCreatorCharacter* DiagChar = DiagPC ? Cast<ASkillCreatorCharacter>(DiagPC->GetPawn()) : nullptr;
+        ASkillCreatorHUD* DiagHUD = DiagPC ? Cast<ASkillCreatorHUD>(DiagPC->GetHUD()) : nullptr;
+        UE_LOG(LogTemp, Warning,
+            TEXT("[DIAG] StartGameplayWithWorld 結束：VW=%s, PC=%s, Char=%s, ")
+            TEXT("HUD=%s, HUD->HUDWidget=%s, EnemyManagerCount=%d, MobSpawnControllerCount=%d"),
+            VW ? TEXT("valid") : TEXT("NULL"),
+            DiagPC ? TEXT("valid") : TEXT("NULL"),
+            DiagChar ? TEXT("valid") : TEXT("NULL"),
+            DiagHUD ? TEXT("valid") : TEXT("NULL"),
+            (DiagHUD && DiagHUD->HUDWidget) ? TEXT("valid") : TEXT("NULL"),
+            EnemyMgrCount, SpawnCtrlCount);
+    }
 
     // 每 30 秒自動存檔
     GetWorldTimerManager().SetTimer(

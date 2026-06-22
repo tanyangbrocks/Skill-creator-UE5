@@ -3,9 +3,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 
-void UCardDragHandleWidget::NativeConstruct()
+void UCardDragHandleWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     Bg = WidgetTree->ConstructWidget<UBorder>();
     WidgetTree->RootWidget = Bg;
 }

@@ -21,7 +21,7 @@ public:
     void Refresh(const UEquipmentComponent* Equip);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
 
 private:
     TObjectPtr<UBorder>    SlotBorders[3];

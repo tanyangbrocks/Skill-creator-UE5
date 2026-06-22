@@ -22,9 +22,9 @@ FLinearColor UEquipmentWidget::GetItemColor(EItemId Id) const
     }
 }
 
-void UEquipmentWidget::NativeConstruct()
+void UEquipmentWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     constexpr float PadX   = 8.f,  PadY   = 8.f;
     constexpr float IconS  = 38.f;

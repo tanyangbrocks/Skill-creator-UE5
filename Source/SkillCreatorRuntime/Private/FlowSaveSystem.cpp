@@ -1,10 +1,13 @@
 #include "FlowSaveSystem.h"
 #include "CharacterSaveData.h"
 #include "TileWorld3D.h"
+#include "MapGenerator3D.h"
 #include "WorldSaveData.h"
+#include "WorldScale.h"
 #include "Misc/Paths.h"
 #include "Misc/Guid.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 
 FString FFlowSaveSystem::WorldRoot(const FString& WorldId)
 {
@@ -70,6 +73,38 @@ bool FFlowSaveSystem::DeleteWorld(const FString& WorldId)
     return IFileManager::Get().DeleteDirectory(*Dir, false, true);
 }
 
+void FFlowSaveSystem::PregenerateSpawnArea(FTileWorld3D& World, FMapGenerator3D& Gen, FWorldSaveData& WorldMeta)
+{
+    StartPregenerateSpawnArea(World, Gen, WorldMeta);
+    while (Gen.HasPendingChunks())
+    {
+        FPlatformProcess::Sleep(0.005f);
+        Gen.ApplyPendingChunks(World, /*MaxPerFrame=*/999);
+    }
+    FinishPregenerateSpawnArea(World, WorldMeta);
+}
+
+void FFlowSaveSystem::StartPregenerateSpawnArea(FTileWorld3D& World, FMapGenerator3D& Gen, FWorldSaveData& WorldMeta)
+{
+    const FSpawnData Spawn = Gen.ComputeSpawnPoint(World);
+
+    const int32 CCX = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.X) / WorldScale::ChunkSize);
+    const int32 CCY = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Y) / WorldScale::ChunkSize);
+    const int32 CCZ = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Z) / WorldScale::ChunkSize);
+
+    Gen.EnsureChunksAround(World, CCX, CCY, CCZ, /*Radius=*/2, /*MaxPerCall=*/999);
+
+    WorldMeta.PlayerSpawn = Spawn.PlayerSpawn;
+}
+
+void FFlowSaveSystem::FinishPregenerateSpawnArea(FTileWorld3D& World, FWorldSaveData& WorldMeta)
+{
+    World.SaveDirtyChunks(WorldMeta.WorldDir);
+
+    WorldMeta.bIsFirstEnter = false;
+    WorldMeta.SaveMeta(MetaPath(WorldMeta.WorldDir));
+}
+
 void FFlowSaveSystem::ListAllCharacters(TArray<FCharacterSaveData>& Out)
 {
     const FString CharactersRoot = FPaths::ProjectSavedDir() / TEXT("Characters");
@@ -92,6 +127,13 @@ bool FFlowSaveSystem::CreateNewCharacter(const FString& Name, FCharacterSaveData
     OutData = FCharacterSaveData();
     OutData.Id            = FGuid::NewGuid().ToString(EGuidFormats::Digits);
     OutData.CharacterName = Name;
+    return OutData.Save();
+}
+
+bool FFlowSaveSystem::CreateNewCharacter(const FCharacterSaveData& Prefilled, FCharacterSaveData& OutData)
+{
+    OutData    = Prefilled;
+    OutData.Id = FGuid::NewGuid().ToString(EGuidFormats::Digits);
     return OutData.Save();
 }
 

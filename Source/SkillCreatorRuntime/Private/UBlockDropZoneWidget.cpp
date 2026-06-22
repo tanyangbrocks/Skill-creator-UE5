@@ -6,9 +6,9 @@
 #include "Components/Border.h"
 #include "Components/SizeBox.h"
 
-void UBlockDropZoneWidget::NativeConstruct()
+void UBlockDropZoneWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
 
     USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
     Size->SetHeightOverride(6.f);

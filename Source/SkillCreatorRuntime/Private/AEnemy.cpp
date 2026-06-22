@@ -6,6 +6,9 @@
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "AFloatingDamageActor.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -14,6 +17,32 @@ AEnemy::AEnemy()
     PrimaryActorTick.bCanEverTick = false;
     AuraComp = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     UniqueId = ++NextId;
+
+    // 2026-06-22 修復：對應 Godot Main.cs:1716 CreateEnemyMesh()——每種 EEnemyType 一個
+    // 純色 BoxMesh（Unshaded），邊長 = Grain×TileSize = 1 遊戲單位（100cm，與 WorldScale
+    // 恆等式一致）。UE5 之前完全沒有任何視覺元件（純 APawn，BP_Enemy 子類也只加了
+    // AIControllerClass，沒有 mesh），敵人即使正確 Spawn 在世界裡也完全不可見。
+    // 用引擎內建 Cube + 動態材質上色，不需要額外美術資產。
+    MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
+    SetRootComponent(MeshComp);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    MeshComp->SetCollisionObjectType(ECC_Pawn);
+    MeshComp->SetCastShadow(false);
+
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (CubeFinder.Succeeded())
+    {
+        MeshComp->SetStaticMesh(CubeFinder.Object);
+        // Cube 預設 100×100×100cm；縮放至 1 遊戲單位（Grain×TileSizeCm，恆等於 100cm，
+        // 但用公式表示以保持「改 Grain 自動跟進」的專案慣例，對應 WorldScale.h 其他用法）。
+        const float UnitCm = WorldScale::TileSizeCm * static_cast<float>(WorldScale::GrainCurrent);
+        const float S = UnitCm / 100.f;
+        MeshComp->SetRelativeScale3D(FVector(S));
+        // Godot mesh.Position.Y = (Position.Y+1)*eT - mh*0.5（腳底格往上半個身高對齊地表，
+        // mh = 1 遊戲單位高）；UE5 SetActorLocation 用 TileToWorld（腳底格中心），所以 mesh
+        // 相對 root 往上偏移半個單位即可達到同樣的「腳底對齊地表」視覺效果。
+        MeshComp->SetRelativeLocation(FVector(0.f, 0.f, UnitCm * 0.5f));
+    }
 
     // 優先用 BP_EnemyAIController（若存在，留給未來在 Blueprint 補額外邏輯的空間）；
     // 找不到時 fallback 到純 C++ AEnemyAIController（其 constructor 自己也會載入
@@ -25,9 +54,38 @@ AEnemy::AEnemy()
         AIControllerClass = AEnemyAIController::StaticClass();
 }
 
+// 對應 Godot Main.cs:1719-1726 CreateEnemyMesh() 的 per-type 顏色表（純 Unshaded 色塊，
+// 不靠材質貼圖分辨怪物種類）。動態材質的 Parent 用 mesh 元件當前已指定的材質（不論是
+// Cube 自帶的引擎預設材質還是其他），SetVectorParameterValue 對沒有該參數的材質是
+// no-op，最差情況維持原色但 mesh 仍然可見——不會因為材質缺參數而整體失敗。
+void AEnemy::ApplyBodyColor()
+{
+    if (!MeshComp) return;
+
+    FLinearColor Col;
+    switch (Type)
+    {
+    case EEnemyType::Melee:  Col = FLinearColor(0.90f, 0.15f, 0.15f); break; // 紅
+    case EEnemyType::Ranged: Col = FLinearColor(0.90f, 0.50f, 0.10f); break; // 橙
+    case EEnemyType::Patrol: Col = FLinearColor(0.35f, 0.25f, 0.80f); break; // 藍紫
+    case EEnemyType::Heavy:  Col = FLinearColor(0.55f, 0.08f, 0.08f); break; // 暗紅
+    default:                 Col = FLinearColor(0.60f, 0.60f, 0.60f); break;
+    }
+
+    UMaterialInterface* Base = MeshComp->GetMaterial(0);
+    if (!Base) return;
+    UMaterialInstanceDynamic* MID = MeshComp->CreateAndSetMaterialInstanceDynamic(0);
+    if (!MID) return;
+    MID->SetVectorParameterValue(TEXT("Color"),     Col);
+    MID->SetVectorParameterValue(TEXT("BaseColor"), Col);
+    MID->SetVectorParameterValue(TEXT("Tint"),      Col);
+}
+
 void AEnemy::BeginPlay()
 {
     Super::BeginPlay();
+
+    ApplyBodyColor();
 
     for (TActorIterator<AVoxelWorldActor> It(GetWorld()); It; ++It)
     {

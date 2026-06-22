@@ -16,7 +16,7 @@ public:
     void Setup(TArray<TUniquePtr<FBlockNode>>* InParentList, int32 InInsertAt, TFunction<void()> InOnChanged);
 
 protected:
-    virtual void NativeConstruct() override;
+    virtual void NativeOnInitialized() override;
     virtual void NativeOnDragEnter(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
                                     UDragDropOperation* InOperation) override;
     virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;

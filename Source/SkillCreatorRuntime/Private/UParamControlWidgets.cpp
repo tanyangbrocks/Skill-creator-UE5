@@ -9,9 +9,9 @@
 
 // ── UParamTextEditWidget ─────────────────────────────────────────────
 
-void UParamTextEditWidget::NativeConstruct()
+void UParamTextEditWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
     WidgetTree->RootWidget = Size;
     Box = WidgetTree->ConstructWidget<UEditableTextBox>();
@@ -37,9 +37,9 @@ void UParamTextEditWidget::HandleCommitted(const FText& Text, ETextCommit::Type 
 
 // ── UParamSpinWidget ─────────────────────────────────────────────────
 
-void UParamSpinWidget::NativeConstruct()
+void UParamSpinWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     Box = WidgetTree->ConstructWidget<USpinBox>();
     WidgetTree->RootWidget = Box;
     Box->OnValueChanged.AddDynamic(this, &UParamSpinWidget::HandleValueChanged);
@@ -66,9 +66,9 @@ void UParamSpinWidget::HandleValueChanged(float NewValue)
 
 // ── UParamDropdownWidget ─────────────────────────────────────────────
 
-void UParamDropdownWidget::NativeConstruct()
+void UParamDropdownWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     Box = WidgetTree->ConstructWidget<UComboBoxString>();
     WidgetTree->RootWidget = Box;
     Box->OnSelectionChanged.AddDynamic(this, &UParamDropdownWidget::HandleSelectionChanged);
@@ -103,9 +103,9 @@ void UParamDropdownWidget::HandleSelectionChanged(FString SelectedItem, ESelectI
 
 // ── UParamCheckboxWidget ─────────────────────────────────────────────
 
-void UParamCheckboxWidget::NativeConstruct()
+void UParamCheckboxWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     Box = WidgetTree->ConstructWidget<UCheckBox>();
     WidgetTree->RootWidget = Box;
     Box->OnCheckStateChanged.AddDynamic(this, &UParamCheckboxWidget::HandleStateChanged);
@@ -128,9 +128,9 @@ void UParamCheckboxWidget::HandleStateChanged(bool bIsChecked)
 
 // ── UParamTinyLabelWidget ─────────────────────────────────────────────
 
-void UParamTinyLabelWidget::NativeConstruct()
+void UParamTinyLabelWidget::NativeOnInitialized()
 {
-    Super::NativeConstruct();
+    Super::NativeOnInitialized();
     Text = WidgetTree->ConstructWidget<UTextBlock>();
     WidgetTree->RootWidget = Text;
     Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.58f, 0.58f, 0.62f)));
