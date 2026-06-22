@@ -40,6 +40,10 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     // Each FSpellArray is serialized by its UPROPERTY fields (Name, Slots, etc.).
     UPROPERTY() TArray<FSpellArray> SpellBook;
 
+    // B-2：角色年齡（玩家自填，非計算值）
+    UPROPERTY() int32 CharacterAge  = 0;   // 角色設定年齡
+    UPROPERTY() int32 AppearanceAge = 0;   // 外貌年齡（可與角色年齡不同）
+
     // W-10：角色創建系統（對應 docs/plan-w10-character-creation.md §3.2）
     UPROPERTY() FName RaceId;
     UPROPERTY() int32 BasePoint_Physique  = 0; // 體魄

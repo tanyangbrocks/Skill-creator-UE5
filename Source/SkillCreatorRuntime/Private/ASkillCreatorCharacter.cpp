@@ -107,6 +107,11 @@ void ASkillCreatorCharacter::BeginPlay()
     FExecutionContext::TaskCounters.Empty();
     FExecutionContext::TaskCounterReached.Empty();
     FExecutionContext::bTraceMode = false;
+
+    // B-4: HP/MP 每 0.5s 一跳的 regen 計時器（對應設計文件「每 0.5 秒恢復的量」）
+    // 速率單位為「/秒」（Godot CharacterStats.cs），所以每跳應用 rate * 0.5f
+    GetWorldTimerManager().SetTimer(RegenTimerHandle, this,
+        &ASkillCreatorCharacter::TickRegen, 0.5f, /*bLoop=*/true);
 }
 
 void ASkillCreatorCharacter::RebindWorldSystems()
@@ -207,12 +212,8 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
         ActiveManaSlots[0].Max      = Stats.MaxMpBase;
         ActiveManaSlots[0].RegenRate = Stats.MpRegenRate;
     }
-    for (FManaSlot& Slot : ActiveManaSlots) Slot.Tick(DeltaTime);
+    // MP/HP regen 移至 B-4 TickRegen()（0.5s 計時器）；此處只同步 CurrentMp 供 HUD 讀取
     if (ActiveManaSlots.Num() > 0) CurrentMp = ActiveManaSlots[0].Current;
-
-    // HP 自然回復（若有設定）
-    if (Stats.HpRegenRate > 0.f && CurrentHp > 0.f)
-        CurrentHp = FMath::Min(Stats.MaxHpBase, CurrentHp + Stats.HpRegenRate * DeltaTime);
 
     // CharacterState Tick（體力、精力、心情）
     bool bInCombat = false;
@@ -351,10 +352,101 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
 float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
     AController* EventInstigator, AActor* DamageCauser)
 {
-    float Modified = DamageAmount * (1.f + AuraComp->DamageTakenBonus);
-    float Final    = FMath::Max(0.f, Modified - Stats.BaseDefense * (1.f - AuraComp->DefensePenalty));
+    // 暫時套用物理防禦管線（B-1g）；B-3 完整管線用 TakePhysicalDamage/TakeEnergyDamage
+    float Modified     = DamageAmount * (1.f + AuraComp->DamageTakenBonus);
+    float Defense      = Stats.PhysicalDefense * (1.f - AuraComp->DefensePenalty);
+    float AfterDef     = FMath::Max(0.f, Modified - Defense);
+    float Final        = FMath::Max(0.f, AfterDef - Stats.PhysicalDamageReduction);
     TakeDirectDamage(Final);
     return Final;
+}
+
+// B-3：物理傷害管線（防禦/減傷 → 暴擊判定 → 命中/閃避）
+// 對應 Godot 設計文件 base value system.txt 第 24-29 行物理 2 步公式
+void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
+{
+    // 命中/閃避判定
+    if (Atk)
+    {
+        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
+        float ExcessHit  = FMath::Max(0.f, Atk->HitRate - 1.f);
+        float EffDodge   = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
+        if (FMath::FRand() < EffDodge) return;
+    }
+
+    // 物理 2 步防禦（設計文件 step1/step2）
+    float Step1 = FMath::Max(0.f, PhysAtk - Stats.PhysicalDefense);
+    float Final = FMath::Max(0.f, Step1 - Stats.PhysicalDamageReduction);
+
+    // 暴擊判定（承受方的 AntiCrit/AntiCritDmg 抵銷攻擊方）
+    if (Atk && Final > 0.f)
+    {
+        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
+        if (FMath::FRand() < EffCritRate)
+        {
+            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
+            Final *= EffCritMult;
+            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
+            if (FMath::FRand() < EffSuperRate)
+            {
+                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
+                Final *= EffSuperMult;
+            }
+        }
+    }
+
+    TakeDirectDamage(Final);
+}
+
+// B-3：能量傷害管線（特定MP防禦 → 通用能量防禦 → 特定MP減傷 → 通用能量減傷 → 暴擊/閃避）
+// 對應設計文件 base value system.txt 第 29 行能量 4 步公式
+void ASkillCreatorCharacter::TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk)
+{
+    // 命中/閃避判定
+    if (Atk)
+    {
+        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
+        float ExcessHit  = FMath::Max(0.f, Atk->HitRate - 1.f);
+        float EffDodge   = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
+        if (FMath::FRand() < EffDodge) return;
+    }
+
+    // 能量 4 步防禦
+    float Step1 = FMath::Max(0.f, EnergyAtk  - Stats.GetMpDefense(ManaTypeKey));   // 特定MP防禦
+    float Step2 = FMath::Max(0.f, Step1       - Stats.EnergyDefense);               // 通用能量防禦
+    float Step3 = FMath::Max(0.f, Step2       - Stats.GetMpDamageReduction(ManaTypeKey)); // 特定MP減傷
+    float Final = FMath::Max(0.f, Step3       - Stats.EnergyDamageReduction);       // 通用能量減傷
+
+    // 暴擊判定
+    if (Atk && Final > 0.f)
+    {
+        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
+        if (FMath::FRand() < EffCritRate)
+        {
+            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
+            Final *= EffCritMult;
+            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
+            if (FMath::FRand() < EffSuperRate)
+            {
+                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
+                Final *= EffSuperMult;
+            }
+        }
+    }
+
+    TakeDirectDamage(Final);
+}
+
+// B-4：HP/MP 0.5s regen（速率單位為「/秒」，每跳 × 0.5f）
+void ASkillCreatorCharacter::TickRegen()
+{
+    if (!IsAlive()) return;
+
+    if (Stats.HpRegenRate > 0.f && CurrentHp < Stats.MaxHpBase)
+        CurrentHp = FMath::Min(Stats.MaxHpBase, CurrentHp + Stats.HpRegenRate * 0.5f);
+
+    for (FManaSlot& Slot : ActiveManaSlots)
+        Slot.Current = FMath::Min(Slot.Max, Slot.Current + Slot.RegenRate * 0.5f);
 }
 
 void ASkillCreatorCharacter::TakeDirectDamage(float Amount)

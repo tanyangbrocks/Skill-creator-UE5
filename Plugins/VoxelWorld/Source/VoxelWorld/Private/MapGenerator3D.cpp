@@ -30,15 +30,21 @@ void FMapGenerator3D::InitTerrainParams(int32 Width, int32 Height, int32 Depth, 
 
 int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
 {
+    // 參數必須與 ComputeChunkData() 的高度圖 noise 完全一致，否則預測地表高度與
+    // 實際生成地形不符 → Spawn 驗證 tile 幾乎全部失敗（敵人難以生成）→ 偶爾通過
+    // 驗證的敵人出現在視覺 mesh 尚未渲染的區域，看起來浮在空中後消失。
+    // G-9 已把 ComputeChunkData 更新為 freq=0.001/7 octave，此函式漏同步。
     FastNoiseLite N;
     N.SetSeed(WorldSeed);
-    N.SetFrequency(0.005f);
+    N.SetFrequency(0.001f);
     N.SetFractalType(FastNoiseLite::FractalType::FBm);
-    N.SetFractalOctaves(4);      // 4 octaves: 最高頻率 0.04 → 週期 25 格，無微凸起
+    N.SetFractalOctaves(7);
     N.SetFractalLacunarity(2.f);
     N.SetFractalGain(0.5f);
     float v = N.GetNoise((float)WorldX, (float)WorldZ);
-    return FMath::Clamp((int32)(WorldH * 0.4f + v * WorldH * 0.30f), 4, WorldH - 8);
+    return FMath::Clamp(
+        (int32)(WorldH * 0.30f + v * WorldH * 0.08f),
+        (int32)(WorldH * 0.15f), (int32)(WorldH * 0.45f));
 }
 
 // ============================================================

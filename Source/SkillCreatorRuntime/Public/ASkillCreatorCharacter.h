@@ -151,6 +151,12 @@ public:
     virtual float    GetMaxHp()      const override { return Stats.MaxHpBase; }
     virtual bool     IsAlive()       const override { return CurrentHp > 0.f; }
 
+    // ── 傷害管線（B-3：帶完整 stats 的物理/能量傷害）─────────────
+    // 包含：防禦/減傷 → 暴擊判定 → 命中/閃避判定 → TakeDirectDamage
+    // AttackerStats 為 nullptr 時跳過暴擊/閃避判定（純防禦計算）
+    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
+    void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
+
     // ── IElementalTarget ──────────────────────────────────────────
     virtual int32 GetEntityId()              const override { return -1; }
     virtual void  TakeDirectDamage(float Amount)   override;
@@ -177,6 +183,10 @@ private:
 
     // 環境傷害：站在 Fire/Lava tile 時每幀扣血
     void ApplyEnvironmentalDamage(float DeltaTime);
+
+    // B-4: HP/MP 0.5s regen 計時器（對應設計文件「每 0.5 秒恢復一次」）
+    void TickRegen();
+    FTimerHandle RegenTimerHandle;
 
     // ── 面板 / 偵錯按鍵處理 ──────────────────────────────────────
     // 2026-06-19 稽核：原本這裡還有 OnOpenInventory/OnOpenEquipment/OnOpenCharacterPanel

@@ -69,8 +69,8 @@ void UStatsWidget::Refresh(const FCharacterStats& Stats, float Hp, float MaxHp,
         FString::Printf(TEXT("  爆率 %.0f%%  爆傷倍率 ×%.1f\n"), Stats.CritRate * 100.f, Stats.CritDmgMult) +
         FString::Printf(TEXT("  吸血 %.0f%%  反傷 %.0f\n"), Stats.Lifesteal * 100.f, Stats.Thorns) +
         FString::Printf(TEXT("[防禦]\n")) +
-        FString::Printf(TEXT("  基礎防禦 %.0f  裝備防禦 +%.0f\n"), Stats.BaseDefense, Equip ? Equip->GetTotalDefFlat() : 0.f) +
-        FString::Printf(TEXT("  減傷 %.0f%%  抗暴 %.0f%%\n"), Stats.DamageReduction * 100.f, Stats.AntiCrit * 100.f) +
+        FString::Printf(TEXT("  物防 %.0f  能防 %.0f  裝備防禦 +%.0f\n"), Stats.PhysicalDefense, Stats.EnergyDefense, Equip ? Equip->GetTotalDefFlat() : 0.f) +
+        FString::Printf(TEXT("  物減 %.0f  能減 %.0f  抗暴 %.0f%%\n"), Stats.PhysicalDamageReduction, Stats.EnergyDamageReduction, Stats.AntiCrit * 100.f) +
         FString::Printf(TEXT("[機動]\n")) +
         FString::Printf(TEXT("  移速 ×%.2f  攻速 ×%.2f\n"), Stats.MoveSpeedMult, Stats.AtkSpeedMult) +
         FString::Printf(TEXT("  命中 %.0f%%  閃避 %.0f%%\n"), Stats.HitRate * 100.f, Stats.DodgeRate * 100.f) +
