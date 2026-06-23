@@ -84,9 +84,8 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // S-3 循環切換目標
     Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
     Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
-    // Z：按住疾跑，長按 1s 超速，放開恢復
+    // Z：toggle 疾跑/超速（再按一次取消），計時 1s 升超速（無須一直按住）
     Bind(EKeys::Z, &ASkillCreatorPlayerController::OnSprintPressed);
-    InputComponent->BindKey(EKeys::Z, IE_Released, this, &ASkillCreatorPlayerController::OnSprintReleased);
     // K：空中=飛行；地面對防禦目標=破防 stub；K+L=前衝 stub
     Bind(EKeys::K,   &ASkillCreatorPlayerController::OnGuardBreakOrFly);
     // X：按下=飛行/空中/蹲/翻滾/滑鏟 情境分流；放開=解除防禦/滑鏟
@@ -391,13 +390,18 @@ void ASkillCreatorPlayerController::OnCancelAction()
 void ASkillCreatorPlayerController::OnSprintPressed()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->StartSprint();
+    if (!Char) return;
+    // Z = toggle：疾跑/超速中再按一次取消；其他狀態按下則進入疾跑
+    if (Char->MovementState == EPlayerMovementState::Sprinting
+     || Char->MovementState == EPlayerMovementState::SuperSprinting)
+        Char->EndSprint();
+    else
+        Char->StartSprint();
 }
 
 void ASkillCreatorPlayerController::OnSprintReleased()
 {
-    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->EndSprint();
+    // 放開 Z 不做任何事：玩家不需要一直按住，Z 是 toggle 鍵
 }
 
 void ASkillCreatorPlayerController::OnGuardBreakOrFly()
