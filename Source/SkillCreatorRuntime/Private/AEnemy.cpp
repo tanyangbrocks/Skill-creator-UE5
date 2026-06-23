@@ -376,12 +376,13 @@ float AEnemy::GetXpReward() const
 
 void AEnemy::BeginMeleeAttack(ASkillCreatorCharacter* Target)
 {
-    // 上一次攻擊還未結束就忽略（BT AttackInterval decorator 負責冷卻）
-    if (AttackPhase != EAttackPhase::None || !Target || !Target->IsAlive()) return;
-    MeleeTarget  = Target;
-    AttackPhase  = EAttackPhase::WindingUp;
-    // 0.4s 前搖後進入攻擊幀
-    GetWorldTimerManager().SetTimer(WindupTimer, this, &AEnemy::OnWindupEnd, 0.4f, false);
+    // 上一次攻擊還未結束，或自身已死亡，忽略
+    if (!IsAlive() || AttackPhase != EAttackPhase::None || !Target || !Target->IsAlive()) return;
+    MeleeTarget = Target;
+    AttackPhase = EAttackPhase::WindingUp;
+    // Heavy：較慢的前搖（0.7s）；Melee：0.4s
+    const float WindupSec = (Type == EEnemyType::Heavy) ? 0.7f : 0.4f;
+    GetWorldTimerManager().SetTimer(WindupTimer, this, &AEnemy::OnWindupEnd, WindupSec, false);
 }
 
 void AEnemy::OnWindupEnd()
@@ -399,19 +400,23 @@ void AEnemy::OnWindupEnd()
             Target->TakePhysicalDamage(GetAttackDamage(), &Stats, this);
         }
     }
-    // 0.2s 攻擊幀後進入後搖
-    GetWorldTimerManager().SetTimer(ActiveTimer, this, &AEnemy::OnActiveEnd, 0.2f, false);
+    // Heavy：0.3s 攻擊幀；Melee：0.2s
+    const float ActiveSec = (Type == EEnemyType::Heavy) ? 0.3f : 0.2f;
+    GetWorldTimerManager().SetTimer(ActiveTimer, this, &AEnemy::OnActiveEnd, ActiveSec, false);
 }
 
 void AEnemy::OnActiveEnd()
 {
     if (!IsAlive()) return;
     AttackPhase = EAttackPhase::Recovering;
+    // Heavy：較慢後搖（0.6s）；Melee：0.4s
+    const float RecoverySec = (Type == EEnemyType::Heavy) ? 0.6f : 0.4f;
     // UObject 成員函式綁定：TimerManager 在 Actor PendingKill 時自動跳過，比 raw lambda 安全
-    GetWorldTimerManager().SetTimer(RecoveryTimer, this, &AEnemy::OnRecoveryEnd, 0.4f, false);
+    GetWorldTimerManager().SetTimer(RecoveryTimer, this, &AEnemy::OnRecoveryEnd, RecoverySec, false);
 }
 
 void AEnemy::OnRecoveryEnd()
 {
     AttackPhase = EAttackPhase::None;
+    MeleeTarget = nullptr;
 }

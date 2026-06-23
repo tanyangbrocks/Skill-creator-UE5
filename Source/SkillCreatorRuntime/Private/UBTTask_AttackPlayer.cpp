@@ -62,21 +62,24 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
                 Enemy->GetActorLocation(), FRotator::ZeroRotator, Params);
             if (Proj)
             {
-                Proj->BaseDamage = AEnemyManager::BoltDamage;
+                Proj->BaseDamage    = AEnemyManager::BoltDamage;
+                Proj->PlayerTarget  = Player;      // 敵人投射物命中玩家走 B-3 管線
+                Proj->AttackerStats = &Enemy->Stats;
                 Proj->Init(EPos, Dir, EnemyMgr, VoxelWorld);
                 EnemyMgr->EnemyProjectiles.Add(Proj);
             }
         }
     }
-    else if (Enemy->Type == EEnemyType::Melee)
+    else if (Enemy->Type == EEnemyType::Melee || Enemy->Type == EEnemyType::Heavy)
     {
-        // 前搖(0.4s) → 攻擊幀距離確認 → B-3 管線（含 S-4 彈反）→ 後搖(0.4s)
+        // 前搖→攻擊幀距離確認→B-3 管線（含 S-4 彈反）→後搖
+        // Heavy 的前搖/後搖計時器在 BeginMeleeAttack 內依 Type 自動調整
         Enemy->BeginMeleeAttack(Player);
     }
     else
     {
-        // Patrol / Heavy：暫時直接傷害（stub）
-        Player->TakeDirectDamage(Enemy->GetAttackDamage());
+        // Patrol：即時近戰，走 B-3 管線（命中/閃避/暴擊/S-4 彈反）
+        Player->TakePhysicalDamage(Enemy->GetAttackDamage(), &Enemy->Stats, Enemy);
     }
     return EBTNodeResult::Succeeded;
 }

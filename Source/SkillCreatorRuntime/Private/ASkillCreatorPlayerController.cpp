@@ -94,7 +94,7 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     // J：按下=蓄力開始（X 同時按住=彈反）；放開=輕攻 or 蓄力攻
     Bind(EKeys::J, &ASkillCreatorPlayerController::OnAttackPressed);
     InputComponent->BindKey(EKeys::J, IE_Released, this, &ASkillCreatorPlayerController::OnAttackReleased);
-    Bind(EKeys::L,   &ASkillCreatorPlayerController::OnBackDash);          // S-8 後撤衝量 stub
+    Bind(EKeys::L,   &ASkillCreatorPlayerController::OnBackDash);          // S-8 後撤衝量（4×走速向後衝量+殘影 FX stub）
     Bind(EKeys::Y,   &ASkillCreatorPlayerController::OnOpenPotionPanel);   // S-6 藥水袋面板 stub
     Bind(EKeys::M,   &ASkillCreatorPlayerController::OnOpenMap);           // S-7 地圖 stub
 

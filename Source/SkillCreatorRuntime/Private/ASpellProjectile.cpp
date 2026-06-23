@@ -3,6 +3,7 @@
 #include "AEnemyManager.h"
 #include "AVoxelWorldActor.h"
 #include "MaterialType.h"
+#include "ASkillCreatorCharacter.h"
 
 ASpellProjectile::ASpellProjectile()
 {
@@ -55,6 +56,15 @@ void ASpellProjectile::AdvanceOneTile()
     {
         // 對角線移動時可能未跨格，繼續累積直到整格
         ++TilesTravelled;
+        return;
+    }
+
+    // 敵人投射物：命中玩家 tile → 走 B-3 物理傷害管線（含 S-4 彈反）
+    if (PlayerTarget.IsValid() && PlayerTarget->IsAlive()
+        && PlayerTarget->GetPosition() == NextPos)
+    {
+        PlayerTarget->TakePhysicalDamage(BaseDamage, AttackerStats, this);
+        Destroy();
         return;
     }
 

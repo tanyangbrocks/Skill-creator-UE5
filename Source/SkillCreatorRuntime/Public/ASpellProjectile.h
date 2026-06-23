@@ -7,6 +7,8 @@
 class AEnemyManager;
 class AVoxelWorldActor;
 class AEnemy;
+class ASkillCreatorCharacter;
+struct FCharacterStats;
 
 // 離散 tile 移動的技能投射物。
 // 每 MoveInterval 秒移動一格；命中敵人或實心 tile 後呼叫回調並銷毀。
@@ -33,8 +35,13 @@ public:
     UPROPERTY(EditAnywhere, Category="Projectile")
     int32 MaxRange      = 20;       // 最大飛行格數
 
-    // 命中敵人回調（由 USpellCaster 設定）
+    // 命中敵人回調（由 USpellCaster 設定，玩家技能用）
     TFunction<void(AEnemy*, FGridPos)> OnHitEnemy;
+
+    // 敵人投射物：設定後 AdvanceOneTile 在命中玩家 tile 時走 B-3 傷害管線
+    // 玩家技能投射物保持 nullptr（不傷玩家）
+    TWeakObjectPtr<ASkillCreatorCharacter> PlayerTarget;
+    const FCharacterStats* AttackerStats = nullptr;
 
     bool IsAlive() const { return IsValid(this); }
 
