@@ -63,7 +63,10 @@ void ASpellProjectile::AdvanceOneTile()
     if (PlayerTarget.IsValid() && PlayerTarget->IsAlive()
         && PlayerTarget->GetPosition() == NextPos)
     {
-        PlayerTarget->TakePhysicalDamage(BaseDamage, AttackerStats, this);
+        // C-2: 傳 OriginEnemy（投射物發射者）而非 this（投射物），S-4 彈反才能凍結正確目標
+        PlayerTarget->TakePhysicalDamage(BaseDamage,
+            bUseAttackerStats ? &AttackerStats : nullptr,
+            OriginEnemy.Get());
         Destroy();
         return;
     }

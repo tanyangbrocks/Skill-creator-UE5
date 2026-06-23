@@ -122,8 +122,8 @@ void AEnemy::BeginPlay()
         Stats.Power           = 25.f;
         break;
     case EEnemyType::Ranged:
-        Stats.CritRate        = 0.10f;
-        Stats.Power           = 0.f;    // 傷害來自投射物（M-5 定義）
+        Stats.CritRate = 0.10f;
+        Stats.Power    = 12.f;  // 投射物 BaseDamage 來源（對應 Godot EnemyManager.cs:486 BoltDamage=12）
         break;
     case EEnemyType::Patrol:
         Stats.DodgeRate       = 0.05f;
@@ -135,37 +135,11 @@ void AEnemy::BeginPlay()
     }
 }
 
-// B-3：物理傷害管線（與 ASkillCreatorCharacter::TakePhysicalDamage 邏輯相同）
-// 終點呼叫 TakeDamageAmount()（繼續套用 AuraComp bonus + ActionBus 攔截）
+// B-3：物理傷害管線（共用 FCharacterStats::ResolvePhysicalDmg，避免三地 copy-paste）
 void AEnemy::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
 {
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    float Step1 = FMath::Max(0.f, PhysAtk - Stats.PhysicalDefense);
-    float Final = FMath::Max(0.f, Step1   - Stats.PhysicalDamageReduction);
-
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
+    const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
+    if (Final < 0.f) return;
     TakeDamageAmount(Final);
 }
 
@@ -206,6 +180,7 @@ void AEnemy::TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharact
 
 void AEnemy::TakeDamageAmount(float Amount)
 {
+    if (!IsAlive()) return;  // 防止同幀多次傷害在 Hp=0 後繼續執行（掉落物/XP 誤觸發）
     float Modified = Amount * (1.f + AuraComp->DamageTakenBonus) * (1.f + AuraComp->DefensePenalty);
 
     // 傷害護盾攔截（對應 Godot Enemy.cs:425 ActionBus.Dispatch(EntityDamageAction)）
@@ -336,7 +311,7 @@ float AEnemy::GetAttackDamage() const
     switch (Type)
     {
     case EEnemyType::Heavy:  return 25.f;
-    case EEnemyType::Ranged: return 0.f;   // 用投射物傷害（M-5）
+    case EEnemyType::Ranged: return Stats.Power;  // 投射物 BaseDamage（暴擊由 Stats.CritRate 驅動）
     default:                 return 8.f;
     }
 }
@@ -380,8 +355,9 @@ void AEnemy::BeginMeleeAttack(ASkillCreatorCharacter* Target)
     if (!IsAlive() || AttackPhase != EAttackPhase::None || !Target || !Target->IsAlive()) return;
     MeleeTarget = Target;
     AttackPhase = EAttackPhase::WindingUp;
-    // Heavy：較慢的前搖（0.7s）；Melee：0.4s
-    const float WindupSec = (Type == EEnemyType::Heavy) ? 0.7f : 0.4f;
+    // Heavy：0.7s；Patrol（快速近戰）：0.25s；Melee：0.4s
+    const float WindupSec = (Type == EEnemyType::Heavy)  ? 0.7f
+                          : (Type == EEnemyType::Patrol) ? 0.25f : 0.4f;
     GetWorldTimerManager().SetTimer(WindupTimer, this, &AEnemy::OnWindupEnd, WindupSec, false);
 }
 
@@ -400,8 +376,9 @@ void AEnemy::OnWindupEnd()
             Target->TakePhysicalDamage(GetAttackDamage(), &Stats, this);
         }
     }
-    // Heavy：0.3s 攻擊幀；Melee：0.2s
-    const float ActiveSec = (Type == EEnemyType::Heavy) ? 0.3f : 0.2f;
+    // Heavy：0.3s；Patrol：0.15s；Melee：0.2s
+    const float ActiveSec = (Type == EEnemyType::Heavy)  ? 0.3f
+                          : (Type == EEnemyType::Patrol) ? 0.15f : 0.2f;
     GetWorldTimerManager().SetTimer(ActiveTimer, this, &AEnemy::OnActiveEnd, ActiveSec, false);
 }
 
@@ -409,8 +386,9 @@ void AEnemy::OnActiveEnd()
 {
     if (!IsAlive()) return;
     AttackPhase = EAttackPhase::Recovering;
-    // Heavy：較慢後搖（0.6s）；Melee：0.4s
-    const float RecoverySec = (Type == EEnemyType::Heavy) ? 0.6f : 0.4f;
+    // Heavy：0.6s；Patrol：0.3s；Melee：0.4s
+    const float RecoverySec = (Type == EEnemyType::Heavy)  ? 0.6f
+                            : (Type == EEnemyType::Patrol) ? 0.3f : 0.4f;
     // UObject 成員函式綁定：TimerManager 在 Actor PendingKill 時自動跳過，比 raw lambda 安全
     GetWorldTimerManager().SetTimer(RecoveryTimer, this, &AEnemy::OnRecoveryEnd, RecoverySec, false);
 }

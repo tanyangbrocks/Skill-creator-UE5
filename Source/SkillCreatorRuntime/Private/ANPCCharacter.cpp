@@ -91,39 +91,15 @@ void ANPCCharacter::ApplyMeshFromRegistry()
 
 void ANPCCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
 {
-    // 公式抄 AEnemy::TakePhysicalDamage（B-3 管線，命中/閃避 → 防禦/減傷 → 暴擊/超暴）
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        const float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
-        const float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    float Step1 = FMath::Max(0.f, PhysAtk - Stats.PhysicalDefense);
-    float Final = FMath::Max(0.f, Step1   - Stats.PhysicalDamageReduction);
-
-    if (Atk && Final > 0.f)
-    {
-        const float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            const float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            const float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                const float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
+    const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
+    if (Final < 0.f) return;
     TakeDamageAmount(Final);
 }
 
 void ANPCCharacter::TakeDamageAmount(float Amount)
 {
+    if (!IsAlive()) return;
+    Amount = ActionBus.DispatchPlayerDamage(Amount);  // 傷害護盾/DeathGuard 攔截
     Hp = FMath::Max(0.f, Hp - Amount);
     if (Amount <= 0.f) return;
 

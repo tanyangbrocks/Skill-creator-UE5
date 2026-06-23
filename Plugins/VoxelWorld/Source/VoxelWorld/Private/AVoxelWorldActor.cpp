@@ -61,19 +61,33 @@ AVoxelWorldActor* AVoxelWorldActor::FindInWorld(UWorld* World)
     return nullptr;
 }
 
-void AVoxelWorldActor::ShowHighlight(FGridPos TilePos)
+void AVoxelWorldActor::ShowHighlight(const TArray<FGridPos>& Tiles)
 {
+    if (Tiles.Num() == 0) { HideHighlight(); return; }
     if (!HighlightMesh) return;
+
+    // Tiles[0]＝準心瞄準的中心格：沿用原本單格 Cube mesh + 青色線框
+    const FVector Center = WorldScale::TileToWorld(Tiles[0], TileWorld.Height);
     const float S = WorldScale::TileSizeCm / 100.f;
     HighlightMesh->SetWorldScale3D(FVector(S + 0.02f));
-    FVector Center = WorldScale::TileToWorld(TilePos, TileWorld.Height);
     HighlightMesh->SetWorldLocation(Center);
     HighlightMesh->SetVisibility(true);
 
-    // DrawDebugBox 確保在任何材質狀態下均可見（高亮框以青色線框呈現）
     const float Half = WorldScale::TileSizeCm * 0.5f + 0.5f;
     DrawDebugBox(GetWorld(), Center, FVector(Half), FQuat::Identity,
                  FColor::Cyan, false, 0.05f, 0, 1.5f);
+
+    // 整次採掘的影響範圍外接框（黃色）：對全部 tile 算 world-space bounding box，
+    // 概括這次按下去會挖掉的整個體積，不是只有中心那 1 格
+    if (Tiles.Num() > 1)
+    {
+        FBox Bounds(ForceInit);
+        for (const FGridPos& T : Tiles)
+            Bounds += WorldScale::TileToWorld(T, TileWorld.Height);
+        const FVector Margin(WorldScale::TileSizeCm * 0.5f);
+        DrawDebugBox(GetWorld(), Bounds.GetCenter(), Bounds.GetExtent() + Margin,
+                     FQuat::Identity, FColor::Yellow, false, 0.05f, 0, 2.f);
+    }
 }
 
 void AVoxelWorldActor::HideHighlight()
@@ -95,7 +109,26 @@ int32 AVoxelWorldActor::MegaFloorDiv(int32 a, int32 b)
 void AVoxelWorldActor::BeginPlay()
 {
     Super::BeginPlay();
+    InitializeWorldState();
+}
 
+void AVoxelWorldActor::ReinitializeForWorld(int32 NewWorldSeed, const FString& NewWorldSaveDir)
+{
+    // 清空舊世界留在記憶體裡的狀態，避免新世界混用舊世界的 chunk/放置物件登記
+    // （見 .h ReinitializeForWorld 註解：這是「Saved/Worlds 永遠都同一個」回報的根因）。
+    TileWorld.ClearAllChunks();
+    PlacedRegistry = FPlacedObjectRegistry();
+    CreatedMegaChunks.Empty();
+    HideHighlight();
+
+    WorldSeed    = NewWorldSeed;
+    WorldSaveDir = NewWorldSaveDir;
+
+    InitializeWorldState();
+}
+
+void AVoxelWorldActor::InitializeWorldState()
+{
     TileWorld.Width     = WorldWidth;
     TileWorld.Height    = WorldHeight;
     TileWorld.Depth     = WorldDepth;

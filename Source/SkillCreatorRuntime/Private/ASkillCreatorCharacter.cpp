@@ -439,36 +439,8 @@ void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterS
         PhysAtk *= 0.5f;
     }
 
-    // 命中/閃避判定
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit  = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge   = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    // 物理 2 步防禦（設計文件 step1/step2）
-    float Step1 = FMath::Max(0.f, PhysAtk - Stats.PhysicalDefense);
-    float Final = FMath::Max(0.f, Step1 - Stats.PhysicalDamageReduction);
-
-    // 暴擊判定（承受方的 AntiCrit/AntiCritDmg 抵銷攻擊方）
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
+    const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
+    if (Final < 0.f) return;
     TakeDirectDamage(Final);
 }
 

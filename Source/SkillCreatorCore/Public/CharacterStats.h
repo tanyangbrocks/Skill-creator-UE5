@@ -228,4 +228,36 @@ struct FCharacterStats
     // ── 其它 ─────────────────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Other")
     float BloodlineStrength = 1.f;
+
+    // B-3 物理傷害管線：命中/閃避 → 2 步防禦 → 暴擊/超暴。
+    // 回傳最終傷害量；< 0 表示閃避或命中失敗（呼叫方直接 return）。
+    // AEnemy / ANPCCharacter / ASkillCreatorCharacter 共用，避免三份 copy-paste。
+    static float ResolvePhysicalDmg(float PhysAtk, const FCharacterStats& Def, const FCharacterStats* Atk)
+    {
+        if (Atk)
+        {
+            if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return -1.f;
+            const float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
+            const float EffDodge  = FMath::Max(0.f, Def.DodgeRate - ExcessHit);
+            if (FMath::FRand() < EffDodge) return -1.f;
+        }
+        float Step1 = FMath::Max(0.f, PhysAtk - Def.PhysicalDefense);
+        float Final = FMath::Max(0.f, Step1   - Def.PhysicalDamageReduction);
+        if (Atk && Final > 0.f)
+        {
+            const float EffCritRate = FMath::Max(0.f, Atk->CritRate - Def.AntiCrit);
+            if (FMath::FRand() < EffCritRate)
+            {
+                const float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Def.AntiCritDmgReduction);
+                Final *= EffCritMult;
+                const float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Def.AntiSuperCritRate);
+                if (FMath::FRand() < EffSuperRate)
+                {
+                    const float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Def.AntiSuperCritDmgReduction);
+                    Final *= EffSuperMult;
+                }
+            }
+        }
+        return Final;
+    }
 };

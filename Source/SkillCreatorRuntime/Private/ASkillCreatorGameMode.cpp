@@ -6,6 +6,8 @@
 #include "AMobSpawnController.h"
 #include "AEnemy.h"
 #include "AEnemyManager.h"
+#include "UDroppedItemManager.h"
+#include "UCraftingStationSubsystem.h"
 #include "EngineUtils.h"
 #include "UGameSessionSubsystem.h"
 #include "UGameFlowWidget.h"
@@ -114,37 +116,41 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
 
             // 角色自己的存檔位置優先（回流玩家，FillSaveData 寫入的 TilePosition）；
             // 沒有（新角色 / 新世界）則退回世界出生點，避免一律落在關卡 PlayerStart。
+            // 2026-06-23 修復：角色設計上可以任意搭配世界進場（CharacterSaveData.h 頂部
+            // 註解），但 TilePosition 只在「上次存檔當下的那個世界」裡才有意義——同一組
+            // 座標換到另一個 seed 不同的世界，可能落在地底深處或半空中，跟那個世界真正的
+            // 出生點完全無關。原本只檢查「TilePosition 非零」就直接信任，沒檢查是不是同一個
+            // 世界，導致「角色 A 玩過世界 1，之後選同一個角色進全新的世界 2」這個完全正常
+            // 的操作會把角色傳到世界 2 裡毫無意義的座標（不是世界 2 的出生點附近，可能根本
+            // 不在地表），使用者回報「草地沒出現/不能採掘」很可能就是這個原因——不是地表
+            // 生成或採掘邏輯本身有問題，是站錯地方。加上 LastWorldId 比對，只有「上次存檔
+            // 的世界」跟「這次要進的世界」是同一個才信任 TilePosition。
             if (VW)
             {
+                const bool bSameWorldAsLastSave =
+                    !Character.LastWorldId.IsEmpty() && Character.LastWorldId == World.Id;
                 const FIntVector PlacementTile =
-                    (Character.TilePosition != FIntVector::ZeroValue) ? Character.TilePosition : WorldSpawnTile;
+                    (bSameWorldAsLastSave && Character.TilePosition != FIntVector::ZeroValue)
+                    ? Character.TilePosition : WorldSpawnTile;
+
+                // 2026-06-23 修復：WorldScale::TileToWorld(Y) 算出的是該 tile 的「頂面」世界座標
+                // （對照 GreedyMesher.cpp:144 face_d = (facing==1 ? s+1 : s)*S 反推），但
+                // SetActorLocation() 移動的是 ACharacter 膠囊體的「中心」（UE5 標準慣例，
+                // 膠囊體是 RootComponent，原點＝幾何中心，不是腳底）。PlacementTile（出生點/
+                // 存檔位置）一律是地表正上方那格空氣，原本直接把膠囊體中心放在那格頂面，
+                // 等於腳底（中心再往下 CapsuleHalfHeight）落在地表下方
+                // CapsuleHalfHeight - TileSizeCm（Grain=16 預設下約 93.75cm）的地方，整個人
+                // 嵌進地裡。加上這個垂直偏移，讓膠囊體底部（腳）剛好對齊到 PlacementTile
+                // 那格的下緣＝地表頂面，真正站在地表上而不是嵌入地下。
+                const float FeetAlignOffset = WorldScale::CapsuleHalfHeight - WorldScale::TileSizeCm;
                 Char->SetActorLocation(WorldScale::TileToWorld(
-                    FGridPos(PlacementTile.X, PlacementTile.Y, PlacementTile.Z), VW->WorldHeight));
+                    FGridPos(PlacementTile.X, PlacementTile.Y, PlacementTile.Z), VW->WorldHeight)
+                    + FVector(0.f, 0.f, FeetAlignOffset));
+
             }
 
             Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::PerformSave);
         }
-
-    // 2026-06-22 診斷用：使用者回報熱鍵欄/準心/採掘/敵人全部消失，懷疑是 StartGameplayWithWorld()
-    // 沒有真正跑到、或跑到但某個環節綁定失敗。這裡印出關鍵狀態，下次測試時直接看 log 就能
-    // 確認問題出在哪一段，不用再憑空猜——找到根因後這段 log 就可以移除。
-    {
-        int32 EnemyMgrCount = 0, SpawnCtrlCount = 0;
-        for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It) ++EnemyMgrCount;
-        for (TActorIterator<AMobSpawnController> It(GetWorld()); It; ++It) ++SpawnCtrlCount;
-        APlayerController* DiagPC = GetWorld()->GetFirstPlayerController();
-        ASkillCreatorCharacter* DiagChar = DiagPC ? Cast<ASkillCreatorCharacter>(DiagPC->GetPawn()) : nullptr;
-        ASkillCreatorHUD* DiagHUD = DiagPC ? Cast<ASkillCreatorHUD>(DiagPC->GetHUD()) : nullptr;
-        UE_LOG(LogTemp, Warning,
-            TEXT("[DIAG] StartGameplayWithWorld 結束：VW=%s, PC=%s, Char=%s, ")
-            TEXT("HUD=%s, HUD->HUDWidget=%s, EnemyManagerCount=%d, MobSpawnControllerCount=%d"),
-            VW ? TEXT("valid") : TEXT("NULL"),
-            DiagPC ? TEXT("valid") : TEXT("NULL"),
-            DiagChar ? TEXT("valid") : TEXT("NULL"),
-            DiagHUD ? TEXT("valid") : TEXT("NULL"),
-            (DiagHUD && DiagHUD->HUDWidget) ? TEXT("valid") : TEXT("NULL"),
-            EnemyMgrCount, SpawnCtrlCount);
-    }
 
     // 每 30 秒自動存檔
     GetWorldTimerManager().SetTimer(
@@ -174,6 +180,10 @@ void ASkillCreatorGameMode::PerformSave()
         if (ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn()))
             Char->FillSaveData(CurrentCharacterSave);
 
+    // 記錄這次存檔的 TilePosition 屬於哪個世界（見 CharacterSaveData.h LastWorldId 註解），
+    // StartGameplayWithWorld() 要靠這個判斷能不能信任 TilePosition。
+    CurrentCharacterSave.LastWorldId = CurrentWorldSave.Id;
+
     FFlowSaveSystem::SaveCharacter(CurrentCharacterSave);
 
     if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
@@ -197,6 +207,28 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
             VW->WorldSaveDir  = WorldId;
             VW->FinishSpawning(T);
         }
+    }
+    // 2026-06-23 修復：上面的 if(!VW) 只處理「這個遊戲進程第一次進世界」——AVoxelWorldActor
+    // 是動態 Spawn 出來的單一實例，BeginPlay() 只在第一次 Spawn 時跑過一次。玩家在同一次
+    // 執行（沒重開 exe）回到選單再建立第二個世界時，這裡會找到「既存」的 VW（第一個世界
+    // 留下的），原本完全沒有任何程式碼更新它的 WorldSeed/WorldSaveDir——導致玩家之後創建
+    // 的每個「新世界」其實都還在用第一個世界的 seed + 存檔目錄跑（這就是「Saved/Worlds
+    // 永遠都同一個」回報的根因），地表/chunk 全部對不上玩家剛建立的那個新世界的 meta 資料。
+    else if (VW->WorldSeed != WorldSeed || VW->WorldSaveDir != WorldId)
+    {
+        VW->ReinitializeForWorld(WorldSeed, WorldId);
+
+        // 同一批清理：AEnemyManager/UDroppedItemManager 跟 AVoxelWorldActor 一樣是
+        // 「同進程內持續存活、不隨換世界重建」的物件（前者是手動 Spawn 的單一 Actor，
+        // 後者是 UWorldSubsystem——本來預期隨關卡銷毀重建，但 MainMap 整個遊戲進程內
+        // 從未真正重新載入過，所以這個假設不成立）。換世界時舊世界留下的敵人/掉落物
+        // 沒清掉，會帶著舊世界的座標繼續留在新世界裡，對新世界的地形毫無意義。
+        for (TActorIterator<AEnemyManager> EmIt(GetWorld()); EmIt; ++EmIt)
+        { EmIt->ClearAllEnemies(); break; }
+        if (UDroppedItemManager* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
+            DropMgr->Clear();
+        if (UCraftingStationSubsystem* CraftSub = GetWorld()->GetSubsystem<UCraftingStationSubsystem>())
+            CraftSub->DestroyAllFixtures();
     }
 
     // 自動生成 AEnemyManager（若關卡中沒有手動放置）。必須在 AMobSpawnController 之前

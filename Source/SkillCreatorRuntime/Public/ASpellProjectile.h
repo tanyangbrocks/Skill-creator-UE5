@@ -2,13 +2,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GridPos.h"
+#include "CharacterStats.h"
 #include "ASpellProjectile.generated.h"
 
 class AEnemyManager;
 class AVoxelWorldActor;
 class AEnemy;
 class ASkillCreatorCharacter;
-struct FCharacterStats;
 
 // 離散 tile 移動的技能投射物。
 // 每 MoveInterval 秒移動一格；命中敵人或實心 tile 後呼叫回調並銷毀。
@@ -38,10 +38,12 @@ public:
     // 命中敵人回調（由 USpellCaster 設定，玩家技能用）
     TFunction<void(AEnemy*, FGridPos)> OnHitEnemy;
 
-    // 敵人投射物：設定後 AdvanceOneTile 在命中玩家 tile 時走 B-3 傷害管線
-    // 玩家技能投射物保持 nullptr（不傷玩家）
+    // 敵人投射物：走 B-3 管線所需資訊
+    // 玩家技能投射物保持 PlayerTarget=null（OnHitEnemy 路徑，不傷玩家）
     TWeakObjectPtr<ASkillCreatorCharacter> PlayerTarget;
-    const FCharacterStats* AttackerStats = nullptr;
+    FCharacterStats AttackerStats;      // 值拷貝（非指針），避免 Enemy 死亡後懸空
+    bool bUseAttackerStats = false;     // false = 無命中/閃避/暴擊判定（玩家技能路徑）
+    TWeakObjectPtr<AEnemy> OriginEnemy; // S-4 彈反的凍結目標（投射物發射者，非投射物本身）
 
     bool IsAlive() const { return IsValid(this); }
 
