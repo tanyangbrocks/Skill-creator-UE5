@@ -14,6 +14,7 @@
 #include "GridPos.h"
 #include "ItemRegistry.h"
 #include "ItemId.h"
+#include "CharacterStats.h"
 
 // ══════════════════════════════════════════════════════════════════
 //  T01 — FGridPos.ChebyshevDistance 對角線 = 1 tile（L11 bug fix 驗證）
@@ -136,6 +137,44 @@ bool FSkillCreatorCoreTest_ItemRegistryConsistency::RunTest(const FString&)
     }
 
     TestEqual(TEXT("所有條目 Id 一致（0 個不符）"), MismatchCount, 0);
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  T05 — FCharacterStats::ResolvePhysicalDmg 兩步防禦公式（確定性路徑）
+//
+//  B-3 修復（C-1/H-1）後共用的靜態方法。Atk=nullptr 跳過命中/閃避/暴擊隨機
+//  分支，只驗證兩步防禦公式：
+//    Step1 = max(0, PhysAtk - PhysicalDefense)
+//    Final = max(0, Step1  - PhysicalDamageReduction)
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSkillCreatorCoreTest_ResolvePhysicalDmg,
+    "SkillCreatorCore.CharacterStats.ResolvePhysicalDmgTwoStepDefense",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FSkillCreatorCoreTest_ResolvePhysicalDmg::RunTest(const FString&)
+{
+    FCharacterStats Def;
+    Def.PhysicalDefense         = 30.f;
+    Def.PhysicalDamageReduction = 10.f;
+
+    // Atk=nullptr → 確定性（無隨機）：100-30=70 → 70-10=60
+    float Result = FCharacterStats::ResolvePhysicalDmg(100.f, Def, nullptr);
+    TestTrue(TEXT("atk=100, def=30, reduct=10 → 60"),
+        FMath::IsNearlyEqual(Result, 60.f, 0.01f));
+
+    // PhysAtk < PhysicalDefense → Step1=0 → Final=0（不能負傷害）
+    float Zero = FCharacterStats::ResolvePhysicalDmg(10.f, Def, nullptr);
+    TestEqual(TEXT("atk=10 < def=30 → 0"), Zero, 0.f);
+
+    // 防禦 = 0：Step1=PhysAtk，Final=max(0, PhysAtk-Reduct)
+    FCharacterStats NoDefDef;
+    NoDefDef.PhysicalDefense = 0.f;
+    NoDefDef.PhysicalDamageReduction = 5.f;
+    float NoDefResult = FCharacterStats::ResolvePhysicalDmg(20.f, NoDefDef, nullptr);
+    TestTrue(TEXT("atk=20, def=0, reduct=5 → 15"),
+        FMath::IsNearlyEqual(NoDefResult, 15.f, 0.01f));
+
     return true;
 }
 

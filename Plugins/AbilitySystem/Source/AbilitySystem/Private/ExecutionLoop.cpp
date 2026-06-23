@@ -1089,6 +1089,8 @@ void FExecutionLoop::Execute(const FInstruction& Instr, FExecutionContext& Ctx)
         }
 
         default:
+            UE_LOG(LogTemp, Warning, TEXT("[ExecutionLoop] Unknown OpCode %d at PC=%d — instruction skipped"),
+                (int32)Instr.OpCode, Ctx.PC);
             ++Ctx.PC;
             break;
     }

@@ -235,10 +235,12 @@ if (Test-Path $MapGenCppFile) {
 # 7g（新發現，對應 Godot Check 17f：生成點所在 chunk 若未載入，GetTile 會回傳預設 Air，永遠找不到地板）
 if (Test-Path $MobSpawnCppFile) {
     $t = Read-UTF8 $MobSpawnCppFile
-    if ($t -match 'EnsureChunkAt') {
-        Pass "AMobSpawnController 有 EnsureChunkAt（生成前確保 chunk 已載入）"
+    # UE5 使用 Gen.EnsureChunksAround() + IsChunkGenerated() 取代 Godot 的 EnsureChunkSync()，
+    # 效果相同（確保生成點 chunk 已計算並套用到 TileWorld3D），只是 API 名稱不同。
+    if ($t -match 'EnsureChunksAround|EnsureChunkAt|IsChunkGenerated') {
+        Pass "AMobSpawnController 有 chunk 確保機制（EnsureChunksAround/IsChunkGenerated）（生成前確保 chunk 已載入）"
     } else {
-        Fail "AMobSpawnController 缺 EnsureChunkAt -- TileWorld3D::GetCell 對未載入 chunk 回傳預設 FTileCell{}（=Air），遠離玩家/未預載區域的生成點會永遠判定為懸空，找不到有效位置（對應 Godot Check 17f 同類錯誤；已用 GetCell 原始碼確認此行為）"
+        Fail "AMobSpawnController 缺 chunk 確保機制 -- TileWorld3D::GetCell 對未載入 chunk 回傳預設 FTileCell{}（=Air），遠離玩家/未預載區域的生成點會永遠判定為懸空，找不到有效位置（對應 Godot Check 17f 同類錯誤；已用 GetCell 原始碼確認此行為）"
     }
 } else { Warn "AMobSpawnController.cpp 未找到 -- 跳過 7g" }
 
@@ -350,8 +352,12 @@ if ((Test-Path $SafetyGuardFile) -and (Test-Path $SpellRunnerCppFile)) {
     $sgT = Read-UTF8 $SafetyGuardFile
     $srT = Read-UTF8 $SpellRunnerCppFile
     $sgMatch = [System.Text.RegularExpressions.Regex]::Match($sgT, 'MaxComboDepth\s*=\s*(\d+)')
+    # SpellRunner.cpp 優選：直接引用 FSafetyGuard::MaxComboDepth（無需提取數字，引用本身即保證一致）
+    $srRefConst = $srT -match 'ComboDepth\s*<\s*FSafetyGuard::MaxComboDepth'
     $srMatch = [System.Text.RegularExpressions.Regex]::Match($srT, 'ComboDepth\s*<\s*(\d+)')
-    if ($sgMatch.Success -and $srMatch.Success) {
+    if ($sgMatch.Success -and $srRefConst) {
+        Pass "SafetyGuard::MaxComboDepth 與 SpellRunner.cpp 一致（SpellRunner 引用常數，無硬寫風險）（值=$($sgMatch.Groups[1].Value)）"
+    } elseif ($sgMatch.Success -and $srMatch.Success) {
         if ($sgMatch.Groups[1].Value -eq $srMatch.Groups[1].Value) {
             Pass "SafetyGuard::MaxComboDepth 與 SpellRunner.cpp 連段上限一致（$($sgMatch.Groups[1].Value)）"
         } else {

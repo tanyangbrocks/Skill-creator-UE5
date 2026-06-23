@@ -7,6 +7,7 @@
 #include "SpellRunner.h"
 #include "FBlockNodeSaveData.h"
 #include "TotemLibrary.h"
+#include "SpellSlotSync.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAbilityTest, Log, All);
 
@@ -498,6 +499,91 @@ bool FAbilityTest_TotemLibraryCounts::RunTest(const FString&)
     TestNotNull(TEXT("找得到 yellow_hp_cost"), YellowHpCost);
     if (YellowHpCost)
         TestTrue(TEXT("yellow_hp_cost 是限制型"), YellowHpCost->bIsRestriction);
+
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  T11 — S-2 回歸：DetectHpThreshold Threshold /100（Godot SpellCompiler.cs:224-229）
+//
+//  Bug：UI 儲存 30.0（30%），但 PlayerStatsQuery("hpPct") 回傳 [0,1] 範圍，
+//  SpellCompiler 未 /100 → WaitCondition.Threshold=30.f，條件永遠不成立（hpPct 最大 1.0）。
+//  Fix：EmitBlock case DetectHpThreshold 加 A.Threshold /= 100.f。
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAbilityTest_DetectHpThresholdDivide,
+    "AbilitySystem.Compiler.DetectHpThresholdDividesBy100",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FAbilityTest_DetectHpThresholdDivide::RunTest(const FString&)
+{
+    FWaitConditionArgs A;
+    A.Threshold = 30.f;   // UI 存的原始百分比值
+
+    TUniquePtr<FBlockNode> Block = MakeUnique<FBlockNode>();
+    Block->Type = EBlockType::DetectHpThreshold;
+    Block->Params.Add("args", FInstancedStruct::Make<FWaitConditionArgs>(A));
+
+    TArray<TUniquePtr<FBlockNode>> Root;
+    Root.Add(MoveTemp(Block));
+
+    TArray<FInstruction> Code = FSpellCompiler::Compile(Root);
+    TestTrue(TEXT("編譯後有指令"), Code.Num() >= 1);
+
+    const FInstruction* WC = Code.FindByPredicate(
+        [](const FInstruction& I){ return I.OpCode == EOpCode::WaitCondition; });
+    TestNotNull(TEXT("有 WaitCondition 指令"), WC);
+    if (WC)
+    {
+        const FWaitConditionArgs* Out = WC->Payload.GetPtr<FWaitConditionArgs>();
+        TestNotNull(TEXT("Payload 是 FWaitConditionArgs"), Out);
+        if (Out)
+        {
+            TestEqual(TEXT("CondKey == hpPct"), Out->CondKey, FName("hpPct"));
+            TestTrue(TEXT("Threshold 30.0 已 /100 → 0.3"),
+                FMath::IsNearlyEqual(Out->Threshold, 0.3f, 0.0001f));
+        }
+    }
+    return true;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  T12 — S-12 回歸：TotemToContainer 依 TotemId 正確區分三種召喚容器
+//         （Godot AbilityEditorUI.cs:1232-1234）
+//
+//  Bug：所有 Summon 類型全映射到 SummonMinion，summon_turret/summon_guardian
+//  無法取得正確容器類型 → 施法管線套用錯誤槽位資料。
+// ══════════════════════════════════════════════════════════════════
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAbilityTest_TotemToContainer,
+    "AbilitySystem.SpellSlot.TotemToContainerMapping",
+    EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FAbilityTest_TotemToContainer::RunTest(const FString&)
+{
+    TestEqual(TEXT("nullptr → DirectCast"),
+        FSpellSlotSync::TotemToContainer(nullptr), EContainerType::DirectCast);
+
+    FTotemBlockArgs Proj;
+    Proj.TotemType = ETotemType::Projectile;
+    TestEqual(TEXT("Projectile → Projectile"),
+        FSpellSlotSync::TotemToContainer(&Proj), EContainerType::Projectile);
+
+    FTotemBlockArgs Turret;
+    Turret.TotemType = ETotemType::Summon;
+    Turret.TotemId   = TEXT("summon_turret");
+    TestEqual(TEXT("Summon+summon_turret → SummonTurret"),
+        FSpellSlotSync::TotemToContainer(&Turret), EContainerType::SummonTurret);
+
+    FTotemBlockArgs Guardian;
+    Guardian.TotemType = ETotemType::Summon;
+    Guardian.TotemId   = TEXT("summon_guardian");
+    TestEqual(TEXT("Summon+summon_guardian → SummonGuardian"),
+        FSpellSlotSync::TotemToContainer(&Guardian), EContainerType::SummonGuardian);
+
+    FTotemBlockArgs Minion;
+    Minion.TotemType = ETotemType::Summon;
+    Minion.TotemId   = TEXT("summon_basic");
+    TestEqual(TEXT("Summon+其他 id → SummonMinion"),
+        FSpellSlotSync::TotemToContainer(&Minion), EContainerType::SummonMinion);
 
     return true;
 }
