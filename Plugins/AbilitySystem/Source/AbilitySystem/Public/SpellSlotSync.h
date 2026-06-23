@@ -23,15 +23,19 @@
 struct FSpellSlotSync
 {
     // ── Container 推導（對應 Godot TotemToContainer，line 1229-1237）──
-    // 優先序：Projectile > Summon > 其他（= DirectCast）。
-    // EContainerType 已補回 SummonMinion/Turret/Guardian 三個獨立值（2026-06-20 Round3 D-4），
-    // 但 FTotemBlockArgs 目前只有單一 ETotemType::Summon 分類（無法區分精靈/砲台/護衛），
-    // 故統一映射到 SummonMinion，待技能因子資料層補上更細分類後再精確對應。
+    // 優先序：Projectile > Summon（依 TotemId 細分） > 其他（= DirectCast）。
+    // S-12 修正：原本所有 Summon 都映射到 SummonMinion；現依 TotemId 區分砲台/護衛/精靈，
+    // 對應 Godot AbilityEditorUI.cs:1232-1234 的 "summon_turret"/"summon_guardian" 判斷。
     static EContainerType TotemToContainer(const FTotemBlockArgs* Totem)
     {
         if (!Totem) return EContainerType::DirectCast;
         if (Totem->TotemType == ETotemType::Projectile) return EContainerType::Projectile;
-        if (Totem->TotemType == ETotemType::Summon)      return EContainerType::SummonMinion;
+        if (Totem->TotemType == ETotemType::Summon)
+        {
+            if (Totem->TotemId == "summon_turret")   return EContainerType::SummonTurret;
+            if (Totem->TotemId == "summon_guardian") return EContainerType::SummonGuardian;
+            return EContainerType::SummonMinion;
+        }
         return EContainerType::DirectCast;
     }
 

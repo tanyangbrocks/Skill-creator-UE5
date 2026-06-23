@@ -19,16 +19,7 @@
 #include "Components/Spacer.h"
 #include "Components/SizeBox.h"
 #include "Styling/SlateTypes.h"
-
-// ── 純色筆刷輔助（UBorder 只有 SetBrush({RoundedBox,TintColor}) 才保證無貼圖渲染，
-//    SetBrushColor 依賴 T_DefaultDiffuse_D 存在，UE5.7 失效 → 全改走此路徑）
-static FSlateBrush MakeSolid(FLinearColor C)
-{
-    FSlateBrush B;
-    B.DrawAs   = ESlateBrushDrawType::RoundedBox;
-    B.TintColor = FSlateColor(C);
-    return B;
-}
+#include "SlateBrushHelpers.h"
 
 // ── Static layout helper ──────────────────────────────────────────────────
 
@@ -126,6 +117,13 @@ FLinearColor UPlayerHUDWidget::ItemIconColor(EItemId Id)
 void UPlayerHUDWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
+
+    // 2026-06-23 診斷：使用者多次回報準心/熱鍵欄/生存條從未出現，外觀疑似舊版 WBP_PlayerHUD_C
+    // 的進度條（預設藍色、無自訂顏色）。GameMode/HUDClass/HUDWidgetClass 鏈路靜態讀過幾輪都
+    // 顯示應該是純 C++ 路徑，加 log 直接確認 HpBar 是否在這裡就已經非 null（代表真的繼承到
+    // Blueprint 綁定），而不是再猜。
+    UE_LOG(LogTemp, Warning, TEXT("UPlayerHUDWidget::NativeOnInitialized HpBar already=%s class=%s"),
+        HpBar ? TEXT("non-null") : TEXT("null"), *GetClass()->GetName());
 
     // 如果 Blueprint 子類已綁定 widget，僅調整位置後退出
     if (HpBar)
@@ -249,7 +247,7 @@ void UPlayerHUDWidget::BuildCrosshair(UCanvasPanel* Root)
     for (const auto& P : Parts)
     {
         UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        B->SetBrush(MakeSolid(P.Color));
+        B->SetBrush(MakeSolidBrush(P.Color));
         B->SetPadding(FMargin(0.f));
         Root->AddChild(B);
         Pin(B, P.Pos, P.Size,
@@ -267,6 +265,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
     ItemIconBorders.Reserve(Count);
     ItemCountLabels.Reserve(Count);
     ItemKeyLabels.Reserve(Count);
+    ItemSlotHoverButtons.Reserve(Count);
 
     for (int32 i = 0; i < Count; ++i)
     {
@@ -294,9 +293,28 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
             BS->SetVerticalAlignment(VAlign_Fill);
         }
 
+        // 透明疊圖按鈕，純粹拿來用 Slate 原生 OnHovered/OnUnhovered 偵測游標是否在這格上
+        // （見 .h ItemSlotHoverButtons 註解）——4 個狀態的 brush 全設透明，不影響視覺，
+        // 只用來吃 hover 事件；加在 SlotCanvas 最後一個子節點，疊在 Icon/Count/Key 最上層。
+        UButton* HoverBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+        {
+            FButtonStyle Style = HoverBtn->GetStyle();
+            Style.Normal = Style.Hovered = Style.Pressed = Style.Disabled = FSlateBrush();
+            HoverBtn->SetStyle(Style);
+        }
+        HoverBtn->OnHovered.AddDynamic(this, &UPlayerHUDWidget::OnHotbarHoverChanged);
+        HoverBtn->OnUnhovered.AddDynamic(this, &UPlayerHUDWidget::OnHotbarHoverChanged);
+        SlotCanvas->AddChild(HoverBtn);
+        if (UCanvasPanelSlot* HBS = Cast<UCanvasPanelSlot>(HoverBtn->Slot))
+        {
+            HBS->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+            HBS->SetOffsets(FMargin(0.f));
+        }
+        ItemSlotHoverButtons.Add(HoverBtn);
+
         // 物品色塊圖示（左上）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Icon->SetBrush(MakeSolid(FLinearColor(0.18f, 0.18f, 0.22f)));
+        Icon->SetBrush(MakeSolidBrush(FLinearColor(0.18f, 0.18f, 0.22f)));
         Icon->SetPadding(FMargin(0.f));
         SlotCanvas->AddChild(Icon);
         if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(Icon->Slot))
@@ -361,7 +379,7 @@ void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
         PinBL(NmLbl, { StartX, Y }, { LblW, RowH });
 
         UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        BarBg->SetBrush(MakeSolid(FLinearColor(0.10f, 0.10f, 0.16f)));
+        BarBg->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.16f)));
         BarBg->SetPadding(FMargin(0.f));
         Root->AddChild(BarBg);
         const float FillX = StartX + LblW + 2.f, FillY = Y + (RowH - BarH) * 0.5f;
@@ -371,7 +389,7 @@ void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
         // Bug H-4 修復：Fill 若放在 BarBg->AddChild() 裡，Slot 型別是 UBorderSlot，
         // Cast<UCanvasPanelSlot> 永遠 null，UpdateSurvival 的 SetSize 從未執行。
         UBorder* Fill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Fill->SetBrush(MakeSolid(Defs[i].Fill));
+        Fill->SetBrush(MakeSolidBrush(Defs[i].Fill));
         Fill->SetPadding(FMargin(0.f));
         Root->AddChild(Fill);
         PinBL(Fill, { FillX, FillY }, { BarW, BarH });
@@ -448,7 +466,7 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
 
     // XP 條背景 y=-262 h=7
     UBorder* XpBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpBg"));
-    XpBg->SetBrush(MakeSolid(FLinearColor(0.12f, 0.12f, 0.18f)));
+    XpBg->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.18f)));
     XpBg->SetPadding(FMargin(0.f));
     Root->AddChild(XpBg);
     PinBL(XpBg, { 10.f, -262.f }, { XpBarMaxWidth, 7.f });
@@ -456,7 +474,7 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
     // XP 填充（Bug H-4 修復：直接加到 Root 而非 XpBg->AddChild，
     // 確保 Slot 型別是 UCanvasPanelSlot，UpdateLevelHUD 可呼叫 SetSize 調整進度）
     XpBarFill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpFill"));
-    XpBarFill->SetBrush(MakeSolid(FLinearColor(0.25f, 0.65f, 0.95f)));
+    XpBarFill->SetBrush(MakeSolidBrush(FLinearColor(0.25f, 0.65f, 0.95f)));
     XpBarFill->SetPadding(FMargin(0.f));
     Root->AddChild(XpBarFill);
     PinBL(XpBarFill, { 10.f, -262.f }, { 0.f, 7.f });  // 初始寬度 0，由 UpdateLevelHUD 設
@@ -477,7 +495,7 @@ void UPlayerHUDWidget::BuildManaHud(UCanvasPanel* Root)
 void UPlayerHUDWidget::BuildDeathScreenOverlay(UCanvasPanel* Root)
 {
     DeathScreen = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DeathScreen"));
-    DeathScreen->SetBrush(MakeSolid(FLinearColor(0.f, 0.f, 0.f, 0.72f)));
+    DeathScreen->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.72f)));
     DeathScreen->SetPadding(FMargin(0.f));
     DeathScreen->SetVisibility(ESlateVisibility::Hidden);
     Root->AddChild(DeathScreen);
@@ -507,14 +525,26 @@ void UPlayerHUDWidget::BuildDeathScreenOverlay(UCanvasPanel* Root)
         VS->SetPadding(FMargin(0.f, 0.f, 0.f, 28.f));
     }
 
-    UTextBlock* RespawnHint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-    RespawnHint->SetText(FText::FromString(TEXT("（前往遊戲流程選單重生）")));
+    // D-3: 真正可點的重生按鈕（Godot Main.cs:1832-1837 對應行為）
+    UButton* RespawnBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("RespawnBtn"));
+    RespawnBtn->OnClicked.AddDynamic(this, &UPlayerHUDWidget::OnRespawnButtonClicked);
+
+    UTextBlock* BtnLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    BtnLabel->SetText(FText::FromString(TEXT("重生")));
     {
-        FSlateFontInfo F = RespawnHint->GetFont(); F.Size = 15; RespawnHint->SetFont(F);
+        FSlateFontInfo F = BtnLabel->GetFont(); F.Size = 18; BtnLabel->SetFont(F);
     }
-    RespawnHint->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.75f, 0.80f)));
-    RespawnHint->SetJustification(ETextJustify::Center);
-    VBox->AddChildToVerticalBox(RespawnHint);
+    BtnLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 1.f)));
+    BtnLabel->SetJustification(ETextJustify::Center);
+    RespawnBtn->AddChild(BtnLabel);
+
+    if (UVerticalBoxSlot* VS = VBox->AddChildToVerticalBox(RespawnBtn))
+        VS->SetHorizontalAlignment(HAlign_Center);
+}
+
+void UPlayerHUDWidget::OnRespawnButtonClicked()
+{
+    OnRespawnRequested.ExecuteIfBound();
 }
 
 void UPlayerHUDWidget::BuildBreakthroughLabel(UCanvasPanel* Root)
@@ -536,7 +566,7 @@ void UPlayerHUDWidget::BuildFloatTooltip(UCanvasPanel* Root)
 {
     FloatTooltipPanel = WidgetTree->ConstructWidget<UBorder>(
         UBorder::StaticClass(), TEXT("FloatTip"));
-    FloatTooltipPanel->SetBrush(MakeSolid(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f)));
+    FloatTooltipPanel->SetBrush(MakeSolidBrush(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f)));
     FloatTooltipPanel->SetPadding(FMargin(8.f, 4.f));
     FloatTooltipPanel->SetVisibility(ESlateVisibility::Hidden);
     Root->AddChild(FloatTooltipPanel);
@@ -583,50 +613,45 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
             BreakthroughLabel->SetVisibility(ESlateVisibility::Hidden);
     }
 
-    // K-22 + hover tooltip：偵測游標在熱鍵欄格上，寫入 bMouseOverHotbar + 顯示物品名稱
-    // （對應 Godot Main.cs:831-836 panel.MouseEntered → _mouseOverHotbar=true + ShowTooltip(idx)）
-    if (APlayerController* PC = GetOwningPlayer())
-    {
-        if (ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
-        {
-            float MX, MY;
-            PC->GetMousePosition(MX, MY);
-            FVector2D MouseAbs(MX, MY);
+    // K-22 + hover tooltip 偵測已改成 ItemSlotHoverButtons 的原生 OnHovered/OnUnhovered
+    // 事件驅動（見 OnHotbarHoverChanged()），不再需要每幀手動讀座標比對。
+}
 
-            int32 HoveredIdx = -1;
-            for (int32 i = 0; i < ItemSlotBorders.Num(); ++i)
-            {
-                UBorder* B = ItemSlotBorders[i];
-                if (!B) continue;
-                const FGeometry& G = B->GetCachedGeometry();
-                const FVector2D Local = G.AbsoluteToLocal(MouseAbs);
-                const FVector2D Sz    = G.GetLocalSize();
-                if (Local.X >= 0.f && Local.X <= Sz.X && Local.Y >= 0.f && Local.Y <= Sz.Y)
-                { HoveredIdx = i; break; }
-            }
-            HUD->bMouseOverHotbar = (HoveredIdx >= 0);
+// 對應 Godot Main.cs:831-836 panel.MouseEntered/MouseExited → _mouseOverHotbar + ShowTooltip(idx)。
+// 2026-06-23 修復：原本每幀手動讀 PC->GetMousePosition() 比對熱鍵欄格子的螢幕座標——
+// 熱鍵欄位置/大小一改就要重新調這段邏輯，而且 FInputModeGameOnly()（一般遊玩時的模式，
+// 滑鼠被攝影機環視鎖住、游標隱藏）下 GetMousePosition() 沒有真正的「游標位置」可回報，
+// 曾經回傳卡死在熱鍵欄範圍內的值，導致 bMouseOverHotbar 永久卡 true、整個採掘系統被擋死。
+// 改用 ItemSlotHoverButtons（10 個透明疊圖 UButton）的 OnHovered/OnUnhovered 原生事件，
+// 全部綁同一個函式，靠 IsHovered() 重新掃一次找出目前是哪一格——FInputModeGameOnly 下
+// UMG 完全不會收到滑鼠路由，兩個事件自然都不會觸發，不需要額外判斷游標是否顯示。
+void UPlayerHUDWidget::OnHotbarHoverChanged()
+{
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC) return;
+    ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>();
+    if (!HUD) return;
 
-            // Tooltip（對應 Godot ShowTooltip(idx) → ShowFloatTooltip(DisplayName)）
-            if (HoveredIdx >= 0)
-            {
-                ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn());
-                const bool bHasItem = Char && Char->InventoryComp
-                    && Char->InventoryComp->Slots.IsValidIndex(HoveredIdx)
-                    && !Char->InventoryComp->Slots[HoveredIdx].IsEmpty();
-                if (bHasItem)
-                    ShowFloatTooltip(
-                        FItemRegistry::Get(Char->InventoryComp->Slots[HoveredIdx].ItemId)
-                            .DisplayName.ToString(),
-                        MouseAbs);
-                else
-                    HideFloatTooltip();
-            }
-            else
-            {
-                HideFloatTooltip();
-            }
-        }
-    }
+    int32 HoveredIdx = -1;
+    for (int32 i = 0; i < ItemSlotHoverButtons.Num(); ++i)
+        if (ItemSlotHoverButtons[i] && ItemSlotHoverButtons[i]->IsHovered())
+        { HoveredIdx = i; break; }
+
+    HUD->bMouseOverHotbar = (HoveredIdx >= 0);
+
+    if (HoveredIdx < 0) { HideFloatTooltip(); return; }
+
+    ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn());
+    const bool bHasItem = Char && Char->InventoryComp
+        && Char->InventoryComp->Slots.IsValidIndex(HoveredIdx)
+        && !Char->InventoryComp->Slots[HoveredIdx].IsEmpty();
+    if (!bHasItem) { HideFloatTooltip(); return; }
+
+    float MX, MY;
+    PC->GetMousePosition(MX, MY);
+    ShowFloatTooltip(
+        FItemRegistry::Get(Char->InventoryComp->Slots[HoveredIdx].ItemId).DisplayName.ToString(),
+        FVector2D(MX, MY));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -711,7 +736,7 @@ void UPlayerHUDWidget::UpdateItemHotbar(const TArray<FItemStack>& Slots, int32 A
         }
 
         if (ItemIconBorders[i])
-            ItemIconBorders[i]->SetBrush(MakeSolid(Slots[i].IsEmpty()
+            ItemIconBorders[i]->SetBrush(MakeSolidBrush(Slots[i].IsEmpty()
                 ? FLinearColor(0.18f, 0.18f, 0.22f)
                 : ItemIconColor(Slots[i].ItemId)));
 
@@ -789,11 +814,10 @@ void UPlayerHUDWidget::UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
     }
 }
 
-void UPlayerHUDWidget::UpdateEquipLabel(const FString& Weapon, const FString& Armor, const FString& Accessory)
+void UPlayerHUDWidget::UpdateEquipLabel(const FString& Summary)
 {
     if (EquipLabel)
-        EquipLabel->SetText(FText::FromString(
-            FString::Printf(TEXT("W:%s  A:%s  飾:%s"), *Weapon, *Armor, *Accessory)));
+        EquipLabel->SetText(FText::FromString(Summary));
 }
 
 void UPlayerHUDWidget::UpdateManaSlots(const TArray<FManaSlot>& Slots)
@@ -849,7 +873,7 @@ void UPlayerHUDWidget::UpdateManaSlots(const TArray<FManaSlot>& Slots)
             BarSizeBox->AddChild(BarCanvas);
 
             UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-            BarBg->SetBrush(MakeSolid(FLinearColor(0.08f, 0.08f, 0.14f)));
+            BarBg->SetBrush(MakeSolidBrush(FLinearColor(0.08f, 0.08f, 0.14f)));
             BarBg->SetPadding(FMargin(0.f));
             BarCanvas->AddChild(BarBg);
             if (UCanvasPanelSlot* BS = Cast<UCanvasPanelSlot>(BarBg->Slot))
@@ -861,7 +885,7 @@ void UPlayerHUDWidget::UpdateManaSlots(const TArray<FManaSlot>& Slots)
             }
 
             UBorder* Fill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-            Fill->SetBrush(MakeSolid(C));
+            Fill->SetBrush(MakeSolidBrush(C));
             Fill->SetPadding(FMargin(0.f));
             BarCanvas->AddChild(Fill);
             if (UCanvasPanelSlot* FS = Cast<UCanvasPanelSlot>(Fill->Slot))

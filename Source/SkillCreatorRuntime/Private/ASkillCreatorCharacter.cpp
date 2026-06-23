@@ -177,7 +177,7 @@ void ASkillCreatorCharacter::FillSaveData(FCharacterSaveData& OutData) const
 {
     OutData.Level    = Level;
     OutData.Xp       = Xp;
-    OutData.CurrentHp = CurrentHp;
+    OutData.CurrentHp = IsAlive() ? CurrentHp : Stats.MaxHpBase;  // D-1: 死亡時存 MaxHp，不存 0
     OutData.CurrentMp = CurrentMp;
 
     FGridPos Pos = GetPosition();
@@ -205,7 +205,7 @@ void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Da
 {
     Level     = Data.Level;
     Xp        = Data.Xp;
-    CurrentHp = Data.CurrentHp;
+    CurrentHp = FMath::Max(1.f, Data.CurrentHp);  // D-1 guard: 防止以 0 HP 載入（Godot Main.cs:355）
     CurrentMp = Data.CurrentMp;
 
     if (InventoryComp)

@@ -150,6 +150,7 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
             }
 
             Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::PerformSave);
+            Char->OnCharacterDied.AddDynamic(this, &ASkillCreatorGameMode::OnPlayerDied);
         }
 
     // 每 30 秒自動存檔
@@ -188,6 +189,63 @@ void ASkillCreatorGameMode::PerformSave()
 
     if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
         FFlowSaveSystem::SaveAll(*VW->GetTileWorld(), CurrentWorldSave);
+}
+
+void ASkillCreatorGameMode::OnPlayerDied()
+{
+    // D-2/D-4: 凍結遊戲 + 釋放滑鼠 + 顯示死亡遮罩（對應 Godot Main.cs:971-979）
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC) return;
+
+    PC->SetPause(true);
+    FInputModeUIOnly UiMode;
+    UiMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    PC->SetInputMode(UiMode);
+    PC->SetShowMouseCursor(true);
+
+    if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+    if (HUD->HUDWidget)
+    {
+        HUD->HUDWidget->OnRespawnRequested.BindUObject(
+            this, &ASkillCreatorGameMode::OnRespawnRequested);
+        HUD->HUDWidget->ShowDeathScreen(true);
+    }
+}
+
+void ASkillCreatorGameMode::OnRespawnRequested()
+{
+    // D-3: 復活玩家（對應 Godot Main.cs:1832-1837）
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC) return;
+
+    if (ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn()))
+    {
+        // 回滿 HP / MP / 各法力插槽
+        Char->CurrentHp = Char->Stats.MaxHpBase;
+        Char->CurrentMp = Char->Stats.MaxMpBase;
+        for (FManaSlot& Slot : Char->ActiveManaSlots)
+            Slot.Current = Slot.Max;
+
+        // 傳送到出生點
+        if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld()))
+        {
+            const FIntVector ST = CurrentWorldSave.PlayerSpawn;
+            const float FeetAlignOffset = WorldScale::CapsuleHalfHeight - WorldScale::TileSizeCm;
+            Char->SetActorLocation(WorldScale::TileToWorld(
+                FGridPos(ST.X, ST.Y, ST.Z), VW->WorldHeight)
+                + FVector(0.f, 0.f, FeetAlignOffset));
+        }
+    }
+
+    // 解凍遊戲
+    PC->SetPause(false);
+    PC->SetInputMode(FInputModeGameOnly());
+    PC->SetShowMouseCursor(false);
+
+    // 關閉死亡遮罩
+    if (ASkillCreatorHUD* HUD = Cast<ASkillCreatorHUD>(PC->GetHUD()))
+    if (HUD->HUDWidget)
+        HUD->HUDWidget->ShowDeathScreen(false);
 }
 
 void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& WorldId)

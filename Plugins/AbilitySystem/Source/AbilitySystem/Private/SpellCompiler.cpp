@@ -214,13 +214,17 @@ void FSpellCompiler::EmitBlock(const FBlockNode& Block,
         // ── 被動觸發條件 ──────────────────────────────────────────
         case EBlockType::DetectHpThreshold:
         {
+            // S-2: UI 儲存百分比原始值（如 30），PlayerStatsQuery("hpPct") 回傳 [0,1]，
+            // 故需除以 100 才能正確比對（對應 Godot SpellCompiler.cs:224-229）。
             FWaitConditionArgs A; ReadArgs(Block, A); A.CondKey = "hpPct";
+            A.Threshold /= 100.f;
             Code.Add(MakeI(EOpCode::WaitCondition, A));
             break;
         }
         case EBlockType::DetectMpThreshold:
         {
             FWaitConditionArgs A; ReadArgs(Block, A); A.CondKey = "mpPct";
+            A.Threshold /= 100.f;
             Code.Add(MakeI(EOpCode::WaitCondition, A));
             break;
         }

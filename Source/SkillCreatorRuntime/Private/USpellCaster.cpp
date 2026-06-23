@@ -373,7 +373,6 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell, const TArray<FIns
 
 static constexpr int32 DashSteps  = 10;
 static constexpr int32 DodgeSteps = 5;
-static constexpr float NearbyR    = 3.f;
 
 USpellCaster::FSpellMods USpellCaster::ReadMods(const FSpellSlot& Slot)
 {
@@ -440,6 +439,9 @@ void USpellCaster::ApplyModsToNearbyEnemies(const FSpellMods& Mods, FGridPos Ori
     if (Mods.HpCost > 0.f)
         if (ASkillCreatorCharacter* Char = GetOwnerCharacter())
             Char->TakeDirectDamage(Mods.HpCost);
+
+    // S-7: 半徑依 DmgBonus 刻印動態計算（對應 Godot SpellCaster.cs:684 4+dmgBonus*3）
+    const float NearbyR = 4.f + Mods.DmgBonus * 3.f;
 
     if (!CachedEnemyMgr) return;
     for (AEnemy* Enemy : CachedEnemyMgr->GetEnemies())
@@ -965,6 +967,13 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
             if (Dist <= Radius)
                 Out.Add({ E->GetEntityId(), EP, E->GetHp(), E->GetMaxHp() });
         }
+        // S-8: 依距離升序排列，確保 QueryNearest 取 [0] 得到最近敵人（Godot SpellCaster.cs:401-406）
+        Out.Sort([CP](const FEntityInfo& A, const FEntityInfo& B)
+        {
+            float dax = (float)(A.Position.X-CP.X), daz = (float)(A.Position.Z-CP.Z);
+            float dbx = (float)(B.Position.X-CP.X), dbz = (float)(B.Position.Z-CP.Z);
+            return (dax*dax + daz*daz) < (dbx*dbx + dbz*dbz);
+        });
         return Out;
     };
 

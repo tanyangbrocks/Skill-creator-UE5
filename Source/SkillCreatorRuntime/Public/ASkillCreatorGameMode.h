@@ -43,5 +43,12 @@ private:
     UFUNCTION()
     void PerformSave();
 
+    // 玩家死亡：凍結遊戲 + 顯示死亡遮罩（D-2/D-4，對應 Godot Main.cs:971-979）
+    UFUNCTION()
+    void OnPlayerDied();
+
+    // 死亡遮罩重生按鈕回呼：復活角色 + 解凍遊戲（D-3，對應 Godot Main.cs:1832-1837）
+    void OnRespawnRequested();
+
     void SpawnWorldAndMobs(int32 WorldSeed, const FString& WorldId);
 };

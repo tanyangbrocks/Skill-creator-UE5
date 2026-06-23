@@ -5,6 +5,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "SpellArray.h"
 #include "ManaSlot.h"
@@ -65,14 +66,17 @@ public:
     void UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
                         const FString& TierName, FLinearColor TierColor);
 
-    // 裝備標籤
-    void UpdateEquipLabel(const FString& Weapon, const FString& Armor, const FString& Accessory);
+    // 裝備標籤（單一已組好的字串，2026-06-23 改成動態欄位數後由呼叫端組裝）
+    void UpdateEquipLabel(const FString& Summary);
 
     // 多重法力條（動態條數）
     void UpdateManaSlots(const TArray<FManaSlot>& Slots);
 
     // 死亡遮罩
     void ShowDeathScreen(bool bVisible);
+
+    // GameMode 綁定此 delegate，死亡遮罩「重生」按鈕按下後觸發
+    FSimpleDelegate OnRespawnRequested;
 
     // 境界突破通知（3 秒後自動淡出）
     void ShowBreakthrough(const FString& TierName, FLinearColor Color);
@@ -100,6 +104,17 @@ private:
     TArray<TObjectPtr<UBorder>>    ItemIconBorders;
     TArray<TObjectPtr<UTextBlock>> ItemCountLabels;
     TArray<TObjectPtr<UTextBlock>> ItemKeyLabels;
+
+    // 2026-06-23 修復：原本每幀手動讀 PC->GetMousePosition() 比對熱鍵欄格子的螢幕座標，
+    // 熱鍵欄位置/大小一改就要重新調這段邏輯；而且 FInputModeGameOnly()（一般遊玩時的模式，
+    // 滑鼠被攝影機環視鎖住、游標隱藏）下 GetMousePosition() 沒有真正的「游標位置」可回報，
+    // 曾經回傳卡死在熱鍵欄範圍內的值，導致 bMouseOverHotbar 永久卡 true，整個採掘系統
+    // 被擋死——跟採掘邏輯本身完全無關。改用每格疊一個透明 UButton，靠 Slate 原生
+    // OnHovered/OnUnhovered 偵測（FInputModeGameOnly 下 UMG 完全不會收到滑鼠路由，
+    // 兩個事件自然都不會觸發，不需要額外判斷游標是否顯示），不需要手動算座標。
+    TArray<TObjectPtr<UButton>> ItemSlotHoverButtons;
+    UFUNCTION() void OnHotbarHoverChanged();
+    UFUNCTION() void OnRespawnButtonClicked();
 
     // ── HP 文字標籤（左下角）───────────────────────────────────────
     TObjectPtr<UTextBlock> HpLabel = nullptr;
