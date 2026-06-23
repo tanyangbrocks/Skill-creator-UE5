@@ -21,6 +21,7 @@ enum class EPlayerMovementState : uint8
     Sprinting  UMETA(DisplayName="疾跑"),
     Flying     UMETA(DisplayName="飛行"),
     FastFlying UMETA(DisplayName="疾飛"),
+    Guarding   UMETA(DisplayName="防禦"),
 };
 
 class UCharacterStateComponent;
@@ -34,9 +35,13 @@ class AVoxelWorldActor;
 class AEnemyManager;
 class AEnemy;
 struct FCharacterSaveData;
+class UPotionBagComponent;
+class UMapComponent;
+class UAfterimageFXComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnParrySuccess, AActor*);
 
 // 玩家角色（對應 Godot PlayerController.cs 角色層）。
 // EntityId 固定 -1；HP/MP 從 Stats 初始化。
@@ -132,6 +137,20 @@ public:
     void SwitchToNextLockTarget();
     bool IsLockingTarget() const { return LockedTarget != nullptr; }
 
+    // ── S-4 防禦/彈反 ────────────────────────────────────────────
+    // X 長按（地面）：進入 Guarding 狀態；X+J（6 幀窗口）＝彈反
+    // 彈反成功：完全無傷 + 凍結近戰攻擊者 3 秒（AuraComp->ApplyFreeze）
+    // 防禦中但彈反窗口已過：承受 50% 物理傷害
+    void PerformGuard();
+    void EndGuard();
+    bool IsGuarding() const { return MovementState == EPlayerMovementState::Guarding; }
+
+    // S-8 接口：L 鍵後撤衝量 + 殘影 FX（AfterimageComp stub）
+    void PerformBackDash();
+
+    // 彈反成功事件（HUD / 音效 / VFX 接收；AActor* = 被彈反的攻擊者）
+    FOnParrySuccess OnParrySuccess;
+
     // ── S-2 攻擊框架（骨架）──────────────────────────────────────
     // J：輕攻（前方球形掃描，命中 → TakePhysicalDamage）
     void PerformLightAttack();
@@ -150,6 +169,18 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UEquipmentComponent> EquipmentComp;
+
+    // S-6 接口（stub — 藥水袋系統完成後子類覆寫）
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<UPotionBagComponent> PotionBagComp;
+
+    // S-7 接口（stub — 地圖系統完成後子類覆寫）
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<UMapComponent> MapComp;
+
+    // S-8 接口（stub — 殘影 FX 系統完成後子類覆寫）
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<UAfterimageFXComponent> AfterimageComp;
 
     // ── 事件 ──────────────────────────────────────────────────────
     UPROPERTY(BlueprintAssignable, Category="Events")
@@ -195,9 +226,10 @@ public:
     virtual bool     IsAlive()       const override { return CurrentHp > 0.f; }
 
     // ── 傷害管線（B-3：帶完整 stats 的物理/能量傷害）─────────────
-    // 包含：防禦/減傷 → 暴擊判定 → 命中/閃避判定 → TakeDirectDamage
+    // 包含：S-4 彈反/防禦判定 → 防禦/減傷 → 暴擊判定 → 命中/閃避判定 → TakeDirectDamage
     // AttackerStats 為 nullptr 時跳過暴擊/閃避判定（純防禦計算）
-    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
+    // Attacker 為非 nullptr 時，彈反成功可凍結攻擊者（AEnemy 有 AuraComp）
+    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr, AActor* Attacker = nullptr);
     void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
 
     // ── IElementalTarget ──────────────────────────────────────────
@@ -230,6 +262,11 @@ private:
     // B-4: HP/MP 0.5s regen 計時器（對應設計文件「每 0.5 秒恢復一次」）
     void TickRegen();
     FTimerHandle RegenTimerHandle;
+
+    // S-4 防禦/彈反計時器（6 幀 @ 60fps ≈ 100ms）
+    static constexpr float ParryWindowSec = 6.f / 60.f;
+    bool bInParryWindow = false;
+    FTimerHandle ParryWindowTimer;
 
     // ── 面板 / 偵錯按鍵處理 ──────────────────────────────────────
     // 2026-06-19 稽核：原本這裡還有 OnOpenInventory/OnOpenEquipment/OnOpenCharacterPanel

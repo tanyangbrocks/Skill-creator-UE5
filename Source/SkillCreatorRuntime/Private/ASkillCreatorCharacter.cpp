@@ -29,6 +29,9 @@
 #include "PlacedUnit.h"
 #include "MaterialRegistry.h"
 #include "IInteractable.h"
+#include "UPotionBagComponent.h"
+#include "UMapComponent.h"
+#include "UAfterimageFXComponent.h"
 #include "DrawDebugHelpers.h"
 #include "InputTriggers.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -85,6 +88,9 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     SpellCasterComp = CreateDefaultSubobject<USpellCaster>(TEXT("SpellCasterComp"));
     InventoryComp   = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComp"));
     EquipmentComp   = CreateDefaultSubobject<UEquipmentComponent>(TEXT("EquipmentComp"));
+    PotionBagComp   = CreateDefaultSubobject<UPotionBagComponent>(TEXT("PotionBagComp"));
+    MapComp         = CreateDefaultSubobject<UMapComponent>(TEXT("MapComp"));
+    AfterimageComp  = CreateDefaultSubobject<UAfterimageFXComponent>(TEXT("AfterimageComp"));
 }
 
 void ASkillCreatorCharacter::BeginPlay()
@@ -394,10 +400,28 @@ float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent
     return Final;
 }
 
-// B-3：物理傷害管線（防禦/減傷 → 暴擊判定 → 命中/閃避）
+// B-3：物理傷害管線（S-4 彈反/防禦 → 防禦/減傷 → 暴擊判定 → 命中/閃避）
 // 對應 Godot 設計文件 base value system.txt 第 24-29 行物理 2 步公式
-void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
+void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk, AActor* Attacker)
 {
+    // S-4 防禦/彈反判定（先於命中/閃避計算）
+    if (IsGuarding())
+    {
+        if (bInParryWindow)
+        {
+            // 彈反成功：完全無傷 + 震暈近戰攻擊者 3 秒
+            bInParryWindow = false;
+            GetWorldTimerManager().ClearTimer(ParryWindowTimer);
+            if (AEnemy* EnemyAtk = Cast<AEnemy>(Attacker))
+                if (EnemyAtk->AuraComp)
+                    EnemyAtk->AuraComp->ApplyFreeze(3.f, EnemyAtk);
+            OnParrySuccess.Broadcast(Attacker);
+            return;
+        }
+        // 防禦中但彈反窗口已過：50% 物理傷害
+        PhysAtk *= 0.5f;
+    }
+
     // 命中/閃避判定
     if (Atk)
     {
@@ -904,6 +928,9 @@ void ASkillCreatorCharacter::ApplyMovementState()
             break;
         case EPlayerMovementState::FastFlying:
             GetCharacterMovement()->MaxFlySpeed = WorldScale::WalkSpeedCm * 5.f;
+            break;
+        case EPlayerMovementState::Guarding:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
             break;
     }
 }
@@ -1579,4 +1606,41 @@ void ASkillCreatorCharacter::UseConsumable()
 void ASkillCreatorCharacter::OnPlaceReleased()
 {
     bRightMouseWasPressed = false;
+}
+
+// ── S-4 防禦/彈反 ───────────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::PerformGuard()
+{
+    if (!IsAlive() || IsFlying()) return;
+    MovementState = EPlayerMovementState::Guarding;
+    ApplyMovementState();
+    bInParryWindow = true;
+    // 6 幀窗口（@ 60fps ≈ 100ms）；窗口結束後仍處於 Guarding 但不再彈反
+    GetWorldTimerManager().SetTimer(ParryWindowTimer,
+        FTimerDelegate::CreateLambda([this]() { bInParryWindow = false; }),
+        ParryWindowSec, false);
+}
+
+void ASkillCreatorCharacter::EndGuard()
+{
+    if (!IsGuarding()) return;
+    GetWorldTimerManager().ClearTimer(ParryWindowTimer);
+    bInParryWindow = false;
+    MovementState = EPlayerMovementState::Grounded;
+    ApplyMovementState();
+}
+
+// ── S-8 後撤衝量（接口） ────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::PerformBackDash()
+{
+    if (!IsAlive()) return;
+    // 後撤衝量：4× 步行速度，覆寫 XY 並保留 Z 慣性
+    const FVector Back     = -GetActorForwardVector();
+    const float   DashSpd  = WorldScale::WalkSpeedCm * 4.f;
+    LaunchCharacter(Back * DashSpd, true, false);
+    // S-8 殘影 FX（stub — 實作後在 SpawnAfterimage 裡生成半透明網格）
+    if (AfterimageComp)
+        AfterimageComp->SpawnAfterimage(GetActorLocation(), Back, 0.3f);
 }

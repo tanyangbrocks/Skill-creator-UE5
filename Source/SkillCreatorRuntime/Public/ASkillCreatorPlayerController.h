@@ -72,13 +72,17 @@ private:
     // OnOpenEditor 已在上方宣告（V，was E；原本 V 的技能組切換移至編輯器面板 UI）
 
     // 動作快捷鍵（plan-player-actions.md）
-    void OnUsePotion();           // Q（stub — S-6 藥水袋完成後接通）
+    void OnUsePotion();           // Q — S-6 服用所有藥水袋（PotionBagComp->UseAllBags）
     void OnToggleLockTarget();    // E — S-3 鎖敵切換（TryToggleLockTarget）
     void OnSwitchLockTarget();    // Tab — S-3 循環切換目標（SwitchToNextLockTarget）
     void OnDropCurrentItem();     // F — 丟出當前物品（DroppedItemManager）
     void OnCancelAction();        // H — 取消施法（SpellRunner::PruneAll）
     void OnToggleSprint();        // Z — S-1 切換疾跑狀態（ToggleSprint）
     void OnFlyToggle();           // K — 進入/退出飛行（ToggleFlight）
-    void OnFlyDown();             // X — 飛行中取消+向下衝量；地面暫 stub（S-1 蹲/翻滾）
-    void OnLightAttack();         // J — S-2 輕攻（PerformLightAttack）
+    void OnFlyDown();             // X IE_Pressed — 飛行中取消+向下衝量；地面=PerformGuard
+    void OnGuardReleased();       // X IE_Released — 結束防禦（EndGuard）
+    void OnLightAttack();         // J IE_Pressed — S-2 輕攻；X 同時按住=PerformGuard（S-4 彈反窗口）
+    void OnBackDash();            // L — S-8 後撤衝量（PerformBackDash stub）
+    void OnOpenPotionPanel();     // Y — S-6 藥水袋面板（PotionBagComp->TogglePanel stub）
+    void OnOpenMap();             // M — S-7 地圖（MapComp->ToggleMap stub）
 };

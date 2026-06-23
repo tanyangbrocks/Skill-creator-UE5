@@ -1,5 +1,8 @@
 #include "ASkillCreatorPlayerController.h"
 #include "ASkillCreatorCharacter.h"
+#include "UPotionBagComponent.h"
+#include "UMapComponent.h"
+#include "UAfterimageFXComponent.h"
 #include "ASkillCreatorHUD.h"
 #include "USpellCaster.h"
 #include "UInventoryComponent.h"
@@ -76,15 +79,20 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     // V（SpellGroupSwitch）已移除：技能組切換改為積木編輯器面板內 UI 操作
 
     // 動作快捷鍵
-    Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);       // stub - S-6
-    Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget); // S-3 鎖敵
-    Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget); // S-3 切換目標
+    Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);        // S-6 服用藥水袋
+    Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget);  // S-3 鎖敵切換
+    Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // S-3 循環切換目標
     Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
     Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
-    Bind(EKeys::Z,   &ASkillCreatorPlayerController::OnToggleSprint);     // S-1 疾跑切換
-    Bind(EKeys::K,   &ASkillCreatorPlayerController::OnFlyToggle);        // 飛行 on/off
-    Bind(EKeys::X,   &ASkillCreatorPlayerController::OnFlyDown);          // 飛行下衝
-    Bind(EKeys::J,   &ASkillCreatorPlayerController::OnLightAttack);      // S-2 輕攻
+    Bind(EKeys::Z,   &ASkillCreatorPlayerController::OnToggleSprint);      // S-1 疾跑切換
+    Bind(EKeys::K,   &ASkillCreatorPlayerController::OnFlyToggle);         // 飛行 on/off
+    // X：IE_Pressed = 飛行中下衝 / 地面=進入防禦；IE_Released = 解除防禦（S-4）
+    Bind(EKeys::X,   &ASkillCreatorPlayerController::OnFlyDown);
+    InputComponent->BindKey(EKeys::X, IE_Released, this, &ASkillCreatorPlayerController::OnGuardReleased);
+    Bind(EKeys::J,   &ASkillCreatorPlayerController::OnLightAttack);       // S-2 輕攻（X 按住=彈反，S-4）
+    Bind(EKeys::L,   &ASkillCreatorPlayerController::OnBackDash);          // S-8 後撤衝量 stub
+    Bind(EKeys::Y,   &ASkillCreatorPlayerController::OnOpenPotionPanel);   // S-6 藥水袋面板 stub
+    Bind(EKeys::M,   &ASkillCreatorPlayerController::OnOpenMap);           // S-7 地圖 stub
 
     // Shift 游標模式（按一下顯示系統游標且鏡頭凍結，再按切回準心操控）
     Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCursorMode);
@@ -331,8 +339,9 @@ void ASkillCreatorPlayerController::OnOpenStats()
 
 void ASkillCreatorPlayerController::OnUsePotion()
 {
-    // Stub：S-6 藥水袋系統完成後接通
-    UE_LOG(LogTemp, Log, TEXT("[Q] OnUsePotion — pending S-6"));
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->PotionBagComp)
+        Char->PotionBagComp->UseAllBags();
 }
 
 void ASkillCreatorPlayerController::OnToggleLockTarget()
@@ -392,11 +401,43 @@ void ASkillCreatorPlayerController::OnFlyDown()
     if (!Char) return;
     if (Char->IsFlying())
         Char->FlyDown();
-    // else: S-1 蹲/翻滾（完成後接通）
+    else
+        Char->PerformGuard(); // X 地面按下=進入防禦（S-4）
+}
+
+void ASkillCreatorPlayerController::OnGuardReleased()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->EndGuard();
 }
 
 void ASkillCreatorPlayerController::OnLightAttack()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->PerformLightAttack();
+    if (!Char) return;
+    // S-4：X 同時按住（地面）→ 進入彈反窗口（PerformGuard）；否則輕攻
+    if (!Char->IsFlying() && IsInputKeyDown(EKeys::X))
+        Char->PerformGuard();
+    else
+        Char->PerformLightAttack();
+}
+
+void ASkillCreatorPlayerController::OnBackDash()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->PerformBackDash();
+}
+
+void ASkillCreatorPlayerController::OnOpenPotionPanel()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->PotionBagComp)
+        Char->PotionBagComp->TogglePanel();
+}
+
+void ASkillCreatorPlayerController::OnOpenMap()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->MapComp)
+        Char->MapComp->ToggleMap();
 }
