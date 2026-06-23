@@ -10,7 +10,18 @@ struct FInputActionValue;
 #include "ActionBus.h"
 #include "SkillCameraTypes.h"
 #include "ManaSlot.h"
+#include "AttackTypes.h"
 #include "ASkillCreatorCharacter.generated.h"
+
+// S-1：玩家移動狀態機（骨架，Grounded/Sprinting/Flying/FastFlying）
+UENUM(BlueprintType)
+enum class EPlayerMovementState : uint8
+{
+    Grounded   UMETA(DisplayName="地面"),
+    Sprinting  UMETA(DisplayName="疾跑"),
+    Flying     UMETA(DisplayName="飛行"),
+    FastFlying UMETA(DisplayName="疾飛"),
+};
 
 class UCharacterStateComponent;
 class UElementalAuraComponent;
@@ -21,6 +32,7 @@ class UInventoryComponent;
 class UEquipmentComponent;
 class AVoxelWorldActor;
 class AEnemyManager;
+class AEnemy;
 struct FCharacterSaveData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
@@ -92,6 +104,37 @@ public:
     // 切換至指定模式並套用
     UFUNCTION(BlueprintCallable, Category="Camera")
     void SetCameraMode(ECameraMode NewMode);
+
+    // ── S-1 移動狀態機 ────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Movement")
+    EPlayerMovementState MovementState = EPlayerMovementState::Grounded;
+
+    // Z：切換 Grounded↔Sprinting；飛行中切換 Flying↔FastFlying
+    void ToggleSprint();
+    // K（空中）：進入/退出飛行（MOVE_Flying，重力=0）
+    void ToggleFlight();
+    // X（飛行中）：取消飛行 + 向下衝量
+    void FlyDown();
+
+    bool IsFlying() const
+    {
+        return MovementState == EPlayerMovementState::Flying
+            || MovementState == EPlayerMovementState::FastFlying;
+    }
+
+    // ── S-3 鎖敵 ──────────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Combat")
+    TObjectPtr<AEnemy> LockedTarget;
+
+    // E：切換鎖定（已鎖→解鎖；未鎖→找最近屏幕中心目標）
+    bool TryToggleLockTarget();
+    // Tab：循環切換至下一個有效目標
+    void SwitchToNextLockTarget();
+    bool IsLockingTarget() const { return LockedTarget != nullptr; }
+
+    // ── S-2 攻擊框架（骨架）──────────────────────────────────────
+    // J：輕攻（前方球形掃描，命中 → TakePhysicalDamage）
+    void PerformLightAttack();
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UCharacterStateComponent> StateComp;
@@ -227,6 +270,9 @@ private:
     void OnJumpStarted();
     void OnJumpReleased();
     float JumpPressedTime = -1.f;
+
+    // S-1：根據 MovementState 設定對應速度
+    void ApplyMovementState();
 
     // F1/F2/F4 開發者工具（對應 Godot TogglePaint/DebugCoord/DebugSurvival）
     bool bDebugPaintEnabled    = false;

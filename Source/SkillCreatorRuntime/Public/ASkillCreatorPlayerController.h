@@ -71,13 +71,14 @@ private:
     void OnOpenStats();          // G（was C）
     // OnOpenEditor 已在上方宣告（V，was E；原本 V 的技能組切換移至編輯器面板 UI）
 
-    // 動作快捷鍵（plan-player-actions.md 第一批+第二批）
-    void OnUsePotion();          // Q（stub — S-6 藥水袋完成後接通）
-    void OnToggleLockTarget();   // E（stub — S-3 鎖敵完成後接通）
-    void OnSwitchLockTarget();   // Tab（stub — S-3 鎖敵完成後接通）
-    void OnDropCurrentItem();    // F — 丟出當前物品（DroppedItemManager）
-    void OnCancelAction();       // H — 取消施法（SpellRunner::PruneAll）
-    void OnSprintStart();        // Z 按下：MaxWalkSpeed × 2
-    void OnSprintEnd();          // Z 放開：恢復 WalkSpeedCm
-    bool bSprinting = false;
+    // 動作快捷鍵（plan-player-actions.md）
+    void OnUsePotion();           // Q（stub — S-6 藥水袋完成後接通）
+    void OnToggleLockTarget();    // E — S-3 鎖敵切換（TryToggleLockTarget）
+    void OnSwitchLockTarget();    // Tab — S-3 循環切換目標（SwitchToNextLockTarget）
+    void OnDropCurrentItem();     // F — 丟出當前物品（DroppedItemManager）
+    void OnCancelAction();        // H — 取消施法（SpellRunner::PruneAll）
+    void OnToggleSprint();        // Z — S-1 切換疾跑狀態（ToggleSprint）
+    void OnFlyToggle();           // K — 進入/退出飛行（ToggleFlight）
+    void OnFlyDown();             // X — 飛行中取消+向下衝量；地面暫 stub（S-1 蹲/翻滾）
+    void OnLightAttack();         // J — S-2 輕攻（PerformLightAttack）
 };

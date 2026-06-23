@@ -267,6 +267,23 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
 
     ApplyEnvironmentalDamage(DeltaTime);
 
+    // S-3：鎖敵相機追蹤（自動解鎖：死亡/超距離）
+    if (LockedTarget)
+    {
+        const float MaxLockDistCm = WorldScale::TileSizeCm * WorldScale::GrainCurrent * 30.f;
+        if (!LockedTarget->IsAlive() ||
+            FVector::Dist(GetActorLocation(), LockedTarget->GetActorLocation()) > MaxLockDistCm)
+        {
+            LockedTarget = nullptr;
+        }
+        else if (APlayerController* PC = Cast<APlayerController>(GetController()))
+        {
+            const FVector ToTarget = LockedTarget->GetActorLocation() - GetActorLocation();
+            const FRotator Want(PC->GetControlRotation().Pitch, ToTarget.Rotation().Yaw, 0.f);
+            PC->SetControlRotation(FMath::RInterpTo(PC->GetControlRotation(), Want, DeltaTime, 5.f));
+        }
+    }
+
     // 自動拾取玩家周圍掉落物，並在裝備槽空閒時自動穿戴
     if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
     {
@@ -738,11 +755,20 @@ void ASkillCreatorCharacter::Move(const FInputActionValue& Value)
 {
     if (!Controller) return;
     const FVector2D Axis = Value.Get<FVector2D>();
-    const FRotator YawOnly(0.f, GetControlRotation().Yaw, 0.f);
-    if (Axis.Y != 0.f)
-        AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X), Axis.Y);
-    if (Axis.X != 0.f)
-        AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Axis.X);
+
+    if (IsFlying())
+    {
+        // 飛行模式：WASD 沿鏡頭朝向（含 Pitch）全向移動
+        const FRotator FullRot = GetControlRotation();
+        if (Axis.Y != 0.f) AddMovementInput(FRotationMatrix(FullRot).GetUnitAxis(EAxis::X), Axis.Y);
+        if (Axis.X != 0.f) AddMovementInput(FRotationMatrix(FullRot).GetUnitAxis(EAxis::Y), Axis.X);
+    }
+    else
+    {
+        const FRotator YawOnly(0.f, GetControlRotation().Yaw, 0.f);
+        if (Axis.Y != 0.f) AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X), Axis.Y);
+        if (Axis.X != 0.f) AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Axis.X);
+    }
 }
 
 void ASkillCreatorCharacter::Look(const FInputActionValue& Value)
@@ -859,6 +885,143 @@ void ASkillCreatorCharacter::OnJumpReleased()
     const float Bonus = Alpha * WorldScale::JumpZVelocityCm * 1.5f;
     if (Bonus > 0.f && GetMovementComponent()->IsFalling())
         LaunchCharacter(FVector(0.f, 0.f, Bonus), false, false);
+}
+
+// ── S-1 移動狀態機 ────────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::ApplyMovementState()
+{
+    switch (MovementState)
+    {
+        case EPlayerMovementState::Grounded:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
+            break;
+        case EPlayerMovementState::Sprinting:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 2.f;
+            break;
+        case EPlayerMovementState::Flying:
+            GetCharacterMovement()->MaxFlySpeed = WorldScale::WalkSpeedCm * 2.5f;
+            break;
+        case EPlayerMovementState::FastFlying:
+            GetCharacterMovement()->MaxFlySpeed = WorldScale::WalkSpeedCm * 5.f;
+            break;
+    }
+}
+
+void ASkillCreatorCharacter::ToggleSprint()
+{
+    if (IsFlying())
+    {
+        MovementState = (MovementState == EPlayerMovementState::FastFlying)
+            ? EPlayerMovementState::Flying : EPlayerMovementState::FastFlying;
+    }
+    else
+    {
+        MovementState = (MovementState == EPlayerMovementState::Sprinting)
+            ? EPlayerMovementState::Grounded : EPlayerMovementState::Sprinting;
+    }
+    ApplyMovementState();
+}
+
+void ASkillCreatorCharacter::ToggleFlight()
+{
+    if (IsFlying())
+    {
+        MovementState = EPlayerMovementState::Grounded;
+        GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+        GetCharacterMovement()->GravityScale = WorldScale::GravityScaleMult;
+        ApplyMovementState();
+    }
+    else if (GetCharacterMovement()->IsFalling())
+    {
+        MovementState = EPlayerMovementState::Flying;
+        GetCharacterMovement()->SetMovementMode(MOVE_Flying);
+        GetCharacterMovement()->GravityScale = 0.f;
+        ApplyMovementState();
+    }
+}
+
+void ASkillCreatorCharacter::FlyDown()
+{
+    if (!IsFlying()) return;
+    MovementState = EPlayerMovementState::Grounded;
+    GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+    GetCharacterMovement()->GravityScale = WorldScale::GravityScaleMult;
+    // 向下衝量 = 3x WalkSpeed（讓玩家快速落地）
+    LaunchCharacter(FVector(0.f, 0.f, -WorldScale::WalkSpeedCm * 3.f), false, true);
+}
+
+// ── S-3 鎖敵 ─────────────────────────────────────────────────────────────
+
+bool ASkillCreatorCharacter::TryToggleLockTarget()
+{
+    if (LockedTarget) { LockedTarget = nullptr; return true; }
+    if (!CachedEnemyMgr) return false;
+
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return false;
+
+    int32 VX = 0, VY = 0;
+    PC->GetViewportSize(VX, VY);
+    const FVector2D ScreenCenter(VX * 0.5f, VY * 0.5f);
+    const float MaxDistCm = WorldScale::TileSizeCm * WorldScale::GrainCurrent * 25.f; // 25 遊戲單位
+
+    AEnemy* Best     = nullptr;
+    float   BestScore = FLT_MAX;
+
+    for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+    {
+        if (!E || !E->IsAlive()) continue;
+        const float Dist = FVector::Dist(GetActorLocation(), E->GetActorLocation());
+        if (Dist > MaxDistCm) continue;
+
+        FVector2D SP;
+        if (!PC->ProjectWorldLocationToScreen(E->GetActorLocation(), SP)) continue;
+
+        // 距離分數 + 螢幕中心偏移分數（各佔一半）
+        const float Score = Dist / MaxDistCm + FVector2D::Distance(SP, ScreenCenter) / 500.f;
+        if (Score < BestScore) { BestScore = Score; Best = E; }
+    }
+
+    LockedTarget = Best;
+    return Best != nullptr;
+}
+
+void ASkillCreatorCharacter::SwitchToNextLockTarget()
+{
+    if (!CachedEnemyMgr) return;
+    const float MaxDistCm = WorldScale::TileSizeCm * WorldScale::GrainCurrent * 25.f;
+
+    TArray<AEnemy*> Valid;
+    for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+    {
+        if (E && E->IsAlive() && FVector::Dist(GetActorLocation(), E->GetActorLocation()) <= MaxDistCm)
+            Valid.Add(E);
+    }
+    if (Valid.IsEmpty()) { LockedTarget = nullptr; return; }
+
+    const int32 Cur = Valid.IndexOfByKey(LockedTarget.Get());
+    LockedTarget = Valid[(Cur + 1) % Valid.Num()];
+}
+
+// ── S-2 攻擊框架（骨架）──────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::PerformLightAttack()
+{
+    if (!IsAlive() || !CachedEnemyMgr) return;
+
+    // 保底 10 傷害（Stats.Strength 升點後才有值）
+    const float PhysAtk = FMath::Max(Stats.Strength, 10.f);
+    // 前方 1.5 遊戲單位（半徑 1 遊戲單位）
+    const float GameUnit = WorldScale::TileSizeCm * WorldScale::GrainCurrent; // ≡ 100 cm
+    const FVector Center = GetActorLocation() + GetActorForwardVector() * GameUnit * 1.5f;
+
+    for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+    {
+        if (!E || !E->IsAlive()) continue;
+        if (FVector::Dist(Center, E->GetActorLocation()) <= GameUnit)
+            E->TakePhysicalDamage(PhysAtk, &Stats);
+    }
 }
 
 // ── Panel / Debug Key Handlers ──────────────────────────────────────────

@@ -76,15 +76,15 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     // V（SpellGroupSwitch）已移除：技能組切換改為積木編輯器面板內 UI 操作
 
     // 動作快捷鍵
-    Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);         // stub - S-6
-    Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget);  // stub - S-3
-    Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // stub - S-3
+    Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);       // stub - S-6
+    Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget); // S-3 鎖敵
+    Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget); // S-3 切換目標
     Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
     Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
-
-    // Z 疾跑：IE_Pressed/IE_Released 雙向綁定（lambda 只處理 IE_Pressed，直接寫）
-    InputComponent->BindKey(EKeys::Z, IE_Pressed,  this, &ASkillCreatorPlayerController::OnSprintStart);
-    InputComponent->BindKey(EKeys::Z, IE_Released, this, &ASkillCreatorPlayerController::OnSprintEnd);
+    Bind(EKeys::Z,   &ASkillCreatorPlayerController::OnToggleSprint);     // S-1 疾跑切換
+    Bind(EKeys::K,   &ASkillCreatorPlayerController::OnFlyToggle);        // 飛行 on/off
+    Bind(EKeys::X,   &ASkillCreatorPlayerController::OnFlyDown);          // 飛行下衝
+    Bind(EKeys::J,   &ASkillCreatorPlayerController::OnLightAttack);      // S-2 輕攻
 
     // Shift 游標模式（按一下顯示系統游標且鏡頭凍結，再按切回準心操控）
     Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCursorMode);
@@ -337,14 +337,14 @@ void ASkillCreatorPlayerController::OnUsePotion()
 
 void ASkillCreatorPlayerController::OnToggleLockTarget()
 {
-    // Stub：S-3 鎖敵系統完成後接通
-    UE_LOG(LogTemp, Log, TEXT("[E] OnToggleLockTarget — pending S-3"));
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->TryToggleLockTarget();
 }
 
 void ASkillCreatorPlayerController::OnSwitchLockTarget()
 {
-    // Stub：S-3 鎖敵系統完成後接通
-    UE_LOG(LogTemp, Log, TEXT("[Tab] OnSwitchLockTarget — pending S-3"));
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->SwitchToNextLockTarget();
 }
 
 void ASkillCreatorPlayerController::OnDropCurrentItem()
@@ -374,19 +374,29 @@ void ASkillCreatorPlayerController::OnCancelAction()
         Char->SpellCasterComp->CancelAll();
 }
 
-void ASkillCreatorPlayerController::OnSprintStart()
+void ASkillCreatorPlayerController::OnToggleSprint()
 {
-    ASkillCreatorCharacter* Char =
-        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (!Char) return;
-    bSprinting = true;
-    Char->GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 2.f;
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->ToggleSprint();
 }
 
-void ASkillCreatorPlayerController::OnSprintEnd()
+void ASkillCreatorPlayerController::OnFlyToggle()
 {
-    ASkillCreatorCharacter* Char =
-        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
-    bSprinting = false;
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->ToggleFlight();
+}
+
+void ASkillCreatorPlayerController::OnFlyDown()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+    if (Char->IsFlying())
+        Char->FlyDown();
+    // else: S-1 蹲/翻滾（完成後接通）
+}
+
+void ASkillCreatorPlayerController::OnLightAttack()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->PerformLightAttack();
 }

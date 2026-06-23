@@ -1,5 +1,6 @@
 #include "ASkillCreatorHUD.h"
 #include "ASkillCreatorCharacter.h"
+#include "AEnemy.h"
 #include "USpellCaster.h"
 #include "UCharacterStateComponent.h"
 #include "UInventoryComponent.h"
@@ -13,6 +14,10 @@
 #include "UInputSettingsWidget.h"
 #include "USpellListWidget.h"
 #include "UDebugPaintWidget.h"
+#include "UChestWidget.h"
+#include "UCraftingPanelWidget.h"
+#include "UCraftingStationSubsystem.h"
+#include "APlacedFixtureActor.h"
 #include "ItemRegistry.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -67,6 +72,41 @@ void ASkillCreatorHUD::ToggleInputSettings()   { TogglePanel(InputSettingsPanel)
 void ASkillCreatorHUD::ToggleSpellList()       { TogglePanel(SpellListPanel);      }
 void ASkillCreatorHUD::ToggleDebugPaint()       { TogglePanel(DebugPaintPanel);     }
 
+void ASkillCreatorHUD::OpenChest(AChestActor* Chest)
+{
+    if (!Chest || !ChestPanel) return;
+
+    // 再按一次右鍵（同一個寶箱）＝關閉，符合 AChestActor::OpenChestUI 的 toggle 語意
+    const bool bAlreadyOpenForThisChest =
+        ChestPanel->GetVisibility() == ESlateVisibility::Visible && CurrentChestActor == Chest;
+    if (bAlreadyOpenForThisChest)
+    {
+        CloseChest();
+        return;
+    }
+
+    ASkillCreatorCharacter* Char = GetOwningPlayerController()
+        ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
+    if (!Char || !Char->InventoryComp) return;
+
+    CurrentChestActor = Chest;
+    ChestPanel->Setup(Char->InventoryComp, Chest->InventoryComp);
+    ChestPanel->SetVisibility(ESlateVisibility::Visible);
+
+    // 規格「玩家打開寶箱，玩家自己的物品欄也會自動打開」
+    if (InventoryPanel)
+    {
+        InventoryPanel->Refresh(Char->InventoryComp);
+        InventoryPanel->SetVisibility(ESlateVisibility::Visible);
+    }
+}
+
+void ASkillCreatorHUD::CloseChest()
+{
+    CurrentChestActor = nullptr;
+    if (ChestPanel) ChestPanel->SetVisibility(ESlateVisibility::Collapsed);
+}
+
 // ── BeginPlay：建立所有 widget + 綁定 delegate ───────────────────────────
 
 void ASkillCreatorHUD::BeginPlay()
@@ -77,9 +117,17 @@ void ASkillCreatorHUD::BeginPlay()
     if (!PC) return;
 
     // 常駐 HUD
+    // 2026-06-23 診斷：使用者多次回報準心/物品熱鍵欄/生存條從未出現，懷疑 HUDWidgetClass
+    // 在 Standalone 封裝版實際執行時並非預期的純 C++ UPlayerHUDWidget；先加 log 確認真相，
+    // 而不是再猜一次（前幾輪 GameMode/PlayerController 鏈路檢查都顯示邏輯應該正確）。
+    UE_LOG(LogTemp, Warning, TEXT("ASkillCreatorHUD::BeginPlay HUDWidgetClass=%s"),
+        HUDWidgetClass ? *HUDWidgetClass->GetName() : TEXT("nullptr"));
     if (HUDWidgetClass)
     {
         HUDWidget = CreateWidget<UPlayerHUDWidget>(PC, HUDWidgetClass);
+        UE_LOG(LogTemp, Warning, TEXT("ASkillCreatorHUD::BeginPlay HUDWidget created=%s class=%s"),
+            HUDWidget ? TEXT("true") : TEXT("false"),
+            HUDWidget ? *HUDWidget->GetClass()->GetName() : TEXT("n/a"));
         if (HUDWidget) HUDWidget->AddToViewport();
     }
 
@@ -178,13 +226,13 @@ void ASkillCreatorHUD::BeginPlay()
     if (EquipmentPanel)
     {
         EquipmentPanel->OnUnequipRequested.BindLambda(
-            [this](EEquipmentSlotType Slot)
+            [this](FName SlotId)
             {
                 ASkillCreatorCharacter* Char = GetOwningPlayerController()
                     ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
                 if (Char && Char->EquipmentComp && Char->InventoryComp)
                 {
-                    Char->EquipmentComp->TryUnequip(Char->InventoryComp, Slot);
+                    Char->EquipmentComp->TryUnequip(Char->InventoryComp, SlotId);
                     EquipmentPanel->Refresh(Char->EquipmentComp);
                     if (InventoryPanel) InventoryPanel->Refresh(Char->InventoryComp);
                 }
@@ -196,6 +244,14 @@ void ASkillCreatorHUD::BeginPlay()
 
     // SpellList（法術清單面板）
     SpellListPanel = CreatePanel<USpellListWidget>();
+
+    // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六；非常駐 Toggle，由 OpenChest() 帶資料開啟）
+    ChestPanel = CreatePanel<UChestWidget>();
+
+    // 加工選單面板（docs/plan-item-crafting-system.md §八）：規格「玩家左側中央立刻出現」，
+    // 是常駐可見的 HUD 一部分，不是按鍵開關面板，CreatePanel() 預設 Collapsed 後立刻改回 Visible。
+    CraftingPanel = CreatePanel<UCraftingPanelWidget>();
+    if (CraftingPanel) CraftingPanel->SetVisibility(ESlateVisibility::Visible);
 }
 
 // ── DrawHUD：每幀餵資料 ───────────────────────────────────────────────────
@@ -236,6 +292,19 @@ void ASkillCreatorHUD::DrawHUD()
         HUDWidget->UpdateItemHotbar(
             Char->InventoryComp->Slots, Char->InventoryComp->ActiveHotbarIndex);
 
+    // ── 加工選單（docs/plan-item-crafting-system.md §八）────────────────
+    if (CraftingPanel && Char->InventoryComp)
+    {
+        UCraftingStationSubsystem* CraftSub = GetWorld()->GetSubsystem<UCraftingStationSubsystem>();
+        const FVector PlayerLoc = Char->GetActorLocation();
+        const bool bHasWorkbench = CraftSub && CraftSub->HasNearbyWorkbench(PlayerLoc);
+        AChestActor* NearbyChest = CraftSub ? CraftSub->FindNearbyChest(PlayerLoc) : nullptr;
+        CraftingPanel->RefreshCraftable(
+            Char->InventoryComp,
+            NearbyChest ? NearbyChest->InventoryComp : nullptr,
+            bHasWorkbench);
+    }
+
     // ── 生存條 ───────────────────────────────────────────────────────
     if (Char->StateComp)
         HUDWidget->UpdateSurvival(Char->StateComp);
@@ -248,19 +317,17 @@ void ASkillCreatorHUD::DrawHUD()
             Char->GetTierName(Char->Level), TierCol);
     }
 
-    // ── 裝備標籤 ─────────────────────────────────────────────────────
+    // ── 裝備標籤（2026-06-23：動態跑 FEquipmentSlotRegistry 全部欄位，不寫死武器/防具/飾品）──
     if (Char->EquipmentComp)
     {
-        auto ItemName = [](EItemId Id) -> FString
+        TArray<FString> Parts;
+        for (const FEquipmentSlotDef& Def : FEquipmentSlotRegistry::GetAll())
         {
-            return Id != EItemId::None
-                ? FItemRegistry::Get(Id).DisplayName.ToString()
-                : TEXT("─");
-        };
-        HUDWidget->UpdateEquipLabel(
-            ItemName(Char->EquipmentComp->WeaponId),
-            ItemName(Char->EquipmentComp->ArmorId),
-            ItemName(Char->EquipmentComp->AccessoryId));
+            const EItemId Eq = Char->EquipmentComp->GetEquipped(Def.Id);
+            const FString Name = Eq != EItemId::None ? FItemRegistry::Get(Eq).DisplayName.ToString() : TEXT("─");
+            Parts.Add(FString::Printf(TEXT("%s:%s"), *Def.DisplayName.ToString(), *Name));
+        }
+        HUDWidget->UpdateEquipLabel(FString::Join(Parts, TEXT("  ")));
     }
 
     // ── 法力條 ───────────────────────────────────────────────────────
@@ -281,4 +348,20 @@ void ASkillCreatorHUD::DrawHUD()
         EquipmentPanel->Refresh(Char->EquipmentComp);
 
     // SpellListPanel 不在 DrawHUD 每幀刷新；RefreshSpellList 只在面板開啟和切換組別時呼叫。
+
+    // ── S-3：鎖敵指示器（紅色方框跟隨鎖定目標）────────────────────────
+    if (Char->LockedTarget && Char->LockedTarget->IsAlive())
+    {
+        FVector2D SP;
+        const FVector TargetPos = Char->LockedTarget->GetActorLocation() + FVector(0.f, 0.f, 30.f);
+        if (PC->ProjectWorldLocationToScreen(TargetPos, SP, true))
+        {
+            constexpr float S = 20.f;
+            const FLinearColor LockCol(1.f, 0.2f, 0.2f, 0.85f);
+            DrawRect(LockCol, SP.X - S,     SP.Y - S,     5.f,    S * 2.f); // 左邊
+            DrawRect(LockCol, SP.X + S - 5, SP.Y - S,     5.f,    S * 2.f); // 右邊
+            DrawRect(LockCol, SP.X - S,     SP.Y - S,     S * 2.f, 5.f);    // 上邊
+            DrawRect(LockCol, SP.X - S,     SP.Y + S - 5, S * 2.f, 5.f);    // 下邊
+        }
+    }
 }
