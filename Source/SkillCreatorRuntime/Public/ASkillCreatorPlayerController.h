@@ -77,12 +77,14 @@ private:
     void OnSwitchLockTarget();    // Tab — S-3 循環切換目標（SwitchToNextLockTarget）
     void OnDropCurrentItem();     // F — 丟出當前物品（DroppedItemManager）
     void OnCancelAction();        // H — 取消施法（SpellRunner::PruneAll）
-    void OnToggleSprint();        // Z — S-1 切換疾跑狀態（ToggleSprint）
-    void OnFlyToggle();           // K — 進入/退出飛行（ToggleFlight）
-    void OnFlyDown();             // X IE_Pressed — 飛行中取消+向下衝量；地面=PerformGuard
-    void OnGuardReleased();       // X IE_Released — 結束防禦（EndGuard）
-    void OnLightAttack();         // J IE_Pressed — S-2 輕攻；X 同時按住=PerformGuard（S-4 彈反窗口）
-    void OnBackDash();            // L — S-8 後撤衝量（PerformBackDash stub）
-    void OnOpenPotionPanel();     // Y — S-6 藥水袋面板（PotionBagComp->TogglePanel stub）
-    void OnOpenMap();             // M — S-7 地圖（MapComp->ToggleMap stub）
+    void OnSprintPressed();        // Z IE_Pressed  — 進入疾跑；長按 1s → 超速
+    void OnSprintReleased();       // Z IE_Released — 結束疾跑/超速
+    void OnGuardBreakOrFly();     // K — 空中=飛行；地面對防禦目標=破防 stub；K+L=前衝 stub
+    void OnXPressed();             // X IE_Pressed  — 按情境：飛行/空中/蹲/翻滾/滑鏟/快墜
+    void OnXReleased();            // X IE_Released — 按情境：EndGuard / EndSlide
+    void OnAttackPressed();        // J IE_Pressed  — X 同時按住=PerformGuard；否則 StartChargingAttack
+    void OnAttackReleased();       // J IE_Released — ReleaseAttack（輕攻 or 蓄力攻）
+    void OnBackDash();             // L — S-8 後撤衝量（PerformBackDash stub）
+    void OnOpenPotionPanel();      // Y — S-6 藥水袋面板（PotionBagComp->TogglePanel stub）
+    void OnOpenMap();              // M — S-7 地圖（MapComp->ToggleMap stub）
 };

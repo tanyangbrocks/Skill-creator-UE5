@@ -63,6 +63,7 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     // 移動速度：依 WorldScale 尺度
     GetCharacterMovement()->MaxWalkSpeed  = WorldScale::WalkSpeedCm;
     GetCharacterMovement()->JumpZVelocity = WorldScale::JumpZVelocityCm;
+    GetCharacterMovement()->GetNavAgentPropertiesRef().bCanCrouch = true;
     // GravityScale 縮放：使「3 tile 跳躍高度」在任意 GrainCurrent 下保持一致（tile 單位）。
     // 不設定 → Grain=16 時有效重力過強，跳躍高度僅 4 cm（物理公式：h = v²/2g）。
     GetCharacterMovement()->GravityScale  = WorldScale::GravityScaleMult;
@@ -385,6 +386,22 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
                 TEXT("[偵錯 F4] 體力:%.1f  精力:%.1f  心情:%.1f\n  HP:%.1f/%.1f  MP:%.1f"),
                 StateComp->Stamina, StateComp->MentalEnergy, StateComp->Mood,
                 CurrentHp, Stats.MaxHpBase, CurrentMp));
+    }
+
+    // S-2 蓄力計時
+    if (bChargingAttack)
+        AttackChargeTimer = FMath::Min(AttackChargeTimer + DeltaTime, MaxChargeTime);
+
+    // 緩降：下落速度超過 3× 步行速度時限制終端速度（待平衡：觸發高度/速度閾值）
+    if (GetCharacterMovement()->IsFalling())
+    {
+        FVector Vel = GetVelocity();
+        const float MaxFallSpeed = WorldScale::WalkSpeedCm * 3.f;
+        if (Vel.Z < -MaxFallSpeed)
+        {
+            Vel.Z = -MaxFallSpeed;
+            GetCharacterMovement()->Velocity = Vel;
+        }
     }
 }
 
@@ -897,7 +914,17 @@ void ASkillCreatorCharacter::CycleCameraMode()
 void ASkillCreatorCharacter::OnJumpStarted()
 {
     JumpPressedTime = GetWorld()->GetTimeSeconds();
-    Jump();
+    if (GetCharacterMovement()->IsFalling() && JumpCount < MaxJumpCount)
+    {
+        // 二段跳：給予額外向上衝量（0.9x JumpZVelocity）
+        ++JumpCount;
+        LaunchCharacter(FVector(0.f, 0.f, GetCharacterMovement()->JumpZVelocity * 0.9f), false, true);
+    }
+    else if (!GetCharacterMovement()->IsFalling())
+    {
+        ++JumpCount;
+        Jump();
+    }
 }
 
 void ASkillCreatorCharacter::OnJumpReleased()
@@ -911,17 +938,44 @@ void ASkillCreatorCharacter::OnJumpReleased()
         LaunchCharacter(FVector(0.f, 0.f, Bonus), false, false);
 }
 
+void ASkillCreatorCharacter::Landed(const FHitResult& Hit)
+{
+    Super::Landed(Hit);
+    JumpCount = 0;
+    if (MovementState == EPlayerMovementState::Flying) return; // 飛行中強制落地不改狀態
+    if (MovementState == EPlayerMovementState::Rolling
+     || MovementState == EPlayerMovementState::Sliding) return;
+    if (!IsFlying() && MovementState != EPlayerMovementState::Grounded
+                    && MovementState != EPlayerMovementState::Sprinting
+                    && MovementState != EPlayerMovementState::SuperSprinting
+                    && MovementState != EPlayerMovementState::Guarding
+                    && MovementState != EPlayerMovementState::Crouching)
+    {
+        MovementState = EPlayerMovementState::Grounded;
+        ApplyMovementState();
+    }
+}
+
 // ── S-1 移動狀態機 ────────────────────────────────────────────────────────
 
 void ASkillCreatorCharacter::ApplyMovementState()
 {
+    // 離開蹲伏/滑鏟狀態時取消蹲伏
+    const bool bNeedsCrouch = (MovementState == EPlayerMovementState::Crouching
+                             || MovementState == EPlayerMovementState::Sliding);
+    if (bIsCrouched && !bNeedsCrouch) UnCrouch();
+
     switch (MovementState)
     {
         case EPlayerMovementState::Grounded:
+        case EPlayerMovementState::Guarding:
             GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
             break;
         case EPlayerMovementState::Sprinting:
             GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 2.f;
+            break;
+        case EPlayerMovementState::SuperSprinting:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 4.f;
             break;
         case EPlayerMovementState::Flying:
             GetCharacterMovement()->MaxFlySpeed = WorldScale::WalkSpeedCm * 2.5f;
@@ -929,25 +983,62 @@ void ASkillCreatorCharacter::ApplyMovementState()
         case EPlayerMovementState::FastFlying:
             GetCharacterMovement()->MaxFlySpeed = WorldScale::WalkSpeedCm * 5.f;
             break;
-        case EPlayerMovementState::Guarding:
-            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
+        case EPlayerMovementState::Crouching:
+            GetCharacterMovement()->MaxWalkSpeedCrouched = WorldScale::WalkSpeedCm * 0.5f;
+            if (!bIsCrouched) Crouch();
+            break;
+        case EPlayerMovementState::Rolling:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 1.5f;
+            break;
+        case EPlayerMovementState::Sliding:
+            GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 2.f;
+            if (!bIsCrouched) Crouch();
             break;
     }
 }
 
-void ASkillCreatorCharacter::ToggleSprint()
+void ASkillCreatorCharacter::StartSprint()
 {
     if (IsFlying())
     {
-        MovementState = (MovementState == EPlayerMovementState::FastFlying)
-            ? EPlayerMovementState::Flying : EPlayerMovementState::FastFlying;
+        if (MovementState != EPlayerMovementState::FastFlying)
+        {
+            MovementState = EPlayerMovementState::FastFlying;
+            ApplyMovementState();
+        }
     }
-    else
+    else if (MovementState == EPlayerMovementState::Grounded
+          || MovementState == EPlayerMovementState::Crouching)
     {
-        MovementState = (MovementState == EPlayerMovementState::Sprinting)
-            ? EPlayerMovementState::Grounded : EPlayerMovementState::Sprinting;
+        if (IsCrouching()) EndCrouch();
+        MovementState = EPlayerMovementState::Sprinting;
+        ApplyMovementState();
+        // 長按 1 秒後升級至超速
+        GetWorldTimerManager().SetTimer(SprintTimer, FTimerDelegate::CreateLambda([this]()
+        {
+            if (MovementState == EPlayerMovementState::Sprinting)
+            {
+                MovementState = EPlayerMovementState::SuperSprinting;
+                ApplyMovementState();
+            }
+        }), 1.f, false);
     }
-    ApplyMovementState();
+}
+
+void ASkillCreatorCharacter::EndSprint()
+{
+    GetWorldTimerManager().ClearTimer(SprintTimer);
+    if (MovementState == EPlayerMovementState::Sprinting
+     || MovementState == EPlayerMovementState::SuperSprinting)
+    {
+        MovementState = EPlayerMovementState::Grounded;
+        ApplyMovementState();
+    }
+    else if (MovementState == EPlayerMovementState::FastFlying)
+    {
+        MovementState = EPlayerMovementState::Flying;
+        ApplyMovementState();
+    }
 }
 
 void ASkillCreatorCharacter::ToggleFlight()
@@ -1037,17 +1128,26 @@ void ASkillCreatorCharacter::PerformLightAttack()
 {
     if (!IsAlive() || !CachedEnemyMgr) return;
 
-    // 保底 10 傷害（Stats.Strength 升點後才有值）
-    const float PhysAtk = FMath::Max(Stats.Strength, 10.f);
-    // 前方 1.5 遊戲單位（半徑 1 遊戲單位）
-    const float GameUnit = WorldScale::TileSizeCm * WorldScale::GrainCurrent; // ≡ 100 cm
+    // 傷害基底：20 × 熱鍵欄武器 AtkMult（對應 Godot SpellCaster.cs:128 meleeDmg = 20f * AtkMult）
+    const FItemStack& ActiveWpn = InventoryComp ? InventoryComp->GetActiveItem() : FItemStack{};
+    const bool bIsWeapon  = !ActiveWpn.IsEmpty() && FItemRegistry::Get(ActiveWpn.ItemId).bIsWeapon;
+    const float AtkMult   = bIsWeapon ? FItemRegistry::Get(ActiveWpn.ItemId).AtkMult : 1.f;
+    const float PhysAtk   = FMath::Max(20.f * AtkMult, Stats.Strength);
+    const float GameUnit = WorldScale::TileSizeCm * WorldScale::GrainCurrent;
     const FVector Center = GetActorLocation() + GetActorForwardVector() * GameUnit * 1.5f;
+
+    auto* GI  = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    auto* Sub = GI ? GI->GetSubsystem<UCombatStateSubsystem>() : nullptr;
 
     for (AEnemy* E : CachedEnemyMgr->GetEnemies())
     {
         if (!E || !E->IsAlive()) continue;
         if (FVector::Dist(Center, E->GetActorLocation()) <= GameUnit)
+        {
             E->TakePhysicalDamage(PhysAtk, &Stats);
+            if (Sub) Sub->OnPlayerDealtDamage(PhysAtk);
+            OnAttackHit.Broadcast(EAttackType::Light, E);
+        }
     }
 }
 
@@ -1130,9 +1230,17 @@ void ASkillCreatorCharacter::OnDebugSurvival()
 
 void ASkillCreatorCharacter::HandleSpellInput()
 {
-    if (!SpellCasterComp) return;
     APlayerController* PC = Cast<APlayerController>(GetController());
     if (!PC) return;
+
+    // J+U 重攻擊：U 觸發時若 J 已蓄力 ≥ HeavyAttackMinCharge → 重攻（阻斷施法）
+    if (PC->IsInputKeyDown(EKeys::U) && bChargingAttack && AttackChargeTimer >= HeavyAttackMinCharge)
+    {
+        PerformHeavyAttack();
+        return;
+    }
+
+    if (!SpellCasterComp) return;
 
     const bool bU = PC->IsInputKeyDown(EKeys::U);
     const bool bI = PC->IsInputKeyDown(EKeys::I);
@@ -1643,4 +1751,160 @@ void ASkillCreatorCharacter::PerformBackDash()
     // S-8 殘影 FX（stub — 實作後在 SpawnAfterimage 裡生成半透明網格）
     if (AfterimageComp)
         AfterimageComp->SpawnAfterimage(GetActorLocation(), Back, 0.3f);
+}
+
+// ── S-2 完整攻擊框架 ───────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::StartChargingAttack()
+{
+    if (!IsAlive() || IsGuarding()) return;
+    bChargingAttack  = true;
+    AttackChargeTimer = 0.f;
+}
+
+void ASkillCreatorCharacter::ReleaseAttack()
+{
+    if (!bChargingAttack) return;
+    const float Held = AttackChargeTimer;
+    bChargingAttack  = false;
+    AttackChargeTimer = 0.f;
+
+    if (Held < LightAttackMaxCharge)
+    {
+        PerformLightAttack();
+    }
+    else
+    {
+        // 蓄力攻：傷害 = 20~80 × AtkMult，線性插值；半徑 1~2.5 遊戲單位
+        if (!IsAlive() || !CachedEnemyMgr) return;
+        const float ChargeRatio = FMath::Clamp((Held - LightAttackMaxCharge) / (MaxChargeTime - LightAttackMaxCharge), 0.f, 1.f);
+        const FItemStack& AW2 = InventoryComp ? InventoryComp->GetActiveItem() : FItemStack{};
+        const float AtkMult   = (!AW2.IsEmpty() && FItemRegistry::Get(AW2.ItemId).bIsWeapon)
+                                    ? FItemRegistry::Get(AW2.ItemId).AtkMult : 1.f;
+        const float PhysAtk   = FMath::Lerp(20.f, 80.f, ChargeRatio) * AtkMult;
+        const float GameUnit  = WorldScale::TileSizeCm * WorldScale::GrainCurrent;
+        const float Radius    = FMath::Lerp(GameUnit, GameUnit * 2.5f, ChargeRatio);
+        const FVector Center  = GetActorLocation() + GetActorForwardVector() * GameUnit * 1.5f;
+
+        auto* GI  = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+        auto* Sub = GI ? GI->GetSubsystem<UCombatStateSubsystem>() : nullptr;
+
+        for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+        {
+            if (!E || !E->IsAlive()) continue;
+            if (FVector::Dist(Center, E->GetActorLocation()) <= Radius)
+            {
+                E->TakePhysicalDamage(PhysAtk, &Stats);
+                if (Sub) Sub->OnPlayerDealtDamage(PhysAtk);
+                OnAttackHit.Broadcast(EAttackType::Charged, E);
+            }
+        }
+    }
+}
+
+void ASkillCreatorCharacter::PerformHeavyAttack()
+{
+    bChargingAttack   = false;
+    AttackChargeTimer = 0.f;
+    if (!IsAlive() || !CachedEnemyMgr) return;
+
+    // 重攻：2.5× 基礎，範圍 1.5× 普通輕攻
+    const FItemStack& AW3 = InventoryComp ? InventoryComp->GetActiveItem() : FItemStack{};
+    const float AtkMult   = (!AW3.IsEmpty() && FItemRegistry::Get(AW3.ItemId).bIsWeapon)
+                                ? FItemRegistry::Get(AW3.ItemId).AtkMult : 1.f;
+    const float PhysAtk   = FMath::Max(50.f * AtkMult, Stats.Strength * 2.5f);
+    const float GameUnit = WorldScale::TileSizeCm * WorldScale::GrainCurrent;
+    const FVector Center = GetActorLocation() + GetActorForwardVector() * GameUnit * 1.5f;
+    const float Radius   = GameUnit * 1.5f;
+
+    auto* GI  = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    auto* Sub = GI ? GI->GetSubsystem<UCombatStateSubsystem>() : nullptr;
+
+    for (AEnemy* E : CachedEnemyMgr->GetEnemies())
+    {
+        if (!E || !E->IsAlive()) continue;
+        if (FVector::Dist(Center, E->GetActorLocation()) <= Radius)
+        {
+            E->TakePhysicalDamage(PhysAtk, &Stats);
+            if (Sub) Sub->OnPlayerDealtDamage(PhysAtk);
+            OnAttackHit.Broadcast(EAttackType::Heavy, E);
+        }
+    }
+}
+
+void ASkillCreatorCharacter::CancelAttack()
+{
+    bChargingAttack   = false;
+    AttackChargeTimer = 0.f;
+}
+
+// ── S-1 擴展移動狀態 ──────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::PerformCrouch()
+{
+    if (IsFlying() || IsRolling() || IsSliding() || IsCrouching()) return;
+    PreActionState = MovementState;
+    MovementState  = EPlayerMovementState::Crouching;
+    ApplyMovementState();
+}
+
+void ASkillCreatorCharacter::EndCrouch()
+{
+    if (!IsCrouching()) return;
+    MovementState = EPlayerMovementState::Grounded;
+    ApplyMovementState();
+}
+
+void ASkillCreatorCharacter::PerformRoll()
+{
+    if (!IsAlive() || IsFlying() || IsRolling() || IsSliding()) return;
+    PreActionState = MovementState;
+    MovementState  = EPlayerMovementState::Rolling;
+    ApplyMovementState();
+
+    // 0.3 秒無敵幀（DamageShield "Cancel"）
+    ActionBus.RegisterFilter(TEXT("DamageShield"), TEXT("Cancel"), false, 0.3f, 0.f);
+
+    // 前衝衝量
+    LaunchCharacter(GetActorForwardVector() * WorldScale::WalkSpeedCm * 2.f, false, false);
+
+    // 0.5 秒後恢復
+    GetWorldTimerManager().SetTimer(RollTimer, FTimerDelegate::CreateLambda([this]()
+    {
+        if (!IsRolling()) return;
+        MovementState = PreActionState;
+        ApplyMovementState();
+    }), 0.5f, false);
+}
+
+void ASkillCreatorCharacter::PerformSlide()
+{
+    if (!IsAlive() || IsFlying() || IsRolling() || IsSliding()) return;
+    PreActionState = MovementState;
+    MovementState  = EPlayerMovementState::Sliding;
+    ApplyMovementState();
+
+    // 沿當前方向給予大衝量（維持疾跑慣性）
+    LaunchCharacter(GetActorForwardVector() * WorldScale::WalkSpeedCm * 4.f, true, false);
+
+    // 1 秒後自動結束（或主動按 X Released）
+    GetWorldTimerManager().SetTimer(RollTimer, FTimerDelegate::CreateLambda([this]()
+    {
+        EndSlide();
+    }), 1.0f, false);
+}
+
+void ASkillCreatorCharacter::EndSlide()
+{
+    if (!IsSliding()) return;
+    GetWorldTimerManager().ClearTimer(RollTimer);
+    MovementState = EPlayerMovementState::Grounded;
+    ApplyMovementState();
+}
+
+void ASkillCreatorCharacter::StartFastFall()
+{
+    if (IsFlying()) { FlyDown(); return; }
+    if (!GetCharacterMovement()->IsFalling()) return;
+    LaunchCharacter(FVector(0.f, 0.f, -WorldScale::WalkSpeedCm * 3.f), false, true);
 }

@@ -2,8 +2,7 @@
 #include "CoreMinimal.h"
 #include "AttackTypes.generated.h"
 
-// S-2 攻擊框架骨架：攻擊種類 + 打擊區定義。
-// ASkillCreatorCharacter::PerformLightAttack() 使用 FAttackHitbox 做球形掃描。
+// S-2 攻擊框架：攻擊種類 + 攻擊階段 + 打擊區定義。
 
 UENUM(BlueprintType)
 enum class EAttackType : uint8
@@ -15,6 +14,15 @@ enum class EAttackType : uint8
     Plunge  UMETA(DisplayName="下墜攻"),
     Rising  UMETA(DisplayName="上升攻"),
     Rush    UMETA(DisplayName="衝刺攻"),
+};
+
+UENUM(BlueprintType)
+enum class EAttackPhase : uint8
+{
+    None       UMETA(DisplayName="無"),
+    WindingUp  UMETA(DisplayName="前搖"),
+    Active     UMETA(DisplayName="攻擊幀"),
+    Recovering UMETA(DisplayName="後搖"),
 };
 
 USTRUCT()

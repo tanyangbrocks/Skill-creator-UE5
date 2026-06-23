@@ -13,15 +13,19 @@ struct FInputActionValue;
 #include "AttackTypes.h"
 #include "ASkillCreatorCharacter.generated.h"
 
-// S-1：玩家移動狀態機（骨架，Grounded/Sprinting/Flying/FastFlying）
+// S-1：玩家移動狀態機
 UENUM(BlueprintType)
 enum class EPlayerMovementState : uint8
 {
-    Grounded   UMETA(DisplayName="地面"),
-    Sprinting  UMETA(DisplayName="疾跑"),
-    Flying     UMETA(DisplayName="飛行"),
-    FastFlying UMETA(DisplayName="疾飛"),
-    Guarding   UMETA(DisplayName="防禦"),
+    Grounded       UMETA(DisplayName="地面"),
+    Sprinting      UMETA(DisplayName="疾跑"),
+    SuperSprinting UMETA(DisplayName="超速"),
+    Flying         UMETA(DisplayName="飛行"),
+    FastFlying     UMETA(DisplayName="疾飛"),
+    Guarding       UMETA(DisplayName="防禦"),
+    Crouching      UMETA(DisplayName="蹲"),
+    Rolling        UMETA(DisplayName="翻滾"),
+    Sliding        UMETA(DisplayName="滑鏟"),
 };
 
 class UCharacterStateComponent;
@@ -42,6 +46,7 @@ class UAfterimageFXComponent;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHpChanged, float, NewHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnCharacterDied);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnParrySuccess, AActor*);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttackHit, EAttackType, AActor*);
 
 // 玩家角色（對應 Godot PlayerController.cs 角色層）。
 // EntityId 固定 -1；HP/MP 從 Stats 初始化。
@@ -114,18 +119,29 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Movement")
     EPlayerMovementState MovementState = EPlayerMovementState::Grounded;
 
-    // Z：切換 Grounded↔Sprinting；飛行中切換 Flying↔FastFlying
-    void ToggleSprint();
+    // Z 按住：疾跑（2x）；長按 1s → 超速（4x）；飛行中：切換疾飛
+    void StartSprint();
+    void EndSprint();
     // K（空中）：進入/退出飛行（MOVE_Flying，重力=0）
     void ToggleFlight();
-    // X（飛行中）：取消飛行 + 向下衝量
+    // X（飛行中 or 空中）：取消飛行 / 快速墜落；地面：蹲/翻滾/滑鏟
     void FlyDown();
+    void StartFastFall();
+    void PerformCrouch();
+    void EndCrouch();
+    void PerformRoll();
+    void PerformSlide();
+    void EndSlide();
 
     bool IsFlying() const
     {
         return MovementState == EPlayerMovementState::Flying
             || MovementState == EPlayerMovementState::FastFlying;
     }
+    bool IsCrouching()      const { return MovementState == EPlayerMovementState::Crouching; }
+    bool IsRolling()        const { return MovementState == EPlayerMovementState::Rolling; }
+    bool IsSliding()        const { return MovementState == EPlayerMovementState::Sliding; }
+    bool IsSuperSprinting() const { return MovementState == EPlayerMovementState::SuperSprinting; }
 
     // ── S-3 鎖敵 ──────────────────────────────────────────────────
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Combat")
@@ -151,8 +167,20 @@ public:
     // 彈反成功事件（HUD / 音效 / VFX 接收；AActor* = 被彈反的攻擊者）
     FOnParrySuccess OnParrySuccess;
 
-    // ── S-2 攻擊框架（骨架）──────────────────────────────────────
-    // J：輕攻（前方球形掃描，命中 → TakePhysicalDamage）
+    // ── S-2 完整攻擊框架 ──────────────────────────────────────────
+    // J IE_Pressed → StartChargingAttack；IE_Released → ReleaseAttack（輕攻 or 蓄力攻）
+    // J+U（J 已蓄力 ≥0.3s）→ PerformHeavyAttack；H / 被打斷 → CancelAttack
+    void StartChargingAttack();
+    void ReleaseAttack();
+    void PerformHeavyAttack();
+    void CancelAttack();
+    bool  IsChargingAttack() const { return bChargingAttack; }
+    float GetChargeTime()    const { return AttackChargeTimer; }
+
+    // 攻擊命中事件（HUD/VFX/拼刀系統接收）
+    FOnAttackHit OnAttackHit;
+
+    // 保留供 SpellCaster Contact 觸發呼叫
     void PerformLightAttack();
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
@@ -248,6 +276,7 @@ protected:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(UInputComponent* Input) override;
+    virtual void Landed(const FHitResult& Hit) override;
 
 private:
     void Move(const FInputActionValue& Value);
@@ -267,6 +296,20 @@ private:
     static constexpr float ParryWindowSec = 6.f / 60.f;
     bool bInParryWindow = false;
     FTimerHandle ParryWindowTimer;
+
+    // S-2 攻擊蓄力狀態
+    bool  bChargingAttack   = false;
+    float AttackChargeTimer = 0.f;
+    static constexpr float LightAttackMaxCharge = 0.5f;   // < 此秒數 = 輕攻
+    static constexpr float HeavyAttackMinCharge = 0.3f;   // J+U 重攻最小蓄力（待平衡）
+    static constexpr float MaxChargeTime        = 2.0f;   // 蓄力上限（待平衡）
+
+    // S-1 移動擴展
+    static constexpr int32 MaxJumpCount = 2;
+    int32 JumpCount = 0;
+    EPlayerMovementState PreActionState = EPlayerMovementState::Grounded;
+    FTimerHandle RollTimer;
+    FTimerHandle SprintTimer;
 
     // ── 面板 / 偵錯按鍵處理 ──────────────────────────────────────
     // 2026-06-19 稽核：原本這裡還有 OnOpenInventory/OnOpenEquipment/OnOpenCharacterPanel

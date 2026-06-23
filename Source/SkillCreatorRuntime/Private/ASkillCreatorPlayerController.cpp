@@ -84,12 +84,17 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // S-3 循環切換目標
     Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
     Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
-    Bind(EKeys::Z,   &ASkillCreatorPlayerController::OnToggleSprint);      // S-1 疾跑切換
-    Bind(EKeys::K,   &ASkillCreatorPlayerController::OnFlyToggle);         // 飛行 on/off
-    // X：IE_Pressed = 飛行中下衝 / 地面=進入防禦；IE_Released = 解除防禦（S-4）
-    Bind(EKeys::X,   &ASkillCreatorPlayerController::OnFlyDown);
-    InputComponent->BindKey(EKeys::X, IE_Released, this, &ASkillCreatorPlayerController::OnGuardReleased);
-    Bind(EKeys::J,   &ASkillCreatorPlayerController::OnLightAttack);       // S-2 輕攻（X 按住=彈反，S-4）
+    // Z：按住疾跑，長按 1s 超速，放開恢復
+    Bind(EKeys::Z, &ASkillCreatorPlayerController::OnSprintPressed);
+    InputComponent->BindKey(EKeys::Z, IE_Released, this, &ASkillCreatorPlayerController::OnSprintReleased);
+    // K：空中=飛行；地面對防禦目標=破防 stub；K+L=前衝 stub
+    Bind(EKeys::K,   &ASkillCreatorPlayerController::OnGuardBreakOrFly);
+    // X：按下=飛行/空中/蹲/翻滾/滑鏟 情境分流；放開=解除防禦/滑鏟
+    Bind(EKeys::X, &ASkillCreatorPlayerController::OnXPressed);
+    InputComponent->BindKey(EKeys::X, IE_Released, this, &ASkillCreatorPlayerController::OnXReleased);
+    // J：按下=蓄力開始（X 同時按住=彈反）；放開=輕攻 or 蓄力攻
+    Bind(EKeys::J, &ASkillCreatorPlayerController::OnAttackPressed);
+    InputComponent->BindKey(EKeys::J, IE_Released, this, &ASkillCreatorPlayerController::OnAttackReleased);
     Bind(EKeys::L,   &ASkillCreatorPlayerController::OnBackDash);          // S-8 後撤衝量 stub
     Bind(EKeys::Y,   &ASkillCreatorPlayerController::OnOpenPotionPanel);   // S-6 藥水袋面板 stub
     Bind(EKeys::M,   &ASkillCreatorPlayerController::OnOpenMap);           // S-7 地圖 stub
@@ -383,43 +388,111 @@ void ASkillCreatorPlayerController::OnCancelAction()
         Char->SpellCasterComp->CancelAll();
 }
 
-void ASkillCreatorPlayerController::OnToggleSprint()
+void ASkillCreatorPlayerController::OnSprintPressed()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->ToggleSprint();
+    if (Char) Char->StartSprint();
 }
 
-void ASkillCreatorPlayerController::OnFlyToggle()
+void ASkillCreatorPlayerController::OnSprintReleased()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->ToggleFlight();
+    if (Char) Char->EndSprint();
 }
 
-void ASkillCreatorPlayerController::OnFlyDown()
+void ASkillCreatorPlayerController::OnGuardBreakOrFly()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
     if (!Char) return;
+
+    // K+L 同時按下 → 前衝 stub（S-8 待實作）
+    if (IsInputKeyDown(EKeys::L))
+    {
+        UE_LOG(LogTemp, Log, TEXT("[S-8] K+L 前衝 — stub, pending S-8 dash implementation"));
+        return;
+    }
+
+    // 空中（含下落）→ 飛行切換
+    if (Char->GetCharacterMovement()->IsFalling() || Char->IsFlying())
+    {
+        Char->ToggleFlight();
+        return;
+    }
+
+    // 地面有鎖定目標 → 破防 stub（S-2 攻擊框架 + 敵人防禦狀態完成後接上真正破防邏輯）
+    if (Char->LockedTarget)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[S-2] K 破防 — stub, pending enemy guard state + guard break implementation"));
+        return;
+    }
+
+    // 地面無目標：無動作
+    UE_LOG(LogTemp, Verbose, TEXT("[K] 地面按下，無鎖定目標，忽略"));
+}
+
+void ASkillCreatorPlayerController::OnXPressed()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+
+    // 飛行中 → 取消飛行 + 向下衝量
     if (Char->IsFlying())
+    {
         Char->FlyDown();
-    else
-        Char->PerformGuard(); // X 地面按下=進入防禦（S-4）
+        return;
+    }
+    // 空中下落 → 快速墜落衝量
+    if (Char->GetCharacterMovement()->IsFalling())
+    {
+        Char->StartFastFall();
+        return;
+    }
+    // 疾跑/超速 → 滑鏟
+    if (Char->MovementState == EPlayerMovementState::Sprinting
+     || Char->MovementState == EPlayerMovementState::SuperSprinting)
+    {
+        Char->PerformSlide();
+        return;
+    }
+    // 地面蹲狀態 → 解除蹲（toggle off）
+    if (Char->IsCrouching())
+    {
+        Char->EndCrouch();
+        return;
+    }
+    // 地面有水平速度 → 翻滾
+    if (Char->GetVelocity().Size2D() > WorldScale::WalkSpeedCm * 0.15f)
+    {
+        Char->PerformRoll();
+        return;
+    }
+    // 地面靜止 → 蹲
+    Char->PerformCrouch();
 }
 
-void ASkillCreatorPlayerController::OnGuardReleased()
-{
-    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char) Char->EndGuard();
-}
-
-void ASkillCreatorPlayerController::OnLightAttack()
+void ASkillCreatorPlayerController::OnXReleased()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
     if (!Char) return;
-    // S-4：X 同時按住（地面）→ 進入彈反窗口（PerformGuard）；否則輕攻
+    if (Char->IsGuarding())  Char->EndGuard();
+    else if (Char->IsSliding()) Char->EndSlide();
+}
+
+void ASkillCreatorPlayerController::OnAttackPressed()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+    // X 同時按住（地面）→ 進入彈反窗口（S-4）
     if (!Char->IsFlying() && IsInputKeyDown(EKeys::X))
         Char->PerformGuard();
     else
-        Char->PerformLightAttack();
+        Char->StartChargingAttack();
+}
+
+void ASkillCreatorPlayerController::OnAttackReleased()
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->ReleaseAttack();
 }
 
 void ASkillCreatorPlayerController::OnBackDash()
