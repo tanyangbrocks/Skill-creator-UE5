@@ -4,9 +4,9 @@
 #include "ASkillCreatorPlayerController.generated.h"
 
 // 玩家控制器（legacy BindKey 層，處理數字鍵/滾輪/面板開關）。
-// Tab / U / I / O / P：由 ASkillCreatorCharacter 的 Enhanced Input 側負責
-//   Tab  → CycleCameraMode（4 視角循環）
-//   UIOP → 施法組合（HandleSpellInput）
+// 視角切換 / U / I / O / P：由 ASkillCreatorCharacter 的 Enhanced Input 側負責
+//   Ctrl（短按 Tap）→ CycleCameraMode（4 視角循環）
+//   UIOP             → 施法組合（HandleSpellInput）
 UCLASS()
 class SKILLCREATORRUNTIME_API ASkillCreatorPlayerController : public APlayerController
 {
@@ -63,12 +63,21 @@ private:
     void OnBlockEditorSave(const FString& SpellName, int32 SlotIndex);
     void OnBlockEditorClosed();
     void OnSpellListSlotClicked(int32 SlotIndex);
-    // 面板開關
+    // 面板開關（2026-06-23 鍵位重整後）
     void OnOpenSettings();       // B
     void OnOpenShapeMenu();      // N
-    void OnSpellGroupSwitch();   // V
-    void OnOpenInventory();      // Z
-    void OnOpenEquipment();      // X
-    void OnOpenStats();          // C
-    void OnEquipItem();          // Q — 裝備/使用熱鍵格
+    void OnOpenInventory();      // R（was Z）
+    void OnOpenEquipment();      // T（was X）
+    void OnOpenStats();          // G（was C）
+    // OnOpenEditor 已在上方宣告（V，was E；原本 V 的技能組切換移至編輯器面板 UI）
+
+    // 動作快捷鍵（plan-player-actions.md 第一批+第二批）
+    void OnUsePotion();          // Q（stub — S-6 藥水袋完成後接通）
+    void OnToggleLockTarget();   // E（stub — S-3 鎖敵完成後接通）
+    void OnSwitchLockTarget();   // Tab（stub — S-3 鎖敵完成後接通）
+    void OnDropCurrentItem();    // F — 丟出當前物品（DroppedItemManager）
+    void OnCancelAction();       // H — 取消施法（SpellRunner::PruneAll）
+    void OnSprintStart();        // Z 按下：MaxWalkSpeed × 2
+    void OnSprintEnd();          // Z 放開：恢復 WalkSpeedCm
+    bool bSprinting = false;
 };

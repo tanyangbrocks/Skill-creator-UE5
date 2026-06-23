@@ -203,6 +203,13 @@ private:
     void OnMineReleased();
     void OnPlaceReleased();
 
+    // 左鍵 Tap/Hold 雙軸分派（docs/plan-item-crafting-system.md §衝突3）：
+    // 短按＝OnPrimaryTap（攻擊/道具），長按＝沿用 OnMine（採礦/道具）。
+    // bIsConsumable 物品覆寫兩者，都變成使用道具；長按時用 rising-edge 防止每幀重複使用。
+    void OnPrimaryTap();
+    bool bMineWasPressed = false;
+    void UseConsumable();
+
     // 放置目標格是否被玩家/敵人佔據（對應 Main.cs:1654 OccupiedByEntity）
     bool IsTileOccupiedByEntity(const FIntVector& Pos) const;
 
@@ -215,6 +222,11 @@ private:
     // ── 放置節流狀態（對應 Godot Main.cs _placeCooldown/_rightWasPressed）──
     float PlaceCooldown          = 0.f;
     bool  bRightMouseWasPressed  = false;
+
+    // Space 長按大跳（plan-player-actions.md §B）
+    void OnJumpStarted();
+    void OnJumpReleased();
+    float JumpPressedTime = -1.f;
 
     // F1/F2/F4 開發者工具（對應 Godot TogglePaint/DebugCoord/DebugSurvival）
     bool bDebugPaintEnabled    = false;
@@ -229,4 +241,14 @@ private:
 
     // UI-2: 供 UInputSettingsWidget 讀取以實現鍵位重綁
     UPROPERTY() TObjectPtr<class UInputMappingContext> DefaultIMC;
+
+    // 互動系統（docs/plan-item-crafting-system.md §五）：每幀 Tick 更新，OnPlace() 互動優先判定使用
+    UPROPERTY() TWeakObjectPtr<AActor> CachedInteractable;
+    void UpdateInteractableTrace();
+
+    // 採掘高亮（2026-06-23 修正）：算出這次按下去真正會被摧毀的整個 tile 集合（中心格
+    // 放在 [0]），對應 Godot Main.cs:2935 ComputeHighlightTiles()。空陣列＝不顯示高亮
+    // （不可挖/工具等級不足/超出採礦範圍/滑鼠在熱鍵欄上時皆回傳空，原版 UE5 完全沒做
+    // 這些過濾，只要 raycast 打到東西就一律顯示）。
+    TArray<FGridPos> ComputeHighlightTiles() const;
 };

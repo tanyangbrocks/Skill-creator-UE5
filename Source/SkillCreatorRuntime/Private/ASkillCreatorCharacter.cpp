@@ -687,7 +687,13 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     IMC->MapKey(IA_SpellI,    EKeys::I);
     IMC->MapKey(IA_SpellO,    EKeys::O);
     IMC->MapKey(IA_SpellP,    EKeys::P);
-    IMC->MapKey(IA_Camera,    EKeys::Tab);
+    // Ctrl 短按（≤0.2s）→ 視角切換；長按（Ctrl+滾輪縮放）不觸發，避免與縮放衝突
+    {
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Camera, EKeys::LeftControl);
+        UInputTriggerTap* Tap = NewObject<UInputTriggerTap>(IMC);
+        Tap->TapReleaseTimeThreshold = 0.2f;
+        M.Triggers.Add(Tap);
+    }
     IMC->MapKey(IA_DbgTrace,  EKeys::F3);
     IMC->MapKey(IA_SnapTake,  EKeys::F5);
     IMC->MapKey(IA_SnapApply, EKeys::F6);
@@ -703,8 +709,9 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     // ── 綁定 Actions ─────────────────────────────────────────────────────
     EIC->BindAction(IA_Move, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Move);
     EIC->BindAction(IA_Look, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::Look);
-    EIC->BindAction(IA_Jump,  ETriggerEvent::Started,    this, &ACharacter::Jump);
-    EIC->BindAction(IA_Jump,  ETriggerEvent::Completed,  this, &ACharacter::StopJumping);
+    // Space 長按大跳：短按=普通跳，長按≥0.1s 放開後追加向上衝量（plan-player-actions.md §B）
+    EIC->BindAction(IA_Jump,  ETriggerEvent::Started,    this, &ASkillCreatorCharacter::OnJumpStarted);
+    EIC->BindAction(IA_Jump,  ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnJumpReleased);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnMine);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnMineReleased);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Canceled,   this, &ASkillCreatorCharacter::OnMineReleased);
@@ -833,6 +840,25 @@ void ASkillCreatorCharacter::CycleCameraMode()
     const ECameraMode Next = static_cast<ECameraMode>(
         (static_cast<uint8>(CameraMode) + 1) % 4);
     SetCameraMode(Next);
+}
+
+// ── Jump ────────────────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::OnJumpStarted()
+{
+    JumpPressedTime = GetWorld()->GetTimeSeconds();
+    Jump();
+}
+
+void ASkillCreatorCharacter::OnJumpReleased()
+{
+    StopJumping();
+    const float HoldDuration = GetWorld()->GetTimeSeconds() - JumpPressedTime;
+    // 0.1~0.5s 按住範圍：線性插值至最多 1.5x JumpZVelocity 額外衝量
+    const float Alpha = FMath::Clamp((HoldDuration - 0.1f) / 0.4f, 0.f, 1.f);
+    const float Bonus = Alpha * WorldScale::JumpZVelocityCm * 1.5f;
+    if (Bonus > 0.f && GetMovementComponent()->IsFalling())
+        LaunchCharacter(FVector(0.f, 0.f, Bonus), false, false);
 }
 
 // ── Panel / Debug Key Handlers ──────────────────────────────────────────

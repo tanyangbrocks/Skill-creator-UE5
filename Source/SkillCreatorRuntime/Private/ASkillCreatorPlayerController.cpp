@@ -4,8 +4,11 @@
 #include "USpellCaster.h"
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
+#include "UDroppedItemManager.h"
+#include "WorldScale.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "UBlockEditorWidget.h"
 #include "USpellListWidget.h"
 #include "SpellGroup.h"
@@ -22,6 +25,9 @@ void ASkillCreatorPlayerController::SpawnDefaultHUD()
     // 進而連到舊版 WBP_PlayerHUD_C，導致準心/物品熱鍵欄消失（見標頭檔註解）。
     // 這裡複製引擎原始邏輯（NetMode 檢查 + 已有 HUD 則跳過），但 HUD 類別永遠強制
     // 用純 C++ ASkillCreatorHUD，不管 GameMode CDO 設了什麼。
+    // 2026-06-23 診斷：確認這個覆寫真的有跑到，而不是被別的路徑搶先設了 MyHUD
+    UE_LOG(LogTemp, Warning, TEXT("ASkillCreatorPlayerController::SpawnDefaultHUD called, MyHUD already=%s"),
+        MyHUD ? *MyHUD->GetClass()->GetName() : TEXT("nullptr"));
     if (MyHUD != nullptr || GetNetMode() == NM_DedicatedServer)
         return;
 
@@ -31,6 +37,8 @@ void ASkillCreatorPlayerController::SpawnDefaultHUD()
     SpawnInfo.ObjectFlags     |= RF_Transient;
     SpawnInfo.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     MyHUD = GetWorld()->SpawnActor<AHUD>(ASkillCreatorHUD::StaticClass(), SpawnInfo);
+    UE_LOG(LogTemp, Warning, TEXT("ASkillCreatorPlayerController::SpawnDefaultHUD spawned class=%s"),
+        MyHUD ? *MyHUD->GetClass()->GetName() : TEXT("FAILED"));
 }
 
 void ASkillCreatorPlayerController::SetupInputComponent()
@@ -58,28 +66,44 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Nine,  &ASkillCreatorPlayerController::OnHotbar9);
     Bind(EKeys::Zero,  &ASkillCreatorPlayerController::OnHotbar0);
 
-    // 面板開關
-    Bind(EKeys::E, &ASkillCreatorPlayerController::OnOpenEditor);
+    // 面板開關（2026-06-23 鍵位重整）
+    Bind(EKeys::V, &ASkillCreatorPlayerController::OnOpenEditor);   // was E
     Bind(EKeys::B, &ASkillCreatorPlayerController::OnOpenSettings);
     Bind(EKeys::N, &ASkillCreatorPlayerController::OnOpenShapeMenu);
-    Bind(EKeys::V, &ASkillCreatorPlayerController::OnSpellGroupSwitch);
-    Bind(EKeys::Z, &ASkillCreatorPlayerController::OnOpenInventory);
-    Bind(EKeys::X, &ASkillCreatorPlayerController::OnOpenEquipment);
-    Bind(EKeys::C, &ASkillCreatorPlayerController::OnOpenStats);
-    Bind(EKeys::Q, &ASkillCreatorPlayerController::OnEquipItem);
+    Bind(EKeys::R, &ASkillCreatorPlayerController::OnOpenInventory); // was Z
+    Bind(EKeys::T, &ASkillCreatorPlayerController::OnOpenEquipment); // was X
+    Bind(EKeys::G, &ASkillCreatorPlayerController::OnOpenStats);     // was C
+    // V（SpellGroupSwitch）已移除：技能組切換改為積木編輯器面板內 UI 操作
+
+    // 動作快捷鍵
+    Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);         // stub - S-6
+    Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget);  // stub - S-3
+    Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // stub - S-3
+    Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
+    Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
+
+    // Z 疾跑：IE_Pressed/IE_Released 雙向綁定（lambda 只處理 IE_Pressed，直接寫）
+    InputComponent->BindKey(EKeys::Z, IE_Pressed,  this, &ASkillCreatorPlayerController::OnSprintStart);
+    InputComponent->BindKey(EKeys::Z, IE_Released, this, &ASkillCreatorPlayerController::OnSprintEnd);
 
     // Shift 游標模式（按一下顯示系統游標且鏡頭凍結，再按切回準心操控）
     Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCursorMode);
 
-    // Tab / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
+    // Ctrl / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
+    // Ctrl（短按 Tap ≤0.2s）→ CycleCameraMode（長按不觸發，解決 Ctrl+滾輪縮放衝突）
 }
 
 // ── 物品熱鍵欄 ───────────────────────────────────────────────────────────
 
 void ASkillCreatorPlayerController::SetActiveHotbarIndex(int32 Idx)
 {
+    // 2026-06-23 診斷：使用者回報數字鍵切不了熱鍵欄，確認 BindKey 事件到底有沒有觸發到這裡，
+    // 還是觸發了但 Char/InventoryComp 是 null。
     ASkillCreatorCharacter* Char =
         GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    UE_LOG(LogTemp, Warning, TEXT("ASkillCreatorPlayerController::SetActiveHotbarIndex(%d) Char=%s InventoryComp=%s"),
+        Idx, Char ? TEXT("valid") : TEXT("NULL"),
+        (Char && Char->InventoryComp) ? TEXT("valid") : TEXT("NULL"));
     if (Char && Char->InventoryComp)
         Char->InventoryComp->SetActiveHotbarIndex(Idx);
 }
@@ -288,11 +312,6 @@ void ASkillCreatorPlayerController::OnOpenShapeMenu()
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleShapeMenu();
 }
 
-void ASkillCreatorPlayerController::OnSpellGroupSwitch()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSpellGroup();
-}
-
 void ASkillCreatorPlayerController::OnOpenInventory()
 {
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInventory();
@@ -308,17 +327,66 @@ void ASkillCreatorPlayerController::OnOpenStats()
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleStats();
 }
 
-// ── Q：裝備/使用熱鍵格物品 ───────────────────────────────────────────────
+// ── 動作快捷鍵 ───────────────────────────────────────────────────────────
 
-void ASkillCreatorPlayerController::OnEquipItem()
+void ASkillCreatorPlayerController::OnUsePotion()
+{
+    // Stub：S-6 藥水袋系統完成後接通
+    UE_LOG(LogTemp, Log, TEXT("[Q] OnUsePotion — pending S-6"));
+}
+
+void ASkillCreatorPlayerController::OnToggleLockTarget()
+{
+    // Stub：S-3 鎖敵系統完成後接通
+    UE_LOG(LogTemp, Log, TEXT("[E] OnToggleLockTarget — pending S-3"));
+}
+
+void ASkillCreatorPlayerController::OnSwitchLockTarget()
+{
+    // Stub：S-3 鎖敵系統完成後接通
+    UE_LOG(LogTemp, Log, TEXT("[Tab] OnSwitchLockTarget — pending S-3"));
+}
+
+void ASkillCreatorPlayerController::OnDropCurrentItem()
 {
     ASkillCreatorCharacter* Char =
         GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (!Char || !Char->InventoryComp || !Char->EquipmentComp) return;
+    if (!Char || !Char->InventoryComp) return;
 
-    int32 ActiveIdx = Char->InventoryComp->ActiveHotbarIndex;
-    if (!Char->InventoryComp->Slots.IsValidIndex(ActiveIdx)) return;
-    if (Char->InventoryComp->Slots[ActiveIdx].IsEmpty()) return;
+    const int32 Idx = Char->InventoryComp->ActiveHotbarIndex;
+    if (!Char->InventoryComp->Slots.IsValidIndex(Idx)) return;
+    const FItemStack Stack = Char->InventoryComp->Slots[Idx];
+    if (Stack.IsEmpty()) return;
 
-    Char->EquipmentComp->TryEquip(Char->InventoryComp, ActiveIdx);
+    if (auto* DropMgr = GetWorld()->GetSubsystem<UDroppedItemManager>())
+    {
+        const FGridPos DropPos = WorldScale::WorldToTile(Char->GetActorLocation());
+        DropMgr->SpawnDrop(Stack.ItemId, Stack.Count, DropPos);
+    }
+    Char->InventoryComp->Consume(Idx, Stack.Count);
+}
+
+void ASkillCreatorPlayerController::OnCancelAction()
+{
+    ASkillCreatorCharacter* Char =
+        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->SpellCasterComp)
+        Char->SpellCasterComp->CancelAll();
+}
+
+void ASkillCreatorPlayerController::OnSprintStart()
+{
+    ASkillCreatorCharacter* Char =
+        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+    bSprinting = true;
+    Char->GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm * 2.f;
+}
+
+void ASkillCreatorPlayerController::OnSprintEnd()
+{
+    ASkillCreatorCharacter* Char =
+        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char) Char->GetCharacterMovement()->MaxWalkSpeed = WorldScale::WalkSpeedCm;
+    bSprinting = false;
 }

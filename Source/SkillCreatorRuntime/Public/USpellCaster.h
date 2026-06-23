@@ -46,6 +46,9 @@ public:
     // 選中 SlotIndex 並嘗試施放（M-9 接 SpellCompiler；M-5 空 Code）
     void TryCastSlot(int32 SlotIndex);
 
+    // 取消所有執行中的技能整構（對應 plan-player-actions.md H 鍵）
+    void CancelAll() { Runner.PruneAll(); }
+
 private:
     FSpellRunner Runner;
     float        CooldownRemaining = 0.f;
