@@ -62,6 +62,8 @@ public:
 
     // tile 摧毀事件（由 AVoxelWorldActor / SkillCreatorRuntime 從外部綁定）
     TFunction<void(int32 x, int32 y, int32 z, EMaterialType OldMat, EDestroyReason Reason)> OnTileDestroyed;
+    // 爆炸聚合事件：Explode() 結束後一次回報各材質摧毀 tile 總數（docs/plan-debris-fragment.md §D-2）
+    TFunction<void(FIntVector Center, const TMap<EMaterialType, int32>& DestroyedByMat)> OnExplodeComplete;
     FRaycastResult3D Raycast(FVector Start, FVector Dir, float MaxDist) const;
     TArray<FTileCell> SnapshotRegion(FIntVector Min, FIntVector Max) const;
     void              RestoreRegion(FIntVector Min, FIntVector Max, const TArray<FTileCell>& Snapshot);
@@ -87,6 +89,11 @@ public:
     void       SaveChunk(int32 cx, int32 cy, int32 cz, const FString& WorldDir);
     void       SaveDirtyChunks(const FString& WorldDir);
     TArray<FIntVector> EvictFarChunks(int32 cx, int32 cy, int32 cz, int32 KeepRadius, const FString& WorldDir);
+
+    // 2026-06-23：切換到不同世界時呼叫（AVoxelWorldActor::ReinitializeForWorld）——刪除
+    // 全部已載入 chunk（in-memory），不寫回磁碟（呼叫端決定要不要先存舊世界）。沿用
+    // 解構子同款清理邏輯，供 destructor 跟這個方法共用。
+    void ClearAllChunks();
 
     // M-6 渲染器唯讀存取
     const TMap<FIntVector, FChunk3D*>& GetActiveChunks() const { return Chunks; }

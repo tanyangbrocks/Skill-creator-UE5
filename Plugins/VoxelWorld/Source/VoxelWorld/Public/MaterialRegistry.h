@@ -38,6 +38,14 @@ struct FMaterialData
     // 刻意放在欄位表最後一個，現有 GMatData[] 的位置式初始化列表（13 個值）才不會
     // 因為插入新欄位而把後面的值全部錯位一格。
     bool  bIsTransparent    = false;
+
+    // 2026-06-23 物品系統擴充：材質的物理分類，跟 ItemData.h 的 EToolCategory 比對才給
+    // MiningSpeedMult 加成（docs/plan-item-crafting-system.md §四）。
+    EMaterialCategory Category = EMaterialCategory::None;
+
+    // 碎片系統脆度乘數（docs/plan-debris-fragment.md §四）。
+    // 1.0 = 標準；> 1 = 易碎（水晶、石）；< 1 = 韌性（木、土、沙）。
+    float Brittleness = 1.0f;
 };
 
 class VOXELWORLD_API FMaterialRegistry
@@ -45,6 +53,7 @@ class VOXELWORLD_API FMaterialRegistry
 public:
     static const FMaterialData&   Get(EMaterialType Mat);
     static EPhysicsCategory       GetPhysics(uint8 MaterialID);
+    static EMaterialCategory      GetCategory(EMaterialType Mat);
 
     // ── 顯示用輔助（對應 Godot MaterialData 顯示欄位）────────────────
     // Variant：0-255 微小色差（對應 Godot MaterialRegistry.cs:83-92），預設 0 = 無偏移
@@ -52,4 +61,5 @@ public:
     static FText                  GetDisplayName(EMaterialType Mat);
     static TArray<FItemDrop>      GetDefaultDrops(EMaterialType Mat);
     static EItemId                GetFragmentItem(EMaterialType Mat);
+    static float                  GetBrittleness(EMaterialType Mat);
 };

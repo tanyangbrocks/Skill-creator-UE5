@@ -17,7 +17,7 @@
 #include "UEquipmentComponent.h"
 #include "ItemRegistry.h"
 #include "ItemData.h"
-#include "EquipmentSlotType.h"
+#include "EquipmentSlot.h"
 #include "WorldScale.h"
 #include "CharacterSaveData.h"
 #include "AFloatingDamageActor.h"
@@ -28,6 +28,9 @@
 #include "PlacedObjectRegistry.h"
 #include "PlacedUnit.h"
 #include "MaterialRegistry.h"
+#include "IInteractable.h"
+#include "DrawDebugHelpers.h"
+#include "InputTriggers.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -144,6 +147,22 @@ void ASkillCreatorCharacter::RebindWorldSystems()
             if (!DropMgr) return;
             DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
         };
+
+        // D-3：爆炸聚合回呼 → 按材質批次 spawn ADebrisActor
+        TW->OnExplodeComplete = [WeakWorld](FIntVector Center,
+                                             const TMap<EMaterialType, int32>& DestroyedByMat)
+        {
+            UWorld* W = WeakWorld.Get();
+            if (!W) return;
+            auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
+            if (!DropMgr) return;
+
+            FDebrisParams P;
+            P.Reason    = EDestroyReason::Explosion;
+            P.Intensity = 1.f;  // 未來由技能強度傳入
+            for (const auto& Pair : DestroyedByMat)
+                DropMgr->SpawnDebris(Center, Pair.Key, Pair.Value, P);
+        };
     }
 }
 
@@ -259,34 +278,20 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
             if (SlotIdx >= 0 && EquipmentComp)
             {
                 const FItemData& D = FItemRegistry::Get(S.ItemId);
-                bool bFree = false;
-                if      (D.EquipSlot == EEquipmentSlotType::Weapon)    bFree = EquipmentComp->WeaponId    == EItemId::None;
-                else if (D.EquipSlot == EEquipmentSlotType::Armor)     bFree = EquipmentComp->ArmorId     == EItemId::None;
-                else if (D.EquipSlot == EEquipmentSlotType::Accessory) bFree = EquipmentComp->AccessoryId == EItemId::None;
-                if (bFree && D.EquipSlot != EEquipmentSlotType::None)
+                // 2026-06-23：裝備欄改成 FName 動態欄位，自由欄位判斷直接查 EquippedBySlot
+                const bool bFree = !D.EquipSlot.IsNone() && EquipmentComp->GetEquipped(D.EquipSlot) == EItemId::None;
+                if (bFree)
                     EquipmentComp->TryEquip(InventoryComp, SlotIdx);
             }
         }
     }
 
-    // 採掘高亮：每幀追蹤玩家視線，顯示即將被採掘的 tile
+    // 互動系統：每幀追蹤玩家視線，找最近的 IInteractable Actor（docs/plan-item-crafting-system.md §五）
+    UpdateInteractableTrace();
+
+    // 採掘高亮：每幀追蹤玩家視線，顯示即將被採掘的整個範圍（不只是中心 1 格）
     if (CachedVoxelWorld)
-    {
-        if (APlayerController* PC = Cast<APlayerController>(GetController()))
-        {
-            FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
-            FVector CamLoc; FRotator CamRot;
-            PC->GetPlayerViewPoint(CamLoc, CamRot);
-            FRaycastResult3D H = TW->Raycast(
-                WorldScale::WorldToTileF(CamLoc, TW->Height),
-                WorldScale::DirToVoxel(CamRot.Vector()),
-                static_cast<float>(WorldScale::MiningRangeTiles));
-            if (H.bHit)
-                CachedVoxelWorld->ShowHighlight(FGridPos(H.HitCell.X, H.HitCell.Y, H.HitCell.Z));
-            else
-                CachedVoxelWorld->HideHighlight();
-        }
-    }
+        CachedVoxelWorld->ShowHighlight(ComputeHighlightTiles());
 
     // 放置冷卻：每幀減算（對應 Godot Main.cs _process 中 PlaceCooldown 每幀倒數，不依賴右鍵是否按住）
     if (PlaceCooldown > 0.f)
@@ -596,6 +601,7 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
 
     UInputAction* IA_Jump      = MakeBool(TEXT("Jump"));
     UInputAction* IA_Mine      = MakeBool(TEXT("Mine"));
+    UInputAction* IA_PrimaryTap = MakeBool(TEXT("PrimaryTap"));
     UInputAction* IA_Place     = MakeBool(TEXT("Place"));
     UInputAction* IA_SpellU    = MakeBool(TEXT("SpellU"));
     UInputAction* IA_SpellI    = MakeBool(TEXT("SpellI"));
@@ -658,7 +664,24 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
 
     // 其他按鍵
     IMC->MapKey(IA_Jump,      EKeys::SpaceBar);
-    IMC->MapKey(IA_Mine,      EKeys::LeftMouseButton);
+
+    // 左鍵 Tap/Hold 雙軸分派（docs/plan-item-crafting-system.md §衝突3）：同一顆鍵綁兩個
+    // Action，靠不同 Trigger 互斥——長按 0.2s 後 IA_Mine 才開始連續觸發（採礦），
+    // 0.2s 內放開則 IA_PrimaryTap 觸發一次（攻擊/道具），兩者實務上不會同時生效。
+    {
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_Mine, EKeys::LeftMouseButton);
+        UInputTriggerHold* Hold = NewObject<UInputTriggerHold>(IMC);
+        Hold->HoldTimeThreshold = 0.2f;
+        Hold->bIsOneShot = false; // 門檻後持續觸發，採礦進度才能每幀累加
+        M.Triggers.Add(Hold);
+    }
+    {
+        FEnhancedActionKeyMapping& M = IMC->MapKey(IA_PrimaryTap, EKeys::LeftMouseButton);
+        UInputTriggerTap* Tap = NewObject<UInputTriggerTap>(IMC);
+        Tap->TapReleaseTimeThreshold = 0.2f;
+        M.Triggers.Add(Tap);
+    }
+
     IMC->MapKey(IA_Place,     EKeys::RightMouseButton);
     IMC->MapKey(IA_SpellU,    EKeys::U);
     IMC->MapKey(IA_SpellI,    EKeys::I);
@@ -685,6 +708,7 @@ void ASkillCreatorCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIC
     EIC->BindAction(IA_Mine,  ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnMine);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnMineReleased);
     EIC->BindAction(IA_Mine,  ETriggerEvent::Canceled,   this, &ASkillCreatorCharacter::OnMineReleased);
+    EIC->BindAction(IA_PrimaryTap, ETriggerEvent::Triggered, this, &ASkillCreatorCharacter::OnPrimaryTap);
     EIC->BindAction(IA_Place, ETriggerEvent::Triggered,  this, &ASkillCreatorCharacter::OnPlace);
     EIC->BindAction(IA_Place, ETriggerEvent::Completed,  this, &ASkillCreatorCharacter::OnPlaceReleased);
     EIC->BindAction(IA_Place, ETriggerEvent::Canceled,   this, &ASkillCreatorCharacter::OnPlaceReleased);
@@ -921,6 +945,18 @@ void ASkillCreatorCharacter::HandleSpellInput()
 
 void ASkillCreatorCharacter::OnMine()
 {
+    // 持有道具時，長按也是使用道具（覆寫採礦），docs/plan-item-crafting-system.md §衝突3。
+    // rising-edge 防止長按期間每幀重複使用（同 bRightMouseWasPressed 同款防重複機制）。
+    if (InventoryComp)
+    {
+        const FItemStack& Active = InventoryComp->GetActiveItem();
+        if (!Active.IsEmpty() && FItemRegistry::Get(Active.ItemId).bIsConsumable)
+        {
+            if (!bMineWasPressed) { bMineWasPressed = true; UseConsumable(); }
+            return;
+        }
+    }
+
     if (!CachedVoxelWorld) { CancelMining(); return; }
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
     if (!TW) { CancelMining(); return; }
@@ -986,7 +1022,7 @@ void ASkillCreatorCharacter::OnMine()
     }
 
     // 以 60fps 為基準累加進度，乘上工具速度倍率（Godot PlayerController.cs:461）
-    const float SpeedMult = InventoryComp ? InventoryComp->GetActiveMiningSpeedMult() : 1.f;
+    const float SpeedMult = InventoryComp ? InventoryComp->GetActiveMiningSpeedMult(TargetMat) : 1.f;
     MiningProgress += SpeedMult * GetWorld()->GetDeltaSeconds() * 60.f;
 
     if (MiningProgress < MatData.Hardness)
@@ -1042,13 +1078,128 @@ void ASkillCreatorCharacter::OnMine()
             DropMgr->SpawnForReason(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z, TargetMat, EDestroyReason::Mining);
 }
 
+// 對應 Godot Main.cs:2935-2968 ComputeHighlightTiles()：算出這次按下去真正會被摧毀的
+// 整個 tile 集合，過濾條件跟 OnMine() 完全對齊（不可挖/工具等級不足/超出範圍/滑鼠在
+// 熱鍵欄上一律不顯示），不是隨便 raycast 打到什麼就顯示什麼。
+TArray<FGridPos> ASkillCreatorCharacter::ComputeHighlightTiles() const
+{
+    if (!CachedVoxelWorld) return {};
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return {};
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return {};
+
+    if (const ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
+        if (HUD->bMouseOverHotbar) return {};
+
+    FVector CamLoc; FRotator CamRot;
+    PC->GetPlayerViewPoint(CamLoc, CamRot);
+    FRaycastResult3D Hit = TW->Raycast(
+        WorldScale::WorldToTileF(CamLoc, TW->Height),
+        WorldScale::DirToVoxel(CamRot.Vector()),
+        static_cast<float>(WorldScale::MiningRangeTiles));
+    if (!Hit.bHit) return {};
+
+    const FGridPos Target(Hit.HitCell.X, Hit.HitCell.Y, Hit.HitCell.Z);
+    if (GetPosition().EuclideanDistance(Target) > static_cast<float>(WorldScale::MiningRangeTiles))
+        return {};
+
+    const EMaterialType TargetMat = TW->GetTile(Target.X, Target.Y, Target.Z);
+    const FMaterialData& MatData  = FMaterialRegistry::Get(TargetMat);
+    if (!MatData.bIsMineable) return {};
+
+    const int32 ActiveToolTier = InventoryComp ? InventoryComp->GetActiveToolTier() : 0;
+    if (MatData.RequiredToolTier > ActiveToolTier) return {};
+
+    EPlacementShape Shape = EPlacementShape::Cube;
+    int32 Radius = WorldScale::DefaultShapeRadius;
+    bool  bPerfectRemove = true;
+    if (const ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
+    {
+        Shape  = HUD->ActiveShape;
+        Radius = HUD->PlaceRadius;
+        bPerfectRemove = HUD->bPerfectRemove;
+    }
+
+    // 完美移除模式：命中已放置物件 → 整個 Unit 一起高亮（對應 Main.cs:2948-2956）
+    if (bPerfectRemove)
+    {
+        FPlacedObjectRegistry& Registry = CachedVoxelWorld->GetPlacedRegistry();
+        if (FPlacedUnit* Unit = Registry.FindAtTile(FIntVector(Target.X, Target.Y, Target.Z)))
+        {
+            TArray<FGridPos> Out;
+            for (const FIntVector& P : Unit->Tiles)
+                if (TW->GetTile(P.X, P.Y, P.Z) != EMaterialType::Air)
+                    Out.Add(FGridPos(P.X, P.Y, P.Z));
+            if (Out.Num() > 0)
+            {
+                // Target 永遠排第一個（AVoxelWorldActor::ShowHighlight 用 [0] 當中心格）
+                Out.RemoveSingleSwap(Target);
+                Out.Insert(Target, 0);
+                return Out;
+            }
+        }
+    }
+
+    // 一般形狀採掘：中心格 + 形狀偏移內所有非空格（對應 Main.cs:2958-2967）
+    TArray<FGridPos> Out;
+    Out.Add(Target);
+    for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
+    {
+        if (Off == FIntVector::ZeroValue) continue;
+        const FGridPos P(Target.X + Off.X, Target.Y + Off.Y, Target.Z + Off.Z);
+        if (TW->GetTile(P.X, P.Y, P.Z) != EMaterialType::Air)
+            Out.Add(P);
+    }
+    return Out;
+}
+
+// 互動系統（docs/plan-item-crafting-system.md §五）：每幀對準心方向做 LineTrace，
+// 找最近實作 IInteractable 的 Actor。跟 tile raycast（TW->Raycast）是兩條平行的判定
+// 路徑：這個是 UE5 物理查詢，找的是寶箱/工作臺這類獨立 Actor，不是 tile。
+void ASkillCreatorCharacter::UpdateInteractableTrace()
+{
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) { CachedInteractable = nullptr; return; }
+
+    FVector CamLoc; FRotator CamRot;
+    PC->GetPlayerViewPoint(CamLoc, CamRot);
+    const float RangeCm = static_cast<float>(WorldScale::InteractRangeTiles) * WorldScale::TileSizeCm;
+
+    FHitResult Hit;
+    FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractTrace), false, this);
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit, CamLoc, CamLoc + CamRot.Vector() * RangeCm, ECC_Visibility, Params);
+
+    AActor* Found = nullptr;
+    if (bHit && Hit.GetActor() && Hit.GetActor()->GetClass()->ImplementsInterface(UInteractable::StaticClass()))
+        Found = Hit.GetActor();
+
+    CachedInteractable = Found;
+    if (Found)
+    {
+        const FBox Bounds = Found->GetComponentsBoundingBox();
+        DrawDebugBox(GetWorld(), Bounds.GetCenter(), Bounds.GetExtent(), FQuat::Identity,
+                     FColor::Green, false, 0.05f, 0, 1.5f);
+    }
+}
+
 void ASkillCreatorCharacter::OnPlace()
 {
+    APlayerController* PC = Cast<APlayerController>(GetController());
+    if (!PC) return;
+
+    // 互動優先判定（docs/plan-item-crafting-system.md §衝突1）：準心對著的是
+    // IInteractable Actor（寶箱/工作臺）時，右鍵＝互動，不繼續走放置流程。
+    if (AActor* Interactable = CachedInteractable.Get())
+    {
+        IInteractable::Execute_Interact(Interactable, this);
+        return;
+    }
+
     if (!CachedVoxelWorld || !InventoryComp) return;
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
     if (!TW) return;
-    APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) return;
 
     // 放置節流：_holdToPlace=true 時 0.12 秒節流連放，false 時 rising-edge
     // （對應 Main.cs:1250-1255）。HUD->bHoldToPlace 預設 false（rising-edge），
@@ -1095,10 +1246,39 @@ void ASkillCreatorCharacter::OnPlace()
     if (Stack.IsEmpty()) return;
 
     const FItemData& Data = FItemRegistry::Get(Stack.ItemId);
-    if (!Data.bIsPlaceable || Data.PlaceAs == EMaterialType::Air) return;
+    if (!Data.bIsPlaceable) return;
+    if (Data.PlaceAs == EMaterialType::Air && Data.PlaceAsActor == nullptr) return;
 
     // 放置中心 = 命中面法線方向的相鄰格（對應 Main.cs:1262 MouseGridPos + MouseFaceNormal）
     const FIntVector PlaceCenter = Hit.HitCell + Hit.FaceNormal;
+    const FGridPos PlayerPos = GetPosition();
+    FPlacedObjectRegistry& Registry = CachedVoxelWorld->GetPlacedRegistry();
+
+    // 不可塑形可放置物（寶箱/工作臺等，docs/plan-item-crafting-system.md §四、六、七）：
+    // 固定單一 Actor，不吃形狀選單，永遠只放一格。
+    if (Data.PlaceAsActor != nullptr)
+    {
+        const FGridPos CenterGrid(PlaceCenter.X, PlaceCenter.Y, PlaceCenter.Z);
+        if (IsTileOccupiedByEntity(PlaceCenter)) return;
+        if (PlayerPos.EuclideanDistance(CenterGrid) > static_cast<float>(WorldScale::MiningRangeTiles)) return;
+        if (!FPlacementValidator::CanPlace(*TW, { PlaceCenter }, EMaterialType::Fixture, &Registry)) return;
+
+        const FVector SpawnLoc = WorldScale::TileToWorld(CenterGrid, TW->Height);
+        if (GetWorld()->SpawnActor<AActor>(Data.PlaceAsActor, FTransform(SpawnLoc)))
+        {
+            // Fixture：純粹標記占用，不可採、不影響 Greedy Meshing（Actor 自己有 mesh）
+            TW->SetTile(PlaceCenter.X, PlaceCenter.Y, PlaceCenter.Z, EMaterialType::Fixture);
+
+            FPlacedUnit FixtureUnit;
+            FixtureUnit.Material = EMaterialType::Fixture;
+            FixtureUnit.Tiles.Add(PlaceCenter);
+            Registry.Register(FixtureUnit);
+
+            InventoryComp->Consume(Idx, 1);
+            PlaceCooldown = 0.12f;
+        }
+        return;
+    }
 
     EPlacementShape Shape = EPlacementShape::Cube;
     int32 Radius = WorldScale::DefaultShapeRadius;
@@ -1107,9 +1287,6 @@ void ASkillCreatorCharacter::OnPlace()
         Shape  = HUD->ActiveShape;
         Radius = HUD->PlaceRadius;
     }
-
-    const FGridPos PlayerPos = GetPosition();
-    FPlacedObjectRegistry& Registry = CachedVoxelWorld->GetPlacedRegistry();
 
     TArray<FIntVector> PlacedTiles;
     for (const FIntVector& Off : FPlacementShape::GetOffsets(Shape, Radius))
@@ -1180,7 +1357,33 @@ bool ASkillCreatorCharacter::IsTileOccupiedByEntity(const FIntVector& Pos) const
 // 滑鼠左鍵鬆開 / 輸入中斷：取消採掘進度（對應 Main.cs:1244-1247 else 分支）
 void ASkillCreatorCharacter::OnMineReleased()
 {
+    bMineWasPressed = false;
     CancelMining();
+}
+
+// 短按左鍵：bIsConsumable 物品＝使用道具；其餘（含空手/工具）＝攻擊（docs/plan-item-crafting-system.md
+// §衝突3 開放問題 Q3：攻擊判定屬於 plan-player-actions.md §E 攻擊框架範疇，這裡先留 stub，
+// 不阻塞本計畫其餘部分，等該文件的攻擊框架決策確定後再接上真正的傷害判定）。
+void ASkillCreatorCharacter::OnPrimaryTap()
+{
+    if (!InventoryComp) return;
+    const FItemStack& Active = InventoryComp->GetActiveItem();
+    if (!Active.IsEmpty() && FItemRegistry::Get(Active.ItemId).bIsConsumable)
+    {
+        UseConsumable();
+        return;
+    }
+    // 攻擊 stub：bIsWeapon 物品之後接 Strength*AtkMult 傷害公式，見 plan-player-actions.md
+}
+
+// 使用道具（左鍵長按/短按共用，docs/plan-item-crafting-system.md §衝突3 開放問題 Q4：
+// 「道具」子分類規格沒有舉例，效果系統留待規格補充後設計，這裡先消耗 1 個並佔位）
+void ASkillCreatorCharacter::UseConsumable()
+{
+    if (!InventoryComp) return;
+    const int32 Idx = InventoryComp->ActiveHotbarIndex;
+    if (!InventoryComp->Slots.IsValidIndex(Idx) || InventoryComp->Slots[Idx].IsEmpty()) return;
+    InventoryComp->Consume(Idx, 1);
 }
 
 // 滑鼠右鍵鬆開：重置 rising-edge 狀態，讓下次按下能再次觸發放置（對應 Main.cs:1255 _rightWasPressed）

@@ -14,9 +14,19 @@ FTileWorld3D::FTileWorld3D()
 
 FTileWorld3D::~FTileWorld3D()
 {
+    ClearAllChunks();
+    GpuSim.Release();
+}
+
+void FTileWorld3D::ClearAllChunks()
+{
     for (auto& Pair : Chunks)
         delete Pair.Value;
-    GpuSim.Release();
+    Chunks.Empty();
+    DirtyChunks.Empty();
+    PendingNeighborDirty.Empty();
+    OccupiedCells.Empty();
+    CaReactionQueue.Empty();
 }
 
 // ============================================================
@@ -556,6 +566,8 @@ bool FTileWorld3D::HasAdjacentMaterial(int32 x, int32 y, int32 z, EMaterialType 
 
 void FTileWorld3D::Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Chance)
 {
+    TMap<EMaterialType, int32> DestroyedByMat;
+
     for (int32 dy = -Radius; dy <= Radius; ++dy)
     for (int32 dz = -Radius; dz <= Radius; ++dz)
     for (int32 dx = -Radius; dx <= Radius; ++dx)
@@ -563,13 +575,18 @@ void FTileWorld3D::Explode(int32 cx, int32 cy, int32 cz, int32 Radius, float Cha
         if (dx*dx + dy*dy + dz*dz > Radius*Radius) continue;
         if (Chance < 1.f && Rng.FRand() >= Chance) continue;
         int32 wx = cx+dx, wy = cy+dy, wz = cz+dz;
-        if (GetTile(wx, wy, wz) != EMaterialType::Air)
+        EMaterialType Mat = GetTile(wx, wy, wz);
+        if (Mat != EMaterialType::Air)
         {
+            DestroyedByMat.FindOrAdd(Mat)++;
             DestroyTile(wx, wy, wz, EDestroyReason::Explosion);
             if (Rng.FRand() < 0.3f && wy > 0)
                 SetFire(wx, wy-1, wz);
         }
     }
+
+    if (OnExplodeComplete && DestroyedByMat.Num() > 0)
+        OnExplodeComplete(FIntVector(cx, cy, cz), DestroyedByMat);
 }
 
 FRaycastResult3D FTileWorld3D::Raycast(FVector Start, FVector Dir, float MaxDist) const

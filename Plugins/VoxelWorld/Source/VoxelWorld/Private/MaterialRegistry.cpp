@@ -8,43 +8,45 @@ using I = EItemId;
 // 材質資料表（與 EMaterialType 一一對應，依 ID 順序）
 // 欄位順序：Physics, Density, bFlammable, BurnMin, BurnMax, NativeElement,
 //           bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity,
-//           FragmentItem, [bIsTransparent=false 省略時免寫]
+//           FragmentItem, bIsTransparent, Category, Brittleness（省略=1.0）
 static const FMaterialData GMatData[] =
 {
     // ID  0 — Air
     { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  0,   I::None           },
     // ID  1 — Stone
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::FragmentStone  },
+    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::FragmentStone, false, EMaterialCategory::Stone, 1.2f },
     // ID  2 — Dirt
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt   },
+    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
     // ID  3 — Grass
-    { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt   },
+    { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
     // ID  4 — Sand
-    { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255, I::FragmentSand   },
+    { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255, I::FragmentSand,  false, EMaterialCategory::Soil,  0.4f },
     // ID  5 — Water（H-6：Opacity 200→140≈0.55×255 + bIsTransparent=true；Godot MaterialRegistry.cs:16-17）
     { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 140, I::None,          true },
     // ID  6 — Lava（H-6：Godot 未標 IsTransparent，220→255 完全不透明；Godot MaterialRegistry.cs:18-19）
     { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 255, I::None           },
     // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹；原 UE5=1）
-    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,0, 0.5f, 0.f,  255, I::FragmentWood   },
+    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,0, 0.5f, 0.f,  255, I::FragmentWood,  false, EMaterialCategory::Wood,  0.7f },
     // ID  8 — Leaves
-    { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180, I::FragmentWood   },
+    { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180, I::FragmentWood,  false, EMaterialCategory::Wood,  0.6f },
     // ID  9 — Ore_Iron
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw     },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw,    false, EMaterialCategory::Ore,   1.1f },
     // ID 10 — Ore_Gold
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::OreGoldRaw     },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::OreGoldRaw,    false, EMaterialCategory::Ore,   1.1f },
     // ID 11 — Fire（H-6：Opacity 150→166≈0.65×255 + bIsTransparent=true；Godot MaterialRegistry.cs:20-21）
     { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 166, I::None,          true },
     // ID 12 — Steam（H-6：Opacity 100→89≈0.35×255 + bIsTransparent=true；Godot MaterialRegistry.cs:22-23）
     { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  89,  I::None,          true },
     // ID 13 — Ash
-    { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh    },
+    { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh,   false, EMaterialCategory::None,  0.3f },
     // ID 14 — Ore_Coal（H-5：Godot Coal=20幀≈Stone(40幀)×0.5，UE5 Hardness 也改 1.5f；原 3.f=Stone 相同）
-    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  1.5f,1, 2.f,  0.5f, 255, I::OreCoal        },
+    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  1.5f,1, 2.f,  0.5f, 255, I::OreCoal,       false, EMaterialCategory::Ore,   1.0f },
     // ID 15 — Ore_Copper
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255, I::OreCopperRaw   },
+    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255, I::OreCopperRaw,  false, EMaterialCategory::Ore,   1.1f },
     // ID 16 — Ore_MagicCrystal（H-5：Godot RequiredToolTier=2；原 UE5=3）
-    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,2, 2.f,  3.f,  210, I::OreMagicCrystal},
+    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,2, 2.f,  3.f,  210, I::OreMagicCrystal,false,EMaterialCategory::Ore,  1.5f },
+    // ID 17 — Fixture（不可塑形可放置物腳下占位 tile：不可採、無物理模擬，純粹占用標記）
+    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  255, I::None           },
 };
 
 static constexpr uint8 GMatDataCount = (uint8)(sizeof(GMatData) / sizeof(GMatData[0]));
@@ -64,6 +66,13 @@ EPhysicsCategory FMaterialRegistry::GetPhysics(uint8 MaterialID)
 {
     if (MaterialID >= GMatDataCount) return EPhysicsCategory::Empty;
     return GMatData[MaterialID].Physics;
+}
+
+EMaterialCategory FMaterialRegistry::GetCategory(EMaterialType Mat)
+{
+    uint8 ID = (uint8)Mat;
+    if (ID >= GMatDataCount) return EMaterialCategory::None;
+    return GMatData[ID].Category;
 }
 
 // ── 顯示顏色查找表（RGBA 0-1）────────────────────────────────────────────
@@ -86,6 +95,7 @@ static const FLinearColor GMatColors[] =
     FLinearColor(0.20f, 0.20f, 0.20f, 1.f),    // 14: Ore_Coal (very dark)
     FLinearColor(0.60f, 0.40f, 0.20f, 1.f),    // 15: Ore_Copper (copper)
     FLinearColor(0.60f, 0.40f, 1.00f, 0.82f),  // 16: Ore_MagicCrystal (purple)
+    FLinearColor(0.40f, 0.40f, 0.45f, 1.f),    // 17: Fixture (slate grey，通常被 Actor mesh 蓋住看不到)
 };
 
 FLinearColor FMaterialRegistry::GetColor(EMaterialType Mat, uint8 Variant)
@@ -109,7 +119,7 @@ static const TCHAR* const GMatNames[] =
     TEXT("空氣"),     TEXT("石頭"),   TEXT("泥土"),   TEXT("草地"),   TEXT("沙"),
     TEXT("水"),       TEXT("熔岩"),   TEXT("木頭"),   TEXT("樹葉"),   TEXT("鐵礦石"),
     TEXT("金礦石"),   TEXT("火焰"),   TEXT("蒸汽"),   TEXT("灰燼"),   TEXT("煤礦"),
-    TEXT("銅礦石"),   TEXT("魔法水晶"),
+    TEXT("銅礦石"),   TEXT("魔法水晶"), TEXT("固定物"),
 };
 
 FText FMaterialRegistry::GetDisplayName(EMaterialType Mat)
@@ -126,41 +136,59 @@ EItemId FMaterialRegistry::GetFragmentItem(EMaterialType Mat)
     return GMatData[ID].FragmentItem;
 }
 
+float FMaterialRegistry::GetBrittleness(EMaterialType Mat)
+{
+    uint8 ID = (uint8)Mat;
+    if (ID >= GMatDataCount) return 1.0f;
+    return GMatData[ID].Brittleness;
+}
+
 // ── 預設掉落查找（對應 Godot MaterialData.DefaultDrops）─────────────────
 TArray<FItemDrop> FMaterialRegistry::GetDefaultDrops(EMaterialType Mat)
 {
     TArray<FItemDrop> Out;
     switch (Mat)
     {
+    // 2026-06-23 修復：單格採掘（DestroyReason::Mining）對應 Godot MaterialRegistry.cs:26-50
+    // 的 DefaultDrops，掉的是完整方塊（BlockXxx×1），不是碎片——FragmentXxx 只該由
+    // SpawnFragments()（材質單位批次換算）產生，本表先前誤填成 Fragment 系列。
     case EMaterialType::Stone:
-        Out.Add(FItemDrop(EItemId::FragmentStone, 1, 2));
+        Out.Add(FItemDrop(EItemId::BlockStone, 1, 1));
         break;
     case EMaterialType::Dirt:
-        Out.Add(FItemDrop(EItemId::FragmentDirt, 1, 1));
+        Out.Add(FItemDrop(EItemId::BlockDirt, 1, 1));
+        break;
+    case EMaterialType::Grass:
+        // Godot 沒有 Grass 這個材質（UE5 新增的地表層），沿用 Dirt 同款掉落
+        // （挖開草地本質上拿到的就是底下的土）。
+        Out.Add(FItemDrop(EItemId::BlockDirt, 1, 1));
         break;
     case EMaterialType::Sand:
-        Out.Add(FItemDrop(EItemId::FragmentSand, 1, 1));
+        Out.Add(FItemDrop(EItemId::BlockSand, 1, 1));
         break;
     case EMaterialType::Wood:
-        Out.Add(FItemDrop(EItemId::FragmentWood, 1, 2));
+        Out.Add(FItemDrop(EItemId::BlockWood, 1, 1));
         break;
     case EMaterialType::Ash:
-        Out.Add(FItemDrop(EItemId::FragmentAsh, 1, 1));
+        Out.Add(FItemDrop(EItemId::BlockAsh, 1, 1));
         break;
+    // 礦石數量對齊 Godot MaterialRegistry.cs:56-69（Coal/Copper/Iron 皆 1~2，原 UE5 誤填 1~3）
     case EMaterialType::Ore_Iron:
-        Out.Add(FItemDrop(EItemId::OreIronRaw, 1, 3));
+        Out.Add(FItemDrop(EItemId::OreIronRaw, 1, 2));
         break;
     case EMaterialType::Ore_Coal:
-        Out.Add(FItemDrop(EItemId::OreCoal, 1, 3));
+        Out.Add(FItemDrop(EItemId::OreCoal, 1, 2));
         break;
     case EMaterialType::Ore_Copper:
-        Out.Add(FItemDrop(EItemId::OreCopperRaw, 1, 3));
+        Out.Add(FItemDrop(EItemId::OreCopperRaw, 1, 2));
         break;
     case EMaterialType::Ore_Gold:
-        Out.Add(FItemDrop(EItemId::OreGoldRaw, 1, 3));
+        // Godot 沒有金礦（UE5 新增），沿用其他礦石同款 1~2 區間，無 Godot 數值可對照
+        Out.Add(FItemDrop(EItemId::OreGoldRaw, 1, 2));
         break;
     case EMaterialType::Ore_MagicCrystal:
-        Out.Add(FItemDrop(EItemId::OreMagicCrystal, 1, 2));
+        // 對齊 Godot MaterialRegistry.cs:74（1~1，原 UE5 誤填 1~2）
+        Out.Add(FItemDrop(EItemId::OreMagicCrystal, 1, 1));
         break;
     default: break;
     }
