@@ -184,6 +184,7 @@ private:
     FTimerHandle RecoveryTimer;
     void OnWindupEnd();
     void OnActiveEnd();
+    void OnRecoveryEnd(); // UObject 成員函式：受 TimerManager PendingKill 保護，不用 raw lambda
 
 public:
     // I-9：Patrol 巡邏方向（對應 Godot Enemy.cs:50 _patrolDir，±1 沿 X 軸來回）

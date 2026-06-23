@@ -78,7 +78,6 @@ private:
     void OnDropCurrentItem();     // F — 丟出當前物品（DroppedItemManager）
     void OnCancelAction();        // H — 取消施法（SpellRunner::PruneAll）
     void OnSprintPressed();        // Z toggle：第一次=進入疾跑（計時1s升超速），第二次=取消
-    void OnSprintReleased();       // 放開 Z 不做任何事（保留 binding，避免 IE_Released 無主報錯）
     void OnGuardBreakOrFly();     // K — 空中=飛行；地面對防禦目標=破防 stub；K+L=前衝 stub
     void OnXPressed();             // X IE_Pressed  — 按情境：飛行/空中/蹲/翻滾/滑鏟/快墜
     void OnXReleased();            // X IE_Released — 按情境：EndGuard / EndSlide

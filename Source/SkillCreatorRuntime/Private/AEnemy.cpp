@@ -220,6 +220,12 @@ void AEnemy::TakeDamageAmount(float Amount)
 
 void AEnemy::Respawn()
 {
+    // 清除 S-2 攻擊計時器，避免復活後舊計時器觸發相位異常
+    GetWorldTimerManager().ClearTimer(WindupTimer);
+    GetWorldTimerManager().ClearTimer(ActiveTimer);
+    GetWorldTimerManager().ClearTimer(RecoveryTimer);
+    AttackPhase = EAttackPhase::None;
+
     bPendingRespawn = false;
     GridPosition    = SpawnGridPos;
     Hp              = MaxHp;
@@ -380,13 +386,14 @@ void AEnemy::BeginMeleeAttack(ASkillCreatorCharacter* Target)
 
 void AEnemy::OnWindupEnd()
 {
+    // 自己死亡（前搖期間被玩家擊殺）→ 中止，Respawn() 已清計時器
+    if (!IsAlive()) return;
     AttackPhase = EAttackPhase::Active;
     ASkillCreatorCharacter* Target = MeleeTarget.Get();
     if (Target && Target->IsAlive())
     {
-        // 攻擊幀時再確認距離（前搖期間玩家可能已離開範圍）
-        const float RadiusCm = GetAttackRange() * WorldScale::TileSizeCm;
-        if (FVector::Dist(GetActorLocation(), Target->GetActorLocation()) <= RadiusCm)
+        // 攻擊幀時用 tile 空間 Chebyshev 距離再確認（與 BTTask gate 一致，避免 Euclidean 對角漏打）
+        if (GetPosition().ChebyshevDistance(Target->GetPosition()) <= GetAttackRange())
         {
             // 走 B-3 物理傷害管線：支援 S-4 彈反（bInParryWindow）、防禦減傷、暴擊
             Target->TakePhysicalDamage(GetAttackDamage(), &Stats, this);
@@ -398,9 +405,13 @@ void AEnemy::OnWindupEnd()
 
 void AEnemy::OnActiveEnd()
 {
+    if (!IsAlive()) return;
     AttackPhase = EAttackPhase::Recovering;
-    // 0.4s 後搖後恢復待機
-    FTimerDelegate D;
-    D.BindLambda([this]() { AttackPhase = EAttackPhase::None; });
-    GetWorldTimerManager().SetTimer(RecoveryTimer, D, 0.4f, false);
+    // UObject 成員函式綁定：TimerManager 在 Actor PendingKill 時自動跳過，比 raw lambda 安全
+    GetWorldTimerManager().SetTimer(RecoveryTimer, this, &AEnemy::OnRecoveryEnd, 0.4f, false);
+}
+
+void AEnemy::OnRecoveryEnd()
+{
+    AttackPhase = EAttackPhase::None;
 }

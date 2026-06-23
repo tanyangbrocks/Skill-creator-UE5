@@ -399,11 +399,6 @@ void ASkillCreatorPlayerController::OnSprintPressed()
         Char->StartSprint();
 }
 
-void ASkillCreatorPlayerController::OnSprintReleased()
-{
-    // 放開 Z 不做任何事：玩家不需要一直按住，Z 是 toggle 鍵
-}
-
 void ASkillCreatorPlayerController::OnGuardBreakOrFly()
 {
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
