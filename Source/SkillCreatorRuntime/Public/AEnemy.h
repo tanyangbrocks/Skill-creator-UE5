@@ -8,10 +8,12 @@
 #include "SnapshotTypes.h"
 #include "ActionBus.h"
 #include "CharacterStats.h"
+#include "AttackTypes.h"
 #include "AEnemy.generated.h"
 
 class UElementalAuraComponent;
 class AVoxelWorldActor;
+class ASkillCreatorCharacter;
 
 UENUM(BlueprintType)
 enum class EEnemyType : uint8
@@ -144,6 +146,13 @@ public:
     // 此時 BeginPlay 已經跑過一次預設色，需要再呼叫一次套用正確顏色）
     void ApplyBodyColor();
 
+    // ── S-2 攻擊框架（Melee 敵人）───────────────────────────────────
+    // 目前相位：None / WindingUp / Active / Recovering
+    // S-4 彈反系統在 ASkillCreatorCharacter::TakePhysicalDamage 中
+    // 以 this（AEnemy*）作為 Attacker 參數，故 BeginMeleeAttack 直接傳 this。
+    EAttackPhase AttackPhase = EAttackPhase::None;
+    void BeginMeleeAttack(ASkillCreatorCharacter* Target);
+
     // ── ISnapshottable ────────────────────────────────────────────
     virtual FEntitySnapshot TakeSnapshot()                              const override;
     virtual void            RestoreFromSnapshot(const FEntitySnapshot&)       override;
@@ -167,6 +176,14 @@ private:
     static int32  NextId;
     bool          bPendingRespawn = false;
     FTimerHandle  RespawnTimerHandle;
+
+    // S-2 Melee 攻擊計時器
+    TWeakObjectPtr<ASkillCreatorCharacter> MeleeTarget;
+    FTimerHandle WindupTimer;
+    FTimerHandle ActiveTimer;
+    FTimerHandle RecoveryTimer;
+    void OnWindupEnd();
+    void OnActiveEnd();
 
 public:
     // I-9：Patrol 巡邏方向（對應 Godot Enemy.cs:50 _patrolDir，±1 沿 X 軸來回）

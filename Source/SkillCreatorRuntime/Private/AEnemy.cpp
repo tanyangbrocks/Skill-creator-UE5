@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "ASkillCreatorCharacter.h"
 
 int32 AEnemy::NextId = 0;
 
@@ -363,4 +364,43 @@ float AEnemy::GetXpReward() const
     case EEnemyType::Heavy:  return 40.f;
     default:                 return 10.f;
     }
+}
+
+// ── S-2 Melee 攻擊框架 ──────────────────────────────────────────────────────
+
+void AEnemy::BeginMeleeAttack(ASkillCreatorCharacter* Target)
+{
+    // 上一次攻擊還未結束就忽略（BT AttackInterval decorator 負責冷卻）
+    if (AttackPhase != EAttackPhase::None || !Target || !Target->IsAlive()) return;
+    MeleeTarget  = Target;
+    AttackPhase  = EAttackPhase::WindingUp;
+    // 0.4s 前搖後進入攻擊幀
+    GetWorldTimerManager().SetTimer(WindupTimer, this, &AEnemy::OnWindupEnd, 0.4f, false);
+}
+
+void AEnemy::OnWindupEnd()
+{
+    AttackPhase = EAttackPhase::Active;
+    ASkillCreatorCharacter* Target = MeleeTarget.Get();
+    if (Target && Target->IsAlive())
+    {
+        // 攻擊幀時再確認距離（前搖期間玩家可能已離開範圍）
+        const float RadiusCm = GetAttackRange() * WorldScale::TileSizeCm;
+        if (FVector::Dist(GetActorLocation(), Target->GetActorLocation()) <= RadiusCm)
+        {
+            // 走 B-3 物理傷害管線：支援 S-4 彈反（bInParryWindow）、防禦減傷、暴擊
+            Target->TakePhysicalDamage(GetAttackDamage(), &Stats, this);
+        }
+    }
+    // 0.2s 攻擊幀後進入後搖
+    GetWorldTimerManager().SetTimer(ActiveTimer, this, &AEnemy::OnActiveEnd, 0.2f, false);
+}
+
+void AEnemy::OnActiveEnd()
+{
+    AttackPhase = EAttackPhase::Recovering;
+    // 0.4s 後搖後恢復待機
+    FTimerDelegate D;
+    D.BindLambda([this]() { AttackPhase = EAttackPhase::None; });
+    GetWorldTimerManager().SetTimer(RecoveryTimer, D, 0.4f, false);
 }

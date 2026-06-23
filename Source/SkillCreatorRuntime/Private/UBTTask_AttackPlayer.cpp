@@ -25,7 +25,7 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
     if (!BB) return EBTNodeResult::Failed;
 
-    // 近戰攻擊：直接扣血；Ranged 類型透過 SpellCaster 發射投射物（M-5 stub：直接傷害）
+    // Melee：S-2 框架（前搖→攻擊幀→後搖）；Ranged：投射物；其餘：暫時直接傷害 stub
     ASkillCreatorCharacter* Player = nullptr;
     if (UObject* Obj = BB->GetValueAsObject(PlayerKey.SelectedKeyName))
         Player = Cast<ASkillCreatorCharacter>(Obj);
@@ -68,8 +68,14 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
             }
         }
     }
+    else if (Enemy->Type == EEnemyType::Melee)
+    {
+        // 前搖(0.4s) → 攻擊幀距離確認 → B-3 管線（含 S-4 彈反）→ 後搖(0.4s)
+        Enemy->BeginMeleeAttack(Player);
+    }
     else
     {
+        // Patrol / Heavy：暫時直接傷害（stub）
         Player->TakeDirectDamage(Enemy->GetAttackDamage());
     }
     return EBTNodeResult::Succeeded;
