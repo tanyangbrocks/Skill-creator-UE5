@@ -104,8 +104,11 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
     // 樹木產物（W-A）
     Set(MakeMoldablePlaceable(EItemId::OakLog,    INVTEXT("橡木原木"), EMaterialType::Wood));
     Set(MakeMoldablePlaceable(EItemId::FallenLeaf,INVTEXT("落葉"),     EMaterialType::FallenLeaf));
-    Set(MakeMat(EItemId::OakSapling, INVTEXT("橡木樹苗")));  // 種植效果待 W-G
-    Set(MakeConsumable(EItemId::OakFruit, INVTEXT("橡木果實")));  // 效果待定
+    Set(MakeMat(EItemId::OakSapling, INVTEXT("橡木樹苗")));
+    Set(MakeConsumable(EItemId::OakFruit, INVTEXT("橡木果實")));
+
+    // 地表植物（W-G）
+    Set(MakeMat(EItemId::Weed, INVTEXT("雜草")));  // Entity 採集掉落，不可放置
 
     // 礦石原材料（J-3：OreCoal/Copper/Iron/Magic 可放回地圖重建礦脈，Godot ItemRegistry.cs:41-44）
     Set(MakeBlock(EItemId::OreCoal,         INVTEXT("煤炭"),   EMaterialType::Ore_Coal));

@@ -73,5 +73,8 @@ enum class EItemId : uint8
     OakSapling,     // 橡木樹苗（樹葉機率掉落；random tick 後可生長為橡木）
     OakFruit,       // 橡木果實（樹葉機率掉落；效果待定）
 
+    // ── 地表植物（W-G）───────────────────────────────────────────
+    Weed,           // 雜草（草地長出的採集 Entity；0.5s 採集，掉落 1 根 Weed 物品）
+
     COUNT UMETA(Hidden),
 };

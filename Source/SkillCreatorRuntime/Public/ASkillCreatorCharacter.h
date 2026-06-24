@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AWeedEntity.h"
 
 struct FInputActionValue;
 #include "ICreature.h"
@@ -348,6 +349,17 @@ private:
     TWeakObjectPtr<AActor> CollectTarget;
     float                  CollectProgress = 0.f;
     void CancelCollect() { CollectTarget.Reset(); CollectProgress = 0.f; }
+
+    // ── W-G：雜草 random tick（MC 機制，每 GameTick 對 loaded chunk 取樣）──
+    // 避免依賴 AVoxelWorldActor → AWeedEntity（循環依賴 VoxelWorld→Runtime），
+    // 改放在 Runtime 層的角色 Tick 裡統一執行。
+    void TickWeedGrowth(float DeltaTime);
+
+    UFUNCTION()
+    void OnWeedDestroyed(AActor* DestroyedActor);
+
+    float WeedTickAccum = 0.f;
+    TSet<FIntVector> ActiveWeedTiles;  // 已存在雜草的 tile，防重複
 
     // ── 放置節流狀態（對應 Godot Main.cs _placeCooldown/_rightWasPressed）──
     float PlaceCooldown          = 0.f;

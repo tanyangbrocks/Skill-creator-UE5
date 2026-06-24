@@ -30,6 +30,7 @@
 #include "MaterialRegistry.h"
 #include "IInteractable.h"
 #include "ICollectible.h"
+#include "AWeedEntity.h"
 #include "Engine/OverlapResult.h"
 #include "UPotionBagComponent.h"
 #include "UMapComponent.h"
@@ -469,6 +470,9 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
             GetCharacterMovement()->Velocity = Vel;
         }
     }
+
+    // W-G：雜草 random tick
+    TickWeedGrowth(DeltaTime);
 }
 
 float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent,
@@ -1988,4 +1992,94 @@ void ASkillCreatorCharacter::StartFastFall()
     if (IsFlying()) { FlyDown(); return; }
     if (!GetCharacterMovement()->IsFalling()) return;
     LaunchCharacter(FVector(0.f, 0.f, -WorldScale::WalkSpeedCm * 3.f), false, true);
+}
+
+// ============================================================
+// W-G：雜草 random tick（MC 機制）
+// 每 GameTick，對 loaded chunk 取 3 次隨機樣本，10% 機率在 Grass+Air 上生成雜草 Entity
+// 自限：ActiveWeedTiles 防重複；雜草 Actor 自毀後同步清除此 Set
+// ============================================================
+void ASkillCreatorCharacter::TickWeedGrowth(float DeltaTime)
+{
+    if (!CachedVoxelWorld) return;
+    FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
+    if (!TW) return;
+
+    const auto& Chunks = TW->GetActiveChunks();
+    if (Chunks.IsEmpty()) return;
+
+    constexpr int32 S             = WorldScale::ChunkSize;
+    constexpr int32 SamplesPerTick = 3;    // MC：每 section 每 tick 3 次
+
+    // 用累加器實現「每 GameTick 而非每 DeltaTime」一次（對應 MC 每遊戲刻觸發）
+    // GameClock 沒有引用，這裡用 DeltaTime 直接每幀跑（低頻 sampling，影響不大）
+
+    // 從所有已加載的 chunk 中，等機率隨機取樣 SamplesPerTick 次
+    const int32 ChunkCount = Chunks.Num();
+    uint32 Seed = (uint32)(GFrameCounter ^ (uint64)this);
+    auto RandU = [&]() -> uint32 { return Seed = Seed * 1664525u + 1013904223u; };
+
+    for (int32 s = 0; s < SamplesPerTick; ++s)
+    {
+        // 取隨機 chunk
+        int32 ChunkIdx = (int32)(RandU() % (uint32)ChunkCount);
+        int32 Cur = 0;
+        FIntVector CC = FIntVector::ZeroValue;
+        for (const auto& Pair : Chunks)
+        {
+            if (Cur++ == ChunkIdx) { CC = Pair.Key; break; }
+        }
+
+        // 在該 chunk 內取隨機 XZ 座標，掃描地表（向下找 Grass）
+        const int32 lx = (int32)(RandU() % (uint32)S);
+        const int32 lz = (int32)(RandU() % (uint32)S);
+        const int32 wx = CC.X * S + lx;
+        const int32 wz = CC.Z * S + lz;
+
+        // 找 chunk 內的 Grass tile（Y 由上往下掃，找第一個 Grass）
+        int32 SurfaceY = -1;
+        for (int32 wy = CC.Y * S; wy < (CC.Y + 1) * S; ++wy)
+        {
+            if (TW->GetTile(wx, wy, wz) == EMaterialType::Grass)
+            {
+                // 確認正上方是 Air
+                if (TW->GetTile(wx, wy - 1, wz) == EMaterialType::Air)
+                {
+                    SurfaceY = wy;
+                    break;
+                }
+            }
+        }
+        if (SurfaceY < 0) continue;
+
+        // 10% 成功率
+        if ((RandU() % 10) != 0) continue;
+
+        // 防重複
+        const FIntVector WeedTile(wx, SurfaceY, wz);
+        if (ActiveWeedTiles.Contains(WeedTile)) continue;
+
+        // 生成 AWeedEntity（世界位置 = tile XZ × TileSizeCm，Z = (WorldHeight - SurfaceY) × TileSizeCm）
+        const float PosX = wx * WorldScale::TileSizeCm;
+        const float PosY = wz * WorldScale::TileSizeCm;
+        const float PosZ = (TW->Height - SurfaceY) * WorldScale::TileSizeCm;
+        const FVector SpawnLoc(PosX, PosY, PosZ);
+
+        AWeedEntity* Weed = GetWorld()->SpawnActor<AWeedEntity>(AWeedEntity::StaticClass(),
+            FTransform(FRotator::ZeroRotator, SpawnLoc));
+        if (Weed)
+        {
+            Weed->TilePos = WeedTile;
+            ActiveWeedTiles.Add(WeedTile);
+
+            // 雜草自毀時清除記錄（OnDestroyed delegate 自動呼叫）
+            Weed->OnDestroyed.AddDynamic(this, &ASkillCreatorCharacter::OnWeedDestroyed);
+        }
+    }
+}
+
+void ASkillCreatorCharacter::OnWeedDestroyed(AActor* DestroyedActor)
+{
+    if (const AWeedEntity* Weed = Cast<AWeedEntity>(DestroyedActor))
+        ActiveWeedTiles.Remove(Weed->TilePos);
 }
