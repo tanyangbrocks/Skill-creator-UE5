@@ -17,6 +17,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
+#include "SlateBrushHelpers.h"
 
 static const FName StatKeys[] = { TEXT("Physique"), TEXT("Strength"), TEXT("Endurance"),
                                    TEXT("Agility"), TEXT("Intellect"), TEXT("Charisma"), TEXT("Luck") };
@@ -46,7 +47,7 @@ void UPlayerCreateWidget::NativeOnInitialized()
 void UPlayerCreateWidget::BuildLayout()
 {
     UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-    Background->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.10f, 1.f));
+    Background->SetBrush(MakeSolidBrush(FLinearColor(0.08f, 0.08f, 0.10f, 1.f)));
     WidgetTree->RootWidget = Background;
 
     UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>();
@@ -119,10 +120,10 @@ void UPlayerCreateWidget::BuildLayout()
 
     // ── 警告彈窗（步驟 7：創建能力點不足，對應使用者規格第 7 點）─────────────
     UBorder* WarnBg = WidgetTree->ConstructWidget<UBorder>();
-    WarnBg->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.75f));
+    WarnBg->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.75f)));
 
     UBorder* WarnPanel = WidgetTree->ConstructWidget<UBorder>();
-    WarnPanel->SetBrushColor(FLinearColor(0.16f, 0.10f, 0.10f, 1.f));
+    WarnPanel->SetBrush(MakeSolidBrush(FLinearColor(0.16f, 0.10f, 0.10f, 1.f)));
     WarnPanel->SetPadding(FMargin(24.f, 20.f));
     if (UBorderSlot* BS = Cast<UBorderSlot>(WarnBg->SetContent(WarnPanel)))
     {

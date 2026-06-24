@@ -23,11 +23,19 @@ public:
     TDelegate<void(int32, int32)> OnSlotSwapRequested;
     TDelegate<void(int32)>        OnSlotEquipRequested;
 
+    // 2026-06-23：跨欄拖曳（UChestWidget 用，docs/plan-item-crafting-system.md §六 UI 設計）。
+    // SetPairedWidget() 設定後，drop 在自己範圍外、但落在 PairedWidget 範圍內時觸發。
+    TDelegate<void(int32 SrcSlot, int32 DstSlot)> OnCrossSwapRequested;
+    void SetPairedWidget(UInventoryWidget* Other) { PairedWidget = Other; }
+
     void Refresh(const UInventoryComponent* Inv);
 
     // 顯示懸停提示（由 ASkillCreatorHUD 控制）
     void ShowFloatTooltip(const FString& Text, FVector2D ScreenPos);
     void HideFloatTooltip();
+
+    // 公開給 PairedWidget 跨欄查詢用（原本只給自己內部用）
+    int32 GetSlotUnderMouse() const;
 
 protected:
     virtual void NativeOnInitialized() override;
@@ -53,7 +61,8 @@ private:
     TArray<FItemStack> CachedSlots;
     int32 CachedActiveIdx = 0;
 
-    int32 GetSlotUnderMouse() const;
+    TWeakObjectPtr<UInventoryWidget> PairedWidget;
+
     FLinearColor GetItemColor(EItemId Id) const;
     void RefreshSlot(int32 Idx);
 };

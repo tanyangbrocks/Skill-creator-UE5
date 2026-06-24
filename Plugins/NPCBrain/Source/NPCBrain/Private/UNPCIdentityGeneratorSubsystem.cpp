@@ -2,6 +2,7 @@
 #include "UNPCBrainSubsystem.h"
 #include "NPCBrainSettings.h"
 #include "JsonObjectConverter.h"
+#include "RaceRegistry.h"
 
 UNPCIdentityGeneratorSubsystem* UNPCIdentityGeneratorSubsystem::Get(const UObject* WorldCtx)
 {
@@ -17,7 +18,7 @@ bool UNPCIdentityGeneratorSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 	return World && World->IsGameWorld();
 }
 
-void UNPCIdentityGeneratorSubsystem::LoadOrGenerate(FName NPCId, FOnIdentityReady OnReady)
+void UNPCIdentityGeneratorSubsystem::LoadOrGenerate(FName NPCId, FName SubtypeId, FOnIdentityReady OnReady)
 {
 	FNPCIdentity Existing;
 	if (FNPCIdentity::Load(NPCId, Existing))
@@ -26,10 +27,23 @@ void UNPCIdentityGeneratorSubsystem::LoadOrGenerate(FName NPCId, FOnIdentityRead
 		return;
 	}
 
-	RequestGeneration(NPCId, OnReady);
+	RequestGeneration(NPCId, SubtypeId, OnReady);
 }
 
-void UNPCIdentityGeneratorSubsystem::RequestGeneration(FName NPCId, FOnIdentityReady OnReady)
+FName UNPCIdentityGeneratorSubsystem::PickRandomRaceId()
+{
+	// 不再讓 LLM 自由發明種族名稱：直接從 FRaceRegistry（W-10 角色創建用，164 種）
+	// 隨機抽一個，跟玩家角色創建系統共用同一份種族表（docs/plan-base-npc-system.md §三）。
+	TArray<FName> AllRaceIds;
+	for (const FRaceSystemDefinition& System : FRaceRegistry::AllSystems())
+		for (const FRaceDefinition* Race : FRaceRegistry::RacesInSystem(System.SystemId))
+			if (Race) AllRaceIds.Add(Race->Id);
+
+	if (AllRaceIds.IsEmpty()) return NAME_None;
+	return AllRaceIds[FMath::RandRange(0, AllRaceIds.Num() - 1)];
+}
+
+void UNPCIdentityGeneratorSubsystem::RequestGeneration(FName NPCId, FName SubtypeId, FOnIdentityReady OnReady)
 {
 	UNPCBrainSubsystem* Brain = UNPCBrainSubsystem::Get(this);
 	if (!Brain)
@@ -40,6 +54,9 @@ void UNPCIdentityGeneratorSubsystem::RequestGeneration(FName NPCId, FOnIdentityR
 		return;
 	}
 
+	const FName RaceId = PickRandomRaceId();
+	const FRaceDefinition* RaceDef = FRaceRegistry::Find(RaceId);
+
 	const UNPCBrainSettings* S = UNPCBrainSettings::Get();
 
 	TArray<FNPCMessage> Messages;
@@ -48,15 +65,20 @@ void UNPCIdentityGeneratorSubsystem::RequestGeneration(FName NPCId, FOnIdentityR
 	Sys.Content = S->WorldviewSystemPrompt;
 	Messages.Add(Sys);
 
+	// 把抽到的種族設定餵進 prompt，讓生成的背景故事符合該種族的既定描述
+	// （docs/plan-base-npc-system.md §三第 3 點）
 	FNPCMessage User;
-	User.Role    = ENPCMessageRole::User;
-	User.Content = TEXT("請生成一位新 NPC 的身分。");
+	User.Role = ENPCMessageRole::User;
+	User.Content = RaceDef
+		? FString::Printf(TEXT("請生成一位新 NPC 的身分。這名 NPC 的種族是「%s」：%s"),
+			*RaceDef->DisplayName.ToString(), *RaceDef->Description.ToString())
+		: TEXT("請生成一位新 NPC 的身分。");
 	Messages.Add(User);
 
 	FOnInferenceComplete OnComplete;
-	OnComplete.BindLambda([this, NPCId, OnReady](const FString& Response)
+	OnComplete.BindLambda([this, NPCId, SubtypeId, RaceId, OnReady](const FString& Response)
 	{
-		ParseAndSave(NPCId, Response, OnReady);
+		ParseAndSave(NPCId, SubtypeId, RaceId, Response, OnReady);
 	});
 
 	FOnInferenceError OnError;
@@ -71,11 +93,15 @@ void UNPCIdentityGeneratorSubsystem::RequestGeneration(FName NPCId, FOnIdentityR
 }
 
 void UNPCIdentityGeneratorSubsystem::ParseAndSave(
-	FName NPCId, const FString& LlmResponseJson, FOnIdentityReady OnReady)
+	FName NPCId, FName SubtypeId, FName RaceId, const FString& LlmResponseJson, FOnIdentityReady OnReady)
 {
 	FNPCIdentity Identity;
-	Identity.NPCId = NPCId;
+	Identity.NPCId     = NPCId;
+	Identity.SubtypeId = SubtypeId;
+	Identity.RaceId    = RaceId;
 
+	// LLM JSON 回應不包含 npcId/subtypeId/raceId 這些 key，JsonObjectStringToUStruct 只會
+	// 設定 JSON 裡實際出現的欄位，上面預先設好的三個值不會被覆寫。
 	if (!FJsonObjectConverter::JsonObjectStringToUStruct(LlmResponseJson, &Identity, 0, 0))
 	{
 		UE_LOG(LogTemp, Error,

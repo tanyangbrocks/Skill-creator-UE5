@@ -30,6 +30,9 @@ namespace WorldScale
     constexpr int32 PlayerH            = GrainCurrent * 2;      // 玩家高度（tile）= 2 遊戲單位 = 200cm @ Grain=16
     constexpr float TileSizeCm         = 100.f / static_cast<float>(GrainCurrent);  // 每 tile 邊長（cm）= 1m / Grain
     constexpr int32 DefaultWorldHeight = 256;     // 垂直 tile 上限（AVoxelWorldActor::WorldHeight 預設值）
+    // 體素精細度閾值：物件最短邊長 / TileSizeCm 需達到此值才在 Auto 模式下走 Route A
+    // 見 plan-voxelization.md §十六
+    constexpr int32 MinFidelityTiles  = 8;
 
     // ── 衍生常數：玩家碰撞膠囊 ────────────────────────────────────────
     // 半徑比 tile 略窄（×0.45）使玩家能緊貼牆壁移動而不卡住
@@ -57,6 +60,10 @@ namespace WorldScale
     constexpr int32 MiningRangeTiles   = PlayerH * 6;                          // ~6× 玩家高度（tile）
     // Godot: _shapeRadius = WorldScale.PlayerH/6（Main.cs:72），下限 1。
     constexpr int32 DefaultShapeRadius = (PlayerH / 6 > 0) ? (PlayerH / 6) : 1; // 預設形狀半徑（tile）
+
+    // ── 互動距離（docs/plan-item-crafting-system.md §五，規格沒給具體數字，
+    // 暫定 MiningRangeTiles 的一半，避免穿牆互動）─────────────────────────
+    constexpr int32 InteractRangeTiles = MiningRangeTiles / 2;
 
     // ── 座標轉換：Voxel → UE5 FVector ────────────────────────────────
     inline FVector TileToWorld(int32 VoxX, int32 VoxY, int32 VoxZ,

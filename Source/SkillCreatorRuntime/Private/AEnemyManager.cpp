@@ -133,3 +133,13 @@ void AEnemyManager::ApplyExplosionDamage(FGridPos Center, int32 Radius, float Da
             E->TakeDamageAmount(Damage);
     }
 }
+
+void AEnemyManager::ClearAllEnemies()
+{
+    for (AEnemy* E : Enemies)
+        if (IsValid(E))
+            E->Destroy();
+    Enemies.Empty();
+    EnemyProjectiles.Empty();
+    DynamicActiveCount = 0;
+}

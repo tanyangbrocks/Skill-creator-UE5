@@ -10,6 +10,7 @@
 #include "Components/Border.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
+#include "SlateBrushHelpers.h"
 
 // ── 顏色查詢（和 Godot GetItemIconColor 對應）──────────────────────────────
 
@@ -64,7 +65,7 @@ void UInventoryWidget::NativeOnInitialized()
 
     // 面板背景（UBorder 提供底色；其唯一子節點 Content 負責版面定位）
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InvPanel"));
-    Panel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.10f, 0.92f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.05f, 0.05f, 0.10f, 0.92f)));
     Panel->SetPadding(FMargin(0.f));
     Root->AddChild(Panel);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Panel->Slot))
@@ -138,7 +139,7 @@ void UInventoryWidget::NativeOnInitialized()
 
         // 格子背景（UBorder 提供底色，加入 Content 取得正確的 UCanvasPanelSlot）
         UBorder* SlotBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        SlotBorder->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f));
+        SlotBorder->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.15f)));
         SlotBorder->SetPadding(FMargin(0.f));
         Content->AddChild(SlotBorder);
         if (UCanvasPanelSlot* SS = Cast<UCanvasPanelSlot>(SlotBorder->Slot))
@@ -150,7 +151,7 @@ void UInventoryWidget::NativeOnInitialized()
 
         // 圖示（四周 5px 內縮填滿）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-        Icon->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
+        Icon->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.12f)));
         Icon->SetPadding(FMargin(0.f));
         SlotOvl->AddChild(Icon);
         if (UOverlaySlot* IS = Cast<UOverlaySlot>(Icon->Slot))
@@ -184,7 +185,7 @@ void UInventoryWidget::NativeOnInitialized()
 
     // 拖曳浮動圖示
     DragFloatIcon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DragIcon"));
-    DragFloatIcon->SetBrushColor(FLinearColor(0.85f, 0.75f, 0.15f, 0.7f));
+    DragFloatIcon->SetBrush(MakeSolidBrush(FLinearColor(0.85f, 0.75f, 0.15f, 0.7f)));
     DragFloatIcon->SetPadding(FMargin(0.f));
     DragFloatIcon->SetVisibility(ESlateVisibility::Hidden);
     Root->AddChild(DragFloatIcon);
@@ -193,7 +194,7 @@ void UInventoryWidget::NativeOnInitialized()
 
     // Tooltip
     TooltipPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Tooltip"));
-    TooltipPanel->SetBrushColor(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f));
+    TooltipPanel->SetBrush(MakeSolidBrush(FLinearColor(0.05f, 0.05f, 0.12f, 0.95f)));
     TooltipPanel->SetPadding(FMargin(8.f, 4.f));
     TooltipPanel->SetVisibility(ESlateVisibility::Hidden);
     TooltipPanel->SetRenderTransformPivot(FVector2D::ZeroVector);
@@ -252,7 +253,7 @@ FReply UInventoryWidget::NativeOnMouseButtonDown(const FGeometry& Geo, const FPo
                 const FItemStack& Stack = CachedSlots[Src];
                 if (!Stack.IsEmpty())
                 {
-                    DragFloatIcon->SetBrushColor(GetItemColor(Stack.ItemId));
+                    DragFloatIcon->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
                     DragFloatIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
                 }
             }
@@ -273,6 +274,13 @@ FReply UInventoryWidget::NativeOnMouseButtonUp(const FGeometry& Geo, const FPoin
             OnSlotSwapRequested.ExecuteIfBound(DragSrcSlot, Dst);
         else if (Dst == DragSrcSlot && !CachedSlots[DragSrcSlot].IsEmpty())
             OnSlotEquipRequested.ExecuteIfBound(DragSrcSlot);
+        else if (Dst < 0 && PairedWidget.IsValid())
+        {
+            // 2026-06-23：跨欄拖曳——自己範圍內沒命中，改查 PairedWidget（UChestWidget 用）
+            const int32 PairedDst = PairedWidget->GetSlotUnderMouse();
+            if (PairedDst >= 0)
+                OnCrossSwapRequested.ExecuteIfBound(DragSrcSlot, PairedDst);
+        }
 
         DragSrcSlot = -1;
         return FReply::Handled();
@@ -301,17 +309,17 @@ void UInventoryWidget::RefreshSlot(int32 Idx)
     FLinearColor BorderCol = bActive
         ? FLinearColor(0.95f, 0.80f, 0.20f)
         : FLinearColor(0.30f, 0.30f, 0.40f);
-    SlotBorders[Idx]->SetBrushColor(BorderCol);
+    SlotBorders[Idx]->SetBrush(MakeSolidBrush(BorderCol));
 
     const FItemStack& Stack = CachedSlots[Idx];
     if (Stack.IsEmpty())
     {
-        IconBorders[Idx]->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.12f));
+        IconBorders[Idx]->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.12f)));
         CountLabels[Idx]->SetText(FText::GetEmpty());
     }
     else
     {
-        IconBorders[Idx]->SetBrushColor(GetItemColor(Stack.ItemId));
+        IconBorders[Idx]->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
         CountLabels[Idx]->SetText(Stack.Count > 1
             ? FText::FromString(FString::Printf(TEXT("×%d"), Stack.Count))
             : FText::GetEmpty());

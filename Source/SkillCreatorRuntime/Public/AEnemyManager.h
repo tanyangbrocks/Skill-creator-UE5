@@ -50,6 +50,15 @@ public:
     // ── 每幀清理死亡敵人 ──────────────────────────────────────────
     virtual void Tick(float DeltaTime) override;
 
+    // 2026-06-23：換世界時呼叫（ASkillCreatorGameMode::SpawnWorldAndMobs 偵測到
+    // AVoxelWorldActor 需要 ReinitializeForWorld 的同一個分支）。AEnemyManager 跟
+    // AVoxelWorldActor 一樣是同進程內動態 Spawn 的單一實例，換世界時原本完全沒有清理，
+    // 第一個世界生成的敵人會帶著舊世界的 GridPosition 繼續留在新世界裡（座標對新世界的
+    // 地形毫無意義）。立即 Destroy 全部現存敵人，不靠 ForceDespawn()+下一個 Tick 那種
+    // 延遲清理（換世界是一次性事件，不需要漸進式處理）。
+    UFUNCTION(BlueprintCallable, Category="EnemyManager")
+    void ClearAllEnemies();
+
 private:
     UPROPERTY() TArray<AEnemy*> Enemies;
     int32 DynamicActiveCount = 0;

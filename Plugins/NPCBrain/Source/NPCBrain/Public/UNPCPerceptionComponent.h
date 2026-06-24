@@ -46,7 +46,7 @@ public:
 
 private:
 	IWorldInterface* WorldInterface = nullptr;
-	FWorldSnapshot   LastSnapshot;
+	FNPCWorldSnapshot   LastSnapshot;
 	float            TimeAccumulator = 0.f;
 	bool             bHasSnapshot = false;
 

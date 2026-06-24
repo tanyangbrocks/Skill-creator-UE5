@@ -160,6 +160,37 @@ struct FEffectEntry : public FTableRowBase
 };
 ```
 
+### 5-3 UVoxelAssetRegistry / UVoxelMaterialPalette
+
+體素化管線的兩張登記表，遵循與 `UTileMaterialRegistry` 相同的 DataAsset 模式。
+完整設計見 [`plan-voxelization.md`](plan-voxelization.md) §六、§七。
+
+```cpp
+// ── 調色盤（palette index → EMaterialType）──────────────────────────────
+USTRUCT(BlueprintType)
+struct FVoxelPaletteEntry : public FTableRowBase
+{
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere) uint8         PaletteIndex; // 1-255（0 = Air 保留）
+    UPROPERTY(EditAnywhere) EMaterialType Material;
+};
+// DataAsset 名稱：DA_VoxelMaterialPalette.uasset
+
+// ── 體素資產登記表（FName → .vox 解析後的 UVoxelAsset）─────────────────
+USTRUCT(BlueprintType)
+struct FVoxelAssetEntry : public FTableRowBase
+{
+    GENERATED_BODY()
+    // RowName = VoxelAssetId（e.g. "chest_wood"、"statue_stone"）
+    UPROPERTY(EditAnywhere) TSoftObjectPtr<UVoxelAsset> Asset;
+    UPROPERTY(EditAnywhere) FVector                     PivotOffset; // 注入時的原點偏移
+};
+// DataAsset 名稱：DA_VoxelAssetRegistry.uasset
+```
+
+`UVoxelAsset` 本身是 `UDataAsset` 子類（持有 `TArray<FVoxelCell>` 和調色盤索引引用），
+非同步載入策略與其他軟參照登記表相同（見 §六）。
+
 ---
 
 ## 六、非同步載入策略

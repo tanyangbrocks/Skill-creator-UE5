@@ -5,6 +5,7 @@
 #include "Blueprint/DragDropOperation.h"
 #include "Components/Border.h"
 #include "Components/SizeBox.h"
+#include "SlateBrushHelpers.h"
 
 void UBlockDropZoneWidget::NativeOnInitialized()
 {
@@ -15,7 +16,7 @@ void UBlockDropZoneWidget::NativeOnInitialized()
     WidgetTree->RootWidget = Size;
 
     Line = WidgetTree->ConstructWidget<UBorder>();
-    Line->SetBrushColor(FLinearColor(0.4f, 0.8f, 0.4f, 0.f)); // 對應 Godot _lineStyle 初始透明
+    Line->SetBrush(MakeSolidBrush(FLinearColor(0.4f, 0.8f, 0.4f, 0.f))); // 對應 Godot _lineStyle 初始透明
     Size->SetContent(Line);
 }
 
@@ -31,18 +32,18 @@ void UBlockDropZoneWidget::NativeOnDragEnter(const FGeometry& InGeometry, const 
                                               UDragDropOperation* InOperation)
 {
     if (Line && Cast<UBlockDragDropOp>(InOperation))
-        Line->SetBrushColor(FLinearColor(0.4f, 0.8f, 0.4f, 1.f)); // 對應 Godot MouseEntered 高亮
+        Line->SetBrush(MakeSolidBrush(FLinearColor(0.4f, 0.8f, 0.4f, 1.f))); // 對應 Godot MouseEntered 高亮
 }
 
 void UBlockDropZoneWidget::NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
-    if (Line) Line->SetBrushColor(FLinearColor(0.4f, 0.8f, 0.4f, 0.f));
+    if (Line) Line->SetBrush(MakeSolidBrush(FLinearColor(0.4f, 0.8f, 0.4f, 0.f)));
 }
 
 bool UBlockDropZoneWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,
                                          UDragDropOperation* InOperation)
 {
-    if (Line) Line->SetBrushColor(FLinearColor(0.4f, 0.8f, 0.4f, 0.f));
+    if (Line) Line->SetBrush(MakeSolidBrush(FLinearColor(0.4f, 0.8f, 0.4f, 0.f)));
 
     UBlockDragDropOp* Op = Cast<UBlockDragDropOp>(InOperation);
     if (!Op || !ParentList) return false;

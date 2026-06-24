@@ -43,5 +43,29 @@ enum class EItemId : uint8
     FragmentIron,
     FragmentMagicCrystal,
 
+    // ── 武器（對應 origin text setting/base item system.txt §武器）─────
+    WeaponWoodSword,
+    WeaponStoneSword,
+
+    // ── 工具（補上木系全套；ToolBasicAxe/ToolBasicPick 沿用既有 ID 對齊木斧/木鎬語義，不重複新增）──
+    ToolWoodShovel,
+    ToolStonePick,
+
+    // ── 裝備（補滿 5 欄：頭盔/鎧甲/褲子/鞋子/飾品；EquipLeatherArmor/EquipAmulet 沿用既有 ID）──
+    EquipLeatherHelmet,
+    EquipLeatherPants,
+    EquipLeatherBoots,
+
+    // ── 素材（木系半成品）────────────────────────────────────────
+    MaterialPlank,
+    MaterialStick,
+
+    // ── 可放置物（不可塑形，spawn Actor）─────────────────────────
+    PlaceableWoodChest,
+    PlaceableWoodWorkbench,
+
+    // ── 道具（消耗品）────────────────────────────────────────────
+    ConsumableBerry,
+
     COUNT UMETA(Hidden),
 };

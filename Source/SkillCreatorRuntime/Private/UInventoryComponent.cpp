@@ -1,5 +1,19 @@
 #include "UInventoryComponent.h"
 #include "ItemRegistry.h"
+#include "MaterialRegistry.h"
+
+// 2026-06-23：工具類別 vs 材質類別比對表（docs/plan-item-crafting-system.md §四：
+// 木鏟只加速挖土／木斧只加速木製品／木鎬加速石頭跟礦物兩類）
+static bool ToolCategoryMatchesMaterial(EToolCategory Tool, EMaterialCategory Mat)
+{
+    switch (Tool)
+    {
+    case EToolCategory::Shovel:  return Mat == EMaterialCategory::Soil;
+    case EToolCategory::Axe:     return Mat == EMaterialCategory::Wood;
+    case EToolCategory::Pickaxe: return Mat == EMaterialCategory::Stone || Mat == EMaterialCategory::Ore;
+    default:                     return false;
+    }
+}
 
 UInventoryComponent::UInventoryComponent()
 {
@@ -26,11 +40,19 @@ int32 UInventoryComponent::GetActiveToolTier() const
     return D.bIsTool ? D.ToolTier : 0;
 }
 
-float UInventoryComponent::GetActiveMiningSpeedMult() const
+float UInventoryComponent::GetActiveMiningSpeedMult(EMaterialType TargetMat) const
 {
     FItemStack Active = GetActiveItem();
     if (Active.IsEmpty()) return 1.f;
-    return FItemRegistry::Get(Active.ItemId).MiningSpeedMult;
+    const FItemData& D = FItemRegistry::Get(Active.ItemId);
+
+    // ToolCategory::None（一般工具，如基礎鎬/鐵鎬）：沿用舊行為，全域固定速度倍率
+    if (D.ToolCategory == EToolCategory::None || TargetMat == EMaterialType::Air)
+        return D.MiningSpeedMult;
+
+    // 類別化工具（木鏟/木斧/石鎬等）：只有材質類別匹配才加成，不匹配仍可挖但無加速
+    const EMaterialCategory MatCat = FMaterialRegistry::GetCategory(TargetMat);
+    return ToolCategoryMatchesMaterial(D.ToolCategory, MatCat) ? D.MiningSpeedMult : 1.f;
 }
 
 int32 UInventoryComponent::TryAdd(EItemId Id, int32 Count)

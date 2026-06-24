@@ -7,7 +7,7 @@
 // Deliberately holds only primitive data (no UWorld/IWorldInterface pointers)
 // so the diffing logic below is unit-testable without a live world.
 USTRUCT(BlueprintType)
-struct NPCBRAIN_API FWorldSnapshot
+struct NPCBRAIN_API FNPCWorldSnapshot
 {
 	GENERATED_BODY()
 
@@ -15,7 +15,7 @@ struct NPCBRAIN_API FWorldSnapshot
 	UPROPERTY() TArray<EMaterialType> HazardMaterials; // deduplicated, presence-only
 };
 
-// Pure logic for turning two FWorldSnapshot states into natural-language
+// Pure logic for turning two FNPCWorldSnapshot states into natural-language
 // perception sentences. No UWorld/IWorldInterface dependency — gathering a
 // live snapshot is the job of UNPCPerceptionComponent.
 class NPCBRAIN_API FNPCPerceptionLogic
@@ -25,5 +25,5 @@ public:
 	static FString MaterialDisplayName(EMaterialType Mat);
 
 	// Returns one sentence per kind of change; empty array if nothing changed.
-	static TArray<FString> DescribeChanges(const FWorldSnapshot& Prev, const FWorldSnapshot& Current);
+	static TArray<FString> DescribeChanges(const FNPCWorldSnapshot& Prev, const FNPCWorldSnapshot& Current);
 };

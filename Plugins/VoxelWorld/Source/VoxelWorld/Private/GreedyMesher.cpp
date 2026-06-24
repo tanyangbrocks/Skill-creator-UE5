@@ -7,12 +7,18 @@
 using namespace RealtimeMesh;
 
 // Air, Fire, Steam do not occlude neighbouring faces.
+// 2026-06-23：Fixture（寶箱/工作臺等 PlacedFixtureActor 腳下占位格，docs/plan-item-crafting-system.md
+// §六）也不該被 Greedy Meshing 渲染——Actor 自己有 mesh，腳下那格純粹標記占用，視覺上應該
+// 維持跟 Air 一樣不顯示任何方塊面；沒排除的話會被當成一般實心材質，Mesh 出來但
+// TileMaterialRegistry 沒有對應 Entry（Entries.Num()=17，Fixture=17 超出範圍），
+// fallback 到 VoxelMaterial，在腳下憑空多一塊外觀不一致的方塊。
 static bool IsOpaque(uint8 MatID)
 {
     const EMaterialType M = static_cast<EMaterialType>(MatID);
     return M != EMaterialType::Air
         && M != EMaterialType::Fire
-        && M != EMaterialType::Steam;
+        && M != EMaterialType::Steam
+        && M != EMaterialType::Fixture;
 }
 
 FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,

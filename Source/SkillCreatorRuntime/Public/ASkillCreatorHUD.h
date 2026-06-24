@@ -3,7 +3,7 @@
 #include "GameFramework/HUD.h"
 #include "UPlayerHUDWidget.h"
 #include "PlacementShape.h"
-#include "EquipmentSlotType.h"
+#include "EquipmentSlot.h"
 #include "MaterialType.h"
 #include "ASkillCreatorHUD.generated.h"
 
@@ -16,6 +16,9 @@ class UEquipmentWidget;
 class UInputSettingsWidget;
 class USpellListWidget;
 class UDebugPaintWidget;
+class UChestWidget;
+class AChestActor;
+class UCraftingPanelWidget;
 
 // 玩家 HUD 生命週期管理 + 每幀資料餵送。
 // 所有面板 widget 在 BeginPlay() 建立，預設隱藏；各 Toggle*() 切換顯示狀態。
@@ -60,6 +63,18 @@ public:
 
     UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
     TObjectPtr<UDebugPaintWidget> DebugPaintPanel;
+
+    // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六）：不是常駐 Toggle 面板，
+    // 由 AChestActor::Interact() 帶著該寶箱的 InventoryComponent 開啟，再按一次右鍵關閉
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UChestWidget> ChestPanel;
+    UPROPERTY() TObjectPtr<AChestActor> CurrentChestActor;
+    void OpenChest(AChestActor* Chest);
+    void CloseChest();
+
+    // 加工選單面板（docs/plan-item-crafting-system.md §八）：常駐顯示，DrawHUD() 每幀餵資料
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UCraftingPanelWidget> CraftingPanel;
 
     // ── 全域放置狀態（PlayerController 切換，VoxelWorld 讀取）───────
     bool bHoldToPlace    = true;   // Godot Main.cs:124 _holdToPlace = true

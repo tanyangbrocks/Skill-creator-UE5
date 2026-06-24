@@ -8,6 +8,39 @@
 #include "AVoxelWorldActor.h"
 #include "Engine/World.h"
 
+void UDroppedItemManager::OnWorldBeginPlay(UWorld& InWorld)
+{
+    Super::OnWorldBeginPlay(InWorld);
+    if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(&InWorld))
+    {
+        VW->OnExplosionComplete.AddUObject(this, &UDroppedItemManager::HandleExplodeComplete);
+        VW->OnVoxelDestructionComplete.AddUObject(this, &UDroppedItemManager::HandleVoxelDestruction);
+    }
+}
+
+void UDroppedItemManager::HandleExplodeComplete(FIntVector Center,
+                                                 const FMaterialCountMap& DestroyedByMat)
+{
+    FDebrisParams P;
+    P.Reason    = EDestroyReason::Explosion;
+    P.Intensity = 1.f;
+    P.Direction = FVector::ZeroVector;
+    for (const auto& [Mat, Count] : DestroyedByMat)
+        SpawnDebris(Center, Mat, Count, P);
+}
+
+void UDroppedItemManager::HandleVoxelDestruction(FIntVector Center,
+                                                  const FMaterialCountMap& DestroyedByMat,
+                                                  EDestroyReason Reason, float Intensity, FVector SlashDir)
+{
+    FDebrisParams P;
+    P.Reason    = Reason;
+    P.Intensity = Intensity;
+    P.Direction = SlashDir;
+    for (const auto& [Mat, Count] : DestroyedByMat)
+        SpawnDebris(Center, Mat, Count, P);
+}
+
 ADroppedItemActor* UDroppedItemManager::SpawnDrop(EItemId ItemId, int32 Count, FGridPos WorldPos)
 {
     UWorld* W = GetWorld();

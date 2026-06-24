@@ -9,7 +9,20 @@
 #include "GridPos.h"
 #include "TileMaterialRegistry.h"
 #include "PlacedObjectRegistry.h"
+#include "MaterialType.h"
 #include "AVoxelWorldActor.generated.h"
+
+// TMap 含逗號無法直接放入 DECLARE_MULTICAST_DELEGATE 宏，先 typedef
+typedef TMap<EMaterialType, int32> FMaterialCountMap;
+
+// D-3：爆炸聚合事件，SkillCreatorRuntime 訂閱後呼叫 SpawnDebris
+// 避免 VoxelWorld 直接依賴 SkillCreatorRuntime（循環依賴）
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnExplosionCompleteDelegate,
+    FIntVector, const FMaterialCountMap&);
+
+// V-4：Route B 體素注入後的銷毀事件（含完整毀壞參數，供 SpawnDebris 使用）
+DECLARE_MULTICAST_DELEGATE_FiveParams(FOnVoxelDestructionCompleteDelegate,
+    FIntVector, const FMaterialCountMap&, EDestroyReason, float, FVector);
 
 // UE Actor wrapper for FTileWorld3D + RMC rendering.
 // M-6: Greedy-mesh RMC rendering per Mega-Chunk.
@@ -64,9 +77,37 @@ public:
 
     static AVoxelWorldActor* FindInWorld(UWorld* World);
 
+    // D-3：爆炸聚合事件（SkillCreatorRuntime 的 UDroppedItemManager 在 OnWorldBeginPlay 訂閱）
+    FOnExplosionCompleteDelegate OnExplosionComplete;
+
+    // V-4：Route B 體素注入後銷毀事件（UDroppedItemManager 在 OnWorldBeginPlay 訂閱）
+    FOnVoxelDestructionCompleteDelegate OnVoxelDestructionComplete;
+
+    // V-4：體素注入後的 tile 銷毀（由 ADestructibleMeshActor::TriggerDestruction 呼叫）
+    void TriggerVoxelDestruction(FIntVector BoundsMin, FIntVector BoundsMax,
+                                 EDestroyReason Reason, float Intensity, FVector SlashDir);
+
+    // 2026-06-23 修復：AVoxelWorldActor 是動態 SpawnActor 出來的單一實例（不是隨關卡重載），
+    // 在同一個遊戲進程內換到第二個世界時（從選單回去再建一個新世界），原本的程式碼完全
+    // 沒有任何地方更新這個既存 Actor 的 WorldSeed/WorldSaveDir，BeginPlay() 的初始化也只在
+    // 第一次 Spawn 時跑過一次——導致玩家後續創建的任何「新世界」其實全部還是用第一個世界的
+    // seed + 存檔目錄在跑（ASkillCreatorGameMode::SpawnWorldAndMobs 的 `if (!VW)` 判斷讓
+    // 既存 Actor 完全沒被重新設定），這正是「Saved/Worlds 永遠都同一個」回報的根因。
+    // 換世界時呼叫這個函式：清空舊世界的記憶體狀態（chunk/已渲染網格/已放置物件/串流快取），
+    // 重新套用新的 Seed/SaveDir 並重跑一次等同 BeginPlay() 的初始化。
+    void ReinitializeForWorld(int32 NewWorldSeed, const FString& NewWorldSaveDir);
+
     // ── 採掘高亮 ──────────────────────────────────────────────────
-    // 在 tile 格心顯示半透明線框立方體；不傳座標則隱藏
-    void ShowHighlight(FGridPos TilePos);
+    // 2026-06-23 修正：原本只能顯示「準心對準的單一格」，但實際一次採掘會摧毀整個形狀
+    // 範圍（預設 Cube 半徑 5 = 11×11×11 = 1331 格，對應 Godot Main.cs:71-72「1 material
+    // unit」設計），單格高亮跟真正會被挖掉的範圍完全不成比例。改成傳入整個 tile 陣列：
+    // Tiles[0] 視為準心瞄準的中心格（沿用原本的單格 Cube mesh + 青色線框），其餘元素用來
+    // 算一個外接框（黃色線框）概括整次採掘的影響範圍。不逐格畫線框（形狀範圍大時會變成
+    // 密密麻麻看不出輪廓，Godot 用 SurfaceTool 逐格面剔除才能畫出乾淨外框，這裡用 bounding
+    // box 近似——Cube 形狀時這就是精確邊界，Sphere/Cylinder 等圓形形狀則是寬鬆外接框，
+    // 仍能讓玩家掌握大致影響範圍，避免引入額外的程序網格生成複雜度）。
+    // 傳空陣列＝隱藏。
+    void ShowHighlight(const TArray<FGridPos>& Tiles);
     void HideHighlight();
 
     // ── AActor ────────────────────────────────────────────────────
@@ -85,4 +126,8 @@ private:
 
     void RebuildMegaChunk(FIntVector MegaChunkCoord);
     static int32 MegaFloorDiv(int32 a, int32 b);
+
+    // BeginPlay() 跟 ReinitializeForWorld() 共用的初始化邏輯（TileWorld 尺寸/Seed、
+    // ChunkStreamingManager::Init、material slot 設定），抽出來避免兩處各自維護一份。
+    void InitializeWorldState();
 };

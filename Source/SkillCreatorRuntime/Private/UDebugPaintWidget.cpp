@@ -10,6 +10,7 @@
 #include "Components/Button.h"
 #include "Components/Border.h"
 #include "MaterialRegistry.h"
+#include "SlateBrushHelpers.h"
 
 // Godot Main.cs:560-580：右上角面板，固定寬度，貼齊右側
 static void PinTopRight(UWidget* W, FVector2D Size, FVector2D Offset)
@@ -45,7 +46,7 @@ void UDebugPaintWidget::NativeOnInitialized()
     WidgetTree->RootWidget = Root;
 
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-    Panel->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.14f, 0.95f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.14f, 0.95f)));
     Panel->SetPadding(FMargin(6.f));
     Root->AddChild(Panel);
     PinTopRight(Panel, FVector2D(186.f, 230.f), FVector2D(-200.f, 185.f));  // 對應 Godot Main.cs:561

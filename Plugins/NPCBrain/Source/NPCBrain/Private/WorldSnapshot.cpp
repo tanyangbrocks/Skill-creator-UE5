@@ -24,7 +24,7 @@ FString FNPCPerceptionLogic::MaterialDisplayName(EMaterialType Mat)
 	}
 }
 
-TArray<FString> FNPCPerceptionLogic::DescribeChanges(const FWorldSnapshot& Prev, const FWorldSnapshot& Current)
+TArray<FString> FNPCPerceptionLogic::DescribeChanges(const FNPCWorldSnapshot& Prev, const FNPCWorldSnapshot& Current)
 {
 	TArray<FString> Out;
 

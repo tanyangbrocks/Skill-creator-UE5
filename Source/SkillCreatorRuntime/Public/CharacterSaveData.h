@@ -19,6 +19,11 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     UPROPERTY() FString    Id;
     UPROPERTY() FString    CharacterName;
     UPROPERTY() FIntVector TilePosition  = FIntVector(0, 0, 0);
+    // 2026-06-23 修復：角色設計上獨立於世界（可任意搭配世界進場，見本檔案頂部註解），
+    // 但 TilePosition 只在「捕捉當下那個世界」裡才有意義——同一組座標在不同 seed/地形的
+    // 世界裡可能是地表，也可能是地底深處或半空中。記錄這組座標來自哪個世界的 Id，
+    // 之後進另一個世界時才不會誤用，見 ASkillCreatorGameMode::StartGameplayWithWorld()。
+    UPROPERTY() FString    LastWorldId;
     UPROPERTY() float      CurrentHp     = 100.f;
     UPROPERTY() float      CurrentMp     = 100.f;
     UPROPERTY() float      Stamina       = 100.f;

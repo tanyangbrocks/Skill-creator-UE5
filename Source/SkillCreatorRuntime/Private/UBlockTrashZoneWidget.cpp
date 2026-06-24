@@ -6,6 +6,7 @@
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "Components/SizeBox.h"
+#include "SlateBrushHelpers.h"
 
 // 對應 Godot ScriptCanvas.cs:107-115 _trashStyle 三段色（一般/拖曳中/懸停在垃圾桶上）
 static const FLinearColor TrashIdleColor   (0.22f, 0.06f, 0.06f, 0.65f);
@@ -23,7 +24,7 @@ void UBlockTrashZoneWidget::NativeOnInitialized()
     WidgetTree->RootWidget = Size;
 
     Bg = WidgetTree->ConstructWidget<UBorder>();
-    Bg->SetBrushColor(TrashIdleColor);
+    Bg->SetBrush(MakeSolidBrush(TrashIdleColor));
     Size->SetContent(Bg);
 
     Icon = WidgetTree->ConstructWidget<UTextBlock>();
@@ -44,7 +45,7 @@ void UBlockTrashZoneWidget::Setup(TFunction<void()> InOnChanged)
 
 void UBlockTrashZoneWidget::SetHighlighted(bool bHighlighted)
 {
-    if (Bg) Bg->SetBrushColor(bHighlighted ? TrashHoverColor : TrashIdleColor);
+    if (Bg) Bg->SetBrush(MakeSolidBrush(bHighlighted ? TrashHoverColor : TrashIdleColor));
 }
 
 void UBlockTrashZoneWidget::NativeOnDragEnter(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent,

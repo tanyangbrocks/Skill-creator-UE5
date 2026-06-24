@@ -21,9 +21,14 @@ public:
 	// OnReady fires exactly once, on the game thread. If NPCId has no save file
 	// and the brain subsystem (llama-server) isn't available, OnReady never fires
 	// and an error is logged.
-	void LoadOrGenerate(FName NPCId, FOnIdentityReady OnReady);
+	// 2026-06-23（docs/plan-base-npc-system.md §三）：新增 SubtypeId 參數——只在「真的要
+	// 生成新身分」時才會用到（已有存檔時直接讀回，SubtypeId 被忽略，沿用存檔當時的值）。
+	void LoadOrGenerate(FName NPCId, FName SubtypeId, FOnIdentityReady OnReady);
 
 private:
-	void RequestGeneration(FName NPCId, FOnIdentityReady OnReady);
-	void ParseAndSave(FName NPCId, const FString& LlmResponseJson, FOnIdentityReady OnReady);
+	void RequestGeneration(FName NPCId, FName SubtypeId, FOnIdentityReady OnReady);
+	void ParseAndSave(FName NPCId, FName SubtypeId, FName RaceId, const FString& LlmResponseJson, FOnIdentityReady OnReady);
+
+	// 從 FRaceRegistry 全部體系裡隨機抽一個種族（不再讓 LLM 自由發明種族名稱）
+	static FName PickRandomRaceId();
 };

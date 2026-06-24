@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Containers/Queue.h"
 #include "MaterialType.h"
+#include "SurfaceWaterPool.h"
 
 class FTileWorld3D;
 
@@ -17,6 +18,17 @@ public:
     ~FMapGenerator3D();
 
     void  InitTerrainParams(int32 WorldWidth, int32 WorldHeight, int32 WorldDepth, int32 Seed);
+
+    // 2026-06-23：換世界時呼叫（AVoxelWorldActor::ReinitializeForWorld）。InitTerrainParams()
+    // 只重設 WorldW/H/D/Seed + 地表水池佈局，沒有清 GeneratedChunks/InFlightChunks/
+    // ReadyQueue——這三個追蹤的是「哪些 chunk 座標已經生成過/正在背景生成/算完等待套用」，
+    // 不會因為換了 seed 就自動失效。沒清的後果：① GeneratedChunks 殘留舊世界探索過的座標，
+    // 玩家進新世界走到同樣的相對座標時 IsChunkGenerated() 誤判「已生成」可能跳過真正生成；
+    // ② 若換世界時舊世界還有背景執行緒在算 chunk，算完後會用舊 seed 的資料寫進新世界
+    // （ReadyQueue 不分世界）。清空這三個狀態，舊世界的背景任務结果之後 Apply 時會寫進
+    // 已經被清空的 TileWorld，視覺上不會出現，但 GeneratedChunks 誤判才是真正會讓玩家
+    // 撞到「這裡明明探索過，現在卻是空氣」的根因。
+    void ResetGenerationState();
 
     // 給定世界 XZ 座標，傳回地表 Y（Y=0 為頂部，值越大越靠近底部）
     int32 GetHeightAt(int32 WorldX, int32 WorldZ) const;
@@ -55,12 +67,17 @@ private:
     int32 WorldD    = 0;
     int32 WorldSeed = 12345;
 
+    // 地表水池佈局（InitTerrainParams 時 Initialize+Prepare 一次；之後純讀取，
+    // EnsureChunksAround 把 GetPools() 的拷貝傳進背景 thread，thread-safe）
+    FSurfaceWaterPool WaterPool;
+
     TSet<FIntVector>                         GeneratedChunks;
     TSet<FIntVector>                         InFlightChunks;
     TQueue<FPendingChunk, EQueueMode::Mpsc>  ReadyQueue;
 
-    // 純函數（thread-safe）：計算一個 chunk 的所有 tile（含礦脈/裝飾/可行進洞穴）
+    // 純函數（thread-safe）：計算一個 chunk 的所有 tile（含礦脈/裝飾/可行進洞穴/地表水池覆寫）
     static void ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
+                                  const TArray<FSurfaceWaterPool::FPoolDesc>& WaterPools,
                                   TArray<FTileCell>& OutCells);
 
     // ── per-chunk 後處理（靜態，thread-safe，僅操作 OutCells buffer）──────

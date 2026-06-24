@@ -6,6 +6,7 @@
 #include "GridPos.h"
 #include "WorldTypes.h"
 #include "MaterialType.h"
+#include "AVoxelWorldActor.h"   // FMaterialCountMap typedef
 #include "UDroppedItemManager.generated.h"
 
 class ADroppedItemActor;
@@ -57,6 +58,10 @@ public:
     int32 GetDropCount()   const { return ActiveDrops.Num(); }
     int32 GetDebrisCount() const { return ActiveDebris.Num(); }
 
+protected:
+    // D-3：World 開始 Play 後訂閱 AVoxelWorldActor::OnExplosionComplete
+    virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+
 private:
     UPROPERTY()
     TArray<ADroppedItemActor*> ActiveDrops;
@@ -65,4 +70,7 @@ private:
     TArray<ADebrisActor*> ActiveDebris;
 
     void OnDropPickedUp(ADroppedItemActor* Drop);
+    void HandleExplodeComplete(FIntVector Center, const FMaterialCountMap& DestroyedByMat);
+    void HandleVoxelDestruction(FIntVector Center, const FMaterialCountMap& DestroyedByMat,
+                                EDestroyReason Reason, float Intensity, FVector SlashDir);
 };

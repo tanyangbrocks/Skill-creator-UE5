@@ -11,6 +11,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "SlateBrushHelpers.h"
 
 static void PinCenterShape(UWidget* W, FVector2D HalfSize)
 {
@@ -48,11 +49,11 @@ void UShapeMenuWidget::NativeOnInitialized()
     Root->AddChild(ClickBlock);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(ClickBlock->Slot))
         S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-    ClickBlock->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.2f));
+    ClickBlock->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.2f)));
 
     // 中央面板 210×280
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-    Panel->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.16f, 0.95f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.16f, 0.95f)));
     Panel->SetPadding(FMargin(14.f, 12.f));
     Root->AddChild(Panel);
     PinCenterShape(Panel, FVector2D(105.f, 140.f));

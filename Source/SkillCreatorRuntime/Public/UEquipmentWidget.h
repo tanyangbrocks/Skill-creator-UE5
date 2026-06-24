@@ -1,22 +1,24 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "EquipmentSlotType.h"
 #include "ItemId.h"
 #include "UEquipmentWidget.generated.h"
 
 class UBorder;
 class UTextBlock;
+class UVerticalBox;
 class UEquipmentComponent;
+class UEquipmentSlotWidget;
 
-// 裝備欄面板（X 鍵開關）：武器 / 防具 / 飾品 3 槽
+// 裝備欄面板（X 鍵開關）。2026-06-23：欄位數量改成動態依 FEquipmentSlotRegistry::GetAll()
+// 建立，不再寫死 3 槽——新增裝備欄只需要在登錄表加一行，這個類別完全不用改。
 UCLASS()
 class SKILLCREATORRUNTIME_API UEquipmentWidget : public UUserWidget
 {
     GENERATED_BODY()
 public:
-    // 請求卸下裝備（HUD 負責實際卸下）
-    TDelegate<void(EEquipmentSlotType)> OnUnequipRequested;
+    // 請求卸下裝備（HUD 負責實際卸下）；FName = FEquipmentSlotRegistry 的 Id
+    TDelegate<void(FName)> OnUnequipRequested;
 
     void Refresh(const UEquipmentComponent* Equip);
 
@@ -24,16 +26,9 @@ protected:
     virtual void NativeOnInitialized() override;
 
 private:
-    TObjectPtr<UBorder>    SlotBorders[3];
-    TObjectPtr<UBorder>    IconBorders[3];
-    TObjectPtr<UTextBlock> NameLabels[3];
+    TObjectPtr<UVerticalBox> SlotList;
+    TArray<TObjectPtr<UEquipmentSlotWidget>> SlotWidgets;
 
     TObjectPtr<UBorder>    TooltipPanel = nullptr;
     TObjectPtr<UTextBlock> TooltipText  = nullptr;
-
-    FLinearColor GetItemColor(EItemId Id) const;
-
-    UFUNCTION() void OnSlot0Clicked();
-    UFUNCTION() void OnSlot1Clicked();
-    UFUNCTION() void OnSlot2Clicked();
 };

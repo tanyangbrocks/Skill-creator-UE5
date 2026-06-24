@@ -21,6 +21,15 @@ struct NPCBRAIN_API FNPCIdentity
 	UPROPERTY() FString SpeechStyle;
 	UPROPERTY() FString Backstory;
 
+	// 2026-06-23（docs/plan-base-npc-system.md §三）：規格要求「名字、性格、外貌、種族、
+	// 背景勢力、身份」六項，原本缺「外貌」；種族改成存 FRaceRegistry 的 Id（不再讓 LLM
+	// 自由發明種族名稱），SubtypeId 對應 FNPCKindRegistry（e.g. "WanderingBard"）。
+	// 兩者在生成「之前」由呼叫端/UNPCIdentityGeneratorSubsystem 設好，LLM JSON 回應不包含
+	// 這兩個 key，反序列化時不會被覆寫。
+	UPROPERTY() FString Appearance;
+	UPROPERTY() FName   RaceId;
+	UPROPERTY() FName   SubtypeId;
+
 	bool IsValid() const { return !NPCId.IsNone() && !Species.IsEmpty(); }
 
 	// {ProjectSavedDir}/NPCBrain/Identities/{NPCId}.json

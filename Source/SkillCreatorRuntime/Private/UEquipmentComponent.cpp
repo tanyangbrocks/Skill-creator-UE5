@@ -7,17 +7,28 @@ UEquipmentComponent::UEquipmentComponent()
     PrimaryComponentTick.bCanEverTick = false;
 }
 
-float UEquipmentComponent::GetTotalAtkMult() const
+EItemId UEquipmentComponent::GetEquipped(FName SlotId) const
 {
-    return WeaponId    != EItemId::None ? FItemRegistry::Get(WeaponId).AtkMult    : 1.f;
+    const EItemId* Found = EquippedBySlot.Find(SlotId);
+    return Found ? *Found : EItemId::None;
 }
+
 float UEquipmentComponent::GetTotalDefFlat() const
 {
-    return ArmorId     != EItemId::None ? FItemRegistry::Get(ArmorId).DefFlat     : 0.f;
+    float Total = 0.f;
+    for (const auto& Pair : EquippedBySlot)
+        if (Pair.Value != EItemId::None)
+            Total += FItemRegistry::Get(Pair.Value).DefFlat;
+    return Total;
 }
+
 float UEquipmentComponent::GetTotalMpBonus() const
 {
-    return AccessoryId != EItemId::None ? FItemRegistry::Get(AccessoryId).MpBonus : 0.f;
+    float Total = 0.f;
+    for (const auto& Pair : EquippedBySlot)
+        if (Pair.Value != EItemId::None)
+            Total += FItemRegistry::Get(Pair.Value).MpBonus;
+    return Total;
 }
 
 bool UEquipmentComponent::TryEquip(UInventoryComponent* Inv, int32 HotbarIndex)
@@ -27,51 +38,23 @@ bool UEquipmentComponent::TryEquip(UInventoryComponent* Inv, int32 HotbarIndex)
     if (Stack.IsEmpty()) return false;
 
     const FItemData& Data = FItemRegistry::Get(Stack.ItemId);
-    if (Data.EquipSlot == EEquipmentSlotType::None) return false;
+    if (Data.EquipSlot.IsNone()) return false;
 
-    // 找出目前裝備的物品（準備退回背包）
-    EItemId OldId = EItemId::None;
-    switch (Data.EquipSlot)
-    {
-        case EEquipmentSlotType::Weapon:    OldId = WeaponId;    break;
-        case EEquipmentSlotType::Armor:     OldId = ArmorId;     break;
-        case EEquipmentSlotType::Accessory: OldId = AccessoryId; break;
-        default: break;
-    }
+    EItemId OldId = GetEquipped(Data.EquipSlot);
 
     Inv->Consume(HotbarIndex, 1);
     if (OldId != EItemId::None) Inv->TryAdd(OldId, 1);
 
-    switch (Data.EquipSlot)
-    {
-        case EEquipmentSlotType::Weapon:    WeaponId    = Stack.ItemId; break;
-        case EEquipmentSlotType::Armor:     ArmorId     = Stack.ItemId; break;
-        case EEquipmentSlotType::Accessory: AccessoryId = Stack.ItemId; break;
-        default: break;
-    }
+    EquippedBySlot.Add(Data.EquipSlot, Stack.ItemId);
     return true;
 }
 
-bool UEquipmentComponent::TryUnequip(UInventoryComponent* Inv, EEquipmentSlotType Slot)
+bool UEquipmentComponent::TryUnequip(UInventoryComponent* Inv, FName SlotId)
 {
-    EItemId Equipped = EItemId::None;
-    switch (Slot)
-    {
-        case EEquipmentSlotType::Weapon:    Equipped = WeaponId;    break;
-        case EEquipmentSlotType::Armor:     Equipped = ArmorId;     break;
-        case EEquipmentSlotType::Accessory: Equipped = AccessoryId; break;
-        default: break;
-    }
+    EItemId Equipped = GetEquipped(SlotId);
     if (Equipped == EItemId::None) return false;
 
     if (Inv) Inv->TryAdd(Equipped, 1);
-
-    switch (Slot)
-    {
-        case EEquipmentSlotType::Weapon:    WeaponId    = EItemId::None; break;
-        case EEquipmentSlotType::Armor:     ArmorId     = EItemId::None; break;
-        case EEquipmentSlotType::Accessory: AccessoryId = EItemId::None; break;
-        default: break;
-    }
+    EquippedBySlot.Add(SlotId, EItemId::None);
     return true;
 }

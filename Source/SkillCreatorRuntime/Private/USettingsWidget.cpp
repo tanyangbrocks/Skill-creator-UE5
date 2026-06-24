@@ -11,6 +11,7 @@
 #include "Components/CheckBox.h"
 #include "Components/Border.h"
 #include "Components/Spacer.h"
+#include "SlateBrushHelpers.h"
 
 static void PinToCenter(UWidget* W, FVector2D HalfSize)
 {
@@ -60,11 +61,11 @@ void USettingsWidget::NativeOnInitialized()
     Root->AddChild(ClickBlock);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(ClickBlock->Slot))
         S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-    ClickBlock->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.3f));
+    ClickBlock->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.3f)));
 
     // 中央面板 320×240
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-    Panel->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.14f, 0.96f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.14f, 0.96f)));
     Panel->SetPadding(FMargin(20.f, 16.f));
     Root->AddChild(Panel);
     PinToCenter(Panel, FVector2D(160.f, 120.f));

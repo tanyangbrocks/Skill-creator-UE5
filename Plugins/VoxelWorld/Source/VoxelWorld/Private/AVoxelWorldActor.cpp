@@ -141,6 +141,12 @@ void AVoxelWorldActor::InitializeWorldState()
 
     Streaming.Init(WorldWidth, WorldHeight, WorldDepth, WorldSeed, AbsWorldDir);
 
+    // D-3：將 TileWorld 的爆炸聚合事件轉發給外部訂閱者（UDroppedItemManager 等）
+    TileWorld.OnExplodeComplete = [this](FIntVector Center, const TMap<EMaterialType, int32>& Map)
+    {
+        OnExplosionComplete.Broadcast(Center, Map);
+    };
+
     // M-10 Phase 3：世界建立後初始化一次 GPU CA 模擬器（RHI 不可用時 IsAvailable()=false，
     // Tick() 會整段跳過 GPU 路徑，照舊全 CPU 模擬，不會出錯）。
     //
@@ -224,6 +230,28 @@ void AVoxelWorldActor::Tick(float DeltaTime)
 
     for (const FIntVector& MC : DirtyMegaChunks)
         RebuildMegaChunk(MC);
+}
+
+// ============================================================
+// TriggerVoxelDestruction（V-4）
+// ============================================================
+
+void AVoxelWorldActor::TriggerVoxelDestruction(FIntVector BoundsMin, FIntVector BoundsMax,
+                                                EDestroyReason Reason, float Intensity, FVector SlashDir)
+{
+    TMap<EMaterialType, int32> DestroyedByMat;
+    for (int X = BoundsMin.X; X <= BoundsMax.X; ++X)
+    for (int Y = BoundsMin.Y; Y <= BoundsMax.Y; ++Y)
+    for (int Z = BoundsMin.Z; Z <= BoundsMax.Z; ++Z)
+    {
+        EMaterialType Mat = TileWorld.GetTile(X, Y, Z);
+        if (Mat == EMaterialType::Air) continue;
+        TileWorld.SetTile(X, Y, Z, EMaterialType::Air);
+        DestroyedByMat.FindOrAdd(Mat)++;
+    }
+
+    const FIntVector Center = (BoundsMin + BoundsMax) / 2;
+    OnVoxelDestructionComplete.Broadcast(Center, DestroyedByMat, Reason, Intensity, SlashDir);
 }
 
 // ============================================================

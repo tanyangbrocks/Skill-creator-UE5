@@ -7,6 +7,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "SlateBrushHelpers.h"
 
 static void PinCenterGroup(UWidget* W, FVector2D HalfSize)
 {
@@ -30,11 +31,11 @@ void USpellGroupWidget::NativeOnInitialized()
     Root->AddChild(ClickBlock);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(ClickBlock->Slot))
         S->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-    ClickBlock->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.2f));
+    ClickBlock->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.2f)));
 
     // Panel 240×auto
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-    Panel->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.16f, 0.95f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.16f, 0.95f)));
     Panel->SetPadding(FMargin(14.f, 10.f));
     Root->AddChild(Panel);
     PinCenterGroup(Panel, FVector2D(120.f, 110.f));

@@ -25,6 +25,7 @@
 #include "Components/EditableText.h"
 #include "Components/ScrollBox.h"
 #include "Components/ProgressBar.h"
+#include "SlateBrushHelpers.h"
 
 // 定義在這裡（不是標頭檔 inline）：這個翻譯單元已經 #include "TileWorld3D.h" /
 // "MapGenerator3D.h"，delete 完整型別的指標才合法。
@@ -78,7 +79,7 @@ static UTextBlock* MakeTitleLabel(UWidgetTree* Tree, const FString& Text, int32 
 void UGameFlowWidget::BuildLayout()
 {
     UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-    Background->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 1.f));
+    Background->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 1.f)));
     WidgetTree->RootWidget = Background;
 
     UOverlay* ScreenStack = WidgetTree->ConstructWidget<UOverlay>();
@@ -124,7 +125,7 @@ void UGameFlowWidget::BuildLayout()
 
     // ── 世界生成 loading 遮罩（對應 Godot _genLoadingOverlay，GameFlowUI.cs:464-480）──
     UBorder* LoadingBg = WidgetTree->ConstructWidget<UBorder>();
-    LoadingBg->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.82f));
+    LoadingBg->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.82f)));
 
     UVerticalBox* LoadingStack = WidgetTree->ConstructWidget<UVerticalBox>();
     if (UBorderSlot* S = Cast<UBorderSlot>(LoadingBg->SetContent(LoadingStack)))
@@ -170,7 +171,7 @@ void UGameFlowWidget::BuildLayout()
 
     // ── 確認刪除彈窗（對應 Godot BuildConfirmDialog，GameFlowUI.cs:101-144）────────
     UBorder* ConfirmBg = WidgetTree->ConstructWidget<UBorder>();
-    ConfirmBg->SetBrushColor(FLinearColor(0.13f, 0.13f, 0.18f, 1.f));
+    ConfirmBg->SetBrush(MakeSolidBrush(FLinearColor(0.13f, 0.13f, 0.18f, 1.f)));
 
     UVerticalBox* ConfirmBox = WidgetTree->ConstructWidget<UVerticalBox>();
     ConfirmBg->SetContent(ConfirmBox);
@@ -221,7 +222,7 @@ void UGameFlowWidget::BuildLayout()
 UWidget* UGameFlowWidget::BuildTitleScreen()
 {
     UBorder* Bg = WidgetTree->ConstructWidget<UBorder>();
-    Bg->SetBrushColor(FLinearColor(0.07f, 0.07f, 0.11f, 1.f));
+    Bg->SetBrush(MakeSolidBrush(FLinearColor(0.07f, 0.07f, 0.11f, 1.f)));
 
     UVerticalBox* Stack = WidgetTree->ConstructWidget<UVerticalBox>();
     if (UBorderSlot* S = Cast<UBorderSlot>(Bg->SetContent(Stack)))
@@ -261,7 +262,7 @@ UWidget* UGameFlowWidget::BuildTitleScreen()
 UWidget* UGameFlowWidget::BuildCharSelectScreen()
 {
     UBorder* Bg = WidgetTree->ConstructWidget<UBorder>();
-    Bg->SetBrushColor(FLinearColor(0.09f, 0.09f, 0.14f, 1.f));
+    Bg->SetBrush(MakeSolidBrush(FLinearColor(0.09f, 0.09f, 0.14f, 1.f)));
 
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
     Bg->SetContent(Root);
@@ -306,7 +307,7 @@ UWidget* UGameFlowWidget::BuildCharSelectScreen()
 UWidget* UGameFlowWidget::BuildWorldSelectScreen()
 {
     UBorder* Bg = WidgetTree->ConstructWidget<UBorder>();
-    Bg->SetBrushColor(FLinearColor(0.07f, 0.11f, 0.09f, 1.f));
+    Bg->SetBrush(MakeSolidBrush(FLinearColor(0.07f, 0.11f, 0.09f, 1.f)));
 
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
     Bg->SetContent(Root);
@@ -363,7 +364,7 @@ UWidget* UGameFlowWidget::BuildWorldSelectScreen()
 UWidget* UGameFlowWidget::BuildWorldCreateScreen()
 {
     UBorder* Bg = WidgetTree->ConstructWidget<UBorder>();
-    Bg->SetBrushColor(FLinearColor(0.07f, 0.11f, 0.09f, 1.f));
+    Bg->SetBrush(MakeSolidBrush(FLinearColor(0.07f, 0.11f, 0.09f, 1.f)));
 
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
     Bg->SetContent(Root);

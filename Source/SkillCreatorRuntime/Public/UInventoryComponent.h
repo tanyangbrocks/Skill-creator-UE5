@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "ItemStack.h"
+#include "MaterialType.h"
 #include "UInventoryComponent.generated.h"
 
 // 背包組件（對應 Godot Inventory.cs）
@@ -29,8 +30,11 @@ public:
     UFUNCTION(BlueprintPure, Category="Inventory")
     int32 GetActiveToolTier() const;
 
+    // 2026-06-23 物品系統擴充：工具類別（EToolCategory）跟目標材質類別（EMaterialCategory）
+    // 比對才給加成，不匹配時回傳 1.0（仍可挖，只是沒加速）。
+    // TargetMat=Air（預設）時跳過類別比對，沿用舊行為（向後相容既有呼叫點）。
     UFUNCTION(BlueprintPure, Category="Inventory")
-    float GetActiveMiningSpeedMult() const;
+    float GetActiveMiningSpeedMult(EMaterialType TargetMat = EMaterialType::Air) const;
 
     // 修改
     UFUNCTION(BlueprintCallable, Category="Inventory")

@@ -9,6 +9,13 @@ void FChunkStreamingManager::Init(int32 WorldW, int32 WorldH, int32 WorldD,
     WorldDir = InWorldDir;
     DiskAttempted.Empty();
     MapGen.InitTerrainParams(WorldW, WorldH, WorldD, Seed);
+
+    // 2026-06-23：換世界（AVoxelWorldActor::ReinitializeForWorld）也會呼叫到這裡。
+    // InitTerrainParams() 只重設地表水池佈局，沒有清 GeneratedChunks——這個 TSet 紀錄
+    // 「哪些 chunk 座標已經生成過」，不會因為換了 seed 自動失效，玩家進新世界走到舊世界
+    // 探索過的同一個相對座標時，IsChunkGenerated() 會誤判「已生成」，導致那個座標的地形
+    // 永遠生不出來（一直是空氣，TileWorld 已經被清空但沒人觸發重新生成）。
+    MapGen.ResetGenerationState();
 }
 
 void FChunkStreamingManager::Tick(FTileWorld3D& World, int32 CX, int32 CY, int32 CZ,

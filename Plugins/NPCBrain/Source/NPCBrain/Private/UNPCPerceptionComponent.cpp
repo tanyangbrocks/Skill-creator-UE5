@@ -22,7 +22,7 @@ void UNPCPerceptionComponent::TickPerception(float DeltaTime, FGridPos OwnerPos)
 
 void UNPCPerceptionComponent::PerformPerceptionTick(FGridPos OwnerPos)
 {
-	FWorldSnapshot Current;
+	FNPCWorldSnapshot Current;
 
 	for (ICreature* C : WorldInterface->GetEntitiesNear(OwnerPos, (float)PerceptionRadiusTiles))
 	{

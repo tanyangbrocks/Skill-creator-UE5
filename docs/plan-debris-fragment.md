@@ -173,7 +173,7 @@ Chaos Fracture 路徑最終也產生 `ADebrisActor`，撿起後一樣轉換成 `
 
 | 技術 | 適用場景 | 計畫文件 |
 |------|---------|---------|
-| **Voxelization** | 匯入 mesh 轉 tile → 走 Phase 1 路徑，mesh 物件參與 CA 世界 | `plan-voxelization.md`（待建） |
+| **Voxelization** | 匯入 mesh 轉 tile → 走 Phase 1 路徑，mesh 物件參與 CA 世界 | [`plan-voxelization.md`](plan-voxelization.md) |
 | **Chaos Cloth** | 布料 / 甲冑撕裂 → 布料碎片也可撿取 | 待建 |
 | **MPM** | 軟體形變：角色踩扁、肉體碾壓、連續介質特效 | 待建 |
 
@@ -184,13 +184,15 @@ Chaos Fracture 路徑最終也產生 `ADebrisActor`，撿起後一樣轉換成 `
 ## 八、實作順序
 
 ```
-D-1  ADebrisActor 基礎（物理飛行、撿起 → Fragment 物品）
-D-2  TileWorld3D::Explode() 聚合回呼
-D-3  AVoxelWorldActor 訂閱 OnExplodeComplete → SpawnDebris
-D-4  UDroppedItemManager::SpawnDebris() 方法
-D-5  SpawnForReason 補 Slash / Crush → SpawnDebris
+[x] D-1  ADebrisActor 基礎（物理飛行、撿起 → Fragment 物品）
+[x] D-2  TileWorld3D::Explode() 聚合回呼
+[x] D-3  AVoxelWorldActor 訂閱 OnExplodeComplete → SpawnDebris
+[x] D-4  UDroppedItemManager::SpawnDebris() 方法
+[x] D-5  SpawnForReason 補 Slash / Crush → SpawnDebris
+         ↑ D-4 完成後，plan-voxelization V-4 才能接上
+           （ADestructibleMeshActor::TriggerDestruction 依賴 SpawnDebris()，見 plan-voxelization §十五）
 ─────── Phase 2（建模導入後）───────
-D-6  Chaos Fracture 幾何集合設定
-D-7  Chaos 破壞事件 → ADebrisActor
-D-8  ADebrisActor Chaos 模式
+[ ] D-6  Chaos Fracture 幾何集合設定
+[ ] D-7  Chaos 破壞事件 → ADebrisActor
+[ ] D-8  ADebrisActor Chaos 模式
 ```

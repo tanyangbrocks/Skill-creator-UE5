@@ -121,11 +121,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNPCBrainTest_PerceptionCreatureDiff,
 
 bool FNPCBrainTest_PerceptionCreatureDiff::RunTest(const FString&)
 {
-	FWorldSnapshot Prev;
+	FNPCWorldSnapshot Prev;
 	Prev.NearbyCreatureIds.Add(1);
 	Prev.NearbyCreatureIds.Add(2);
 
-	FWorldSnapshot Current;
+	FNPCWorldSnapshot Current;
 	Current.NearbyCreatureIds.Add(2);
 	Current.NearbyCreatureIds.Add(3); // 1 離開，3 新出現
 
@@ -163,10 +163,10 @@ bool FNPCBrainTest_PerceptionHazardDiff::RunTest(const FString&)
 	TestFalse(TEXT("Stone 不是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Stone));
 	TestFalse(TEXT("Water 不是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Water));
 
-	FWorldSnapshot Prev;
+	FNPCWorldSnapshot Prev;
 	Prev.HazardMaterials = { EMaterialType::Lava };
 
-	FWorldSnapshot Current;
+	FNPCWorldSnapshot Current;
 	Current.HazardMaterials = { EMaterialType::Fire }; // 熔岩消退，火焰出現
 
 	const TArray<FString> Changes = FNPCPerceptionLogic::DescribeChanges(Prev, Current);

@@ -155,10 +155,18 @@ SkillCreatorUE5/
 3. `Plugins/AbilitySystem/.../ExecutionLoop.cpp` — 在 `Step()` 加對應 OpCode handler
 4. `Plugins/SkillCreatorUI/.../SBlockEditorWidget.cpp` — 在 palette 加積木卡片（顏色 / 名稱 / 預設參數）
 
-### 新增地形特徵（TerrainFeature）
+### 新增地形特徵（地表水池模式，2026-06-23 修正）
 
-1. 在 `Plugins/VoxelWorld/Public/` 新建 `.h`，繼承 `FTerrainFeature`，覆寫 `Initialize / Prepare / PlaceInWorld / GetSurfaceOverride`
-2. `Plugins/VoxelWorld/.../MapGenerator3D.cpp` — 在地圖生成流程中實例化並呼叫
+⚠️ 舊版 `FTerrainFeature` 多型基類已移除（`PostProcessRegion()` 從未被呼叫過，是死碼；且 UE5
+沒有 Godot 的「初始條帶 PlaceInWorld + 其餘懶加載 GetSurfaceOverride」雙路徑，所有 chunk 一律
+經 `ComputeChunkData()` 懶加載生成，虛擬呼叫在這個背景執行緒熱路徑上沒有意義）。
+參考 `FSurfaceWaterPool`（`SurfaceWaterPool.h/.cpp`）的模式：
+
+1. 新建 `.h/.cpp`（不繼承任何基類），提供三個方法：`Initialize(Seed,W,H,D)`（從 seed 算佈局，存純資料如 `TArray<FPoolDesc>`）、`Prepare(GetHeight 回呼)`（用地表高度算衍生狀態，例如水面 Y）、`static QueryOverride(const TArray<FPoolDesc>&, wx, wz, NaturalSurfaceY, OutEffectiveY, OutMat)`（純函數，給 `ComputeChunkData()` 每個 tile 查詢，thread-safe）
+2. `MapGenerator3D.h` 加成員持有這個特徵物件；`InitTerrainParams()` 呼叫 `Initialize+Prepare`
+3. `MapGenerator3D::EnsureChunksAround()` 把佈局資料（`GetXxx()` 的拷貝）存進背景 thread 的 lambda 閉包，傳給 `ComputeChunkData()`
+4. `ComputeChunkData()` 在算完 `SurfaceY`（自然地表）後呼叫 `QueryOverride()`，依回傳的 `EffectiveY`/`Mat` 覆寫該 tile 的材質判斷（注意 UE5 Y 增大＝向下，跟 Godot Y-up 相反，公式裡的加減號要反過來）
+5. 若世界是無邊界（`WorldWidth/Depth<=0`），佈局生成不能用「離邊界多遠」的邏輯，要改成以 spawn/原點為中心的固定散布半徑
 
 ### 新增元素反應
 
@@ -178,7 +186,8 @@ SkillCreatorUE5/
 
 ### 世界尺度說明（給未來 AI）
 
-- **Tile 大小**：固定 `WorldScale::TileSizeCm = 30f`（Grain=1 基準）。未來縮小 tile 只需改此值並調整碰撞體積；不需要全局 OriginX/Z，tile 座標 × TileSizeCm 即 UE5 世界座標
+- **Tile 大小**：`TileSizeCm = 100.f / GrainCurrent`（`WorldScale.h:31`），**不是固定常數**。目前 `GrainCurrent = 16` → `TileSizeCm = 6.25 cm`。改 tile 大小只需改 `GrainCurrent`，`TileSizeCm` 及所有衍生值（CapsuleRadius/CapsuleHalfHeight/WalkSpeedCm/JumpZVelocityCm/GravityScaleMult）自動跟進；不需要全局 OriginX/Z，tile 座標 × TileSizeCm 即 UE5 世界座標
+- **角色 / 武器 / 裝備**：一律用 Skeletal/Static Mesh 渲染，**不體素化**。只有在觸發毀壞事件時才即時注入體素（見 `docs/plan-voxelization.md`）
 - **水平無邊界**：`AVoxelWorldActor::WorldWidth/Depth = 0` = 無限懶載入，`ChunkStreamingManager` 動態 evict；不要在 WorldScale 加固定 WorldW/D 常數
-- **垂直上限**：`AVoxelWorldActor::WorldHeight = 256 tiles`（約 7.6m @ 30cm），可直接改此 UPROPERTY
-- **GrainTarget = 64**：長期目標（M-10+ GPU CA 後）；不要現在用它推導任何數值
+- **垂直上限**：`AVoxelWorldActor::WorldHeight = 256 tiles`（約 16m @ 6.25cm），可直接改此 UPROPERTY
+- **GrainCurrent = 16**：目前值。**GrainTarget = 64**：長期目標（M-10+ GPU CA 後）；不要現在用它推導任何數值

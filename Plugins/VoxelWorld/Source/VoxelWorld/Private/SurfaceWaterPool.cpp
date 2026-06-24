@@ -1,5 +1,4 @@
 #include "SurfaceWaterPool.h"
-#include "TileWorld3D.h"
 #include "WorldScale.h"
 
 void FSurfaceWaterPool::Initialize(int32 Seed, int32 WorldWidth, int32 WorldHeight, int32 WorldDepth)
@@ -7,85 +6,93 @@ void FSurfaceWaterPool::Initialize(int32 Seed, int32 WorldWidth, int32 WorldHeig
     WorldW = WorldWidth;
     WorldH = WorldHeight;
     WorldD = WorldDepth;
-    Rng.Initialize(Seed ^ 0xABCDEF01);
     Pools.Empty();
-}
 
-void FSurfaceWaterPool::Prepare(const FTileWorld3D& World,
-                                FIntVector ChunkMin, FIntVector ChunkMax)
-{
-    // 在 chunk 區域內隨機選取水池中心（必須在 chunk 內部，避開邊緣）
-    Pools.Empty();
-    const int32 RangeX = (ChunkMax.X - ChunkMin.X) * WorldScale::ChunkSize;
-    const int32 RangeZ = (ChunkMax.Z - ChunkMin.Z) * WorldScale::ChunkSize;
-    if (RangeX < PoolRadius * 4 || RangeZ < PoolRadius * 4) return;
+    FRandomStream Rng;
+    Rng.Initialize(Seed ^ 0x5F3C2B1);
+    const int32 Count = Rng.RandRange(CountMin, CountMax - 1);
+    const int32 G     = WorldScale::GrainCurrent;
 
-    const int32 BaseX = ChunkMin.X * WorldScale::ChunkSize;
-    const int32 BaseZ = ChunkMin.Z * WorldScale::ChunkSize;
+    const bool bInfiniteX = WorldW <= 0;
+    const bool bInfiniteZ = WorldD <= 0;
+    const int32 CenterX = bInfiniteX ? 0 : WorldW / 2;
+    const int32 CenterZ = bInfiniteZ ? 0 : WorldD / 2;
 
-    for (int32 i = 0; i < MaxPools; ++i)
+    // 保底：池 0 距出生點至少 (radius+64) tiles，讓玩家走幾步就能看到（對應 Godot Initialize() 46-58 行）
+    const int32 BaseRadius = Rng.RandRange(4, 6) * G;
+    const int32 Dist0      = BaseRadius + 64;
+    int32 SpawnCX, SpawnCZ;
+    switch (Rng.RandRange(0, 3))
+    {
+        case 0:  SpawnCX = CenterX + Dist0; SpawnCZ = CenterZ;        break;
+        case 1:  SpawnCX = CenterX - Dist0; SpawnCZ = CenterZ;        break;
+        case 2:  SpawnCX = CenterX;         SpawnCZ = CenterZ + Dist0; break;
+        default: SpawnCX = CenterX;         SpawnCZ = CenterZ - Dist0; break;
+    }
+    if (!bInfiniteX) SpawnCX = FMath::Clamp(SpawnCX, EdgeMargin, FMath::Max(EdgeMargin, WorldW - EdgeMargin));
+    if (!bInfiniteZ) SpawnCZ = FMath::Clamp(SpawnCZ, EdgeMargin, FMath::Max(EdgeMargin, WorldD - EdgeMargin));
+
+    FPoolDesc P0;
+    P0.CX        = SpawnCX;
+    P0.CZ        = SpawnCZ;
+    P0.Radius    = BaseRadius;
+    P0.MaxDepth  = Rng.RandRange(DepthMin, DepthMax - 1);
+    Pools.Add(P0);
+
+    for (int32 i = 1; i < Count; ++i)
     {
         FPoolDesc P;
-        P.CX = BaseX + PoolRadius * 2 + Rng.RandRange(0, RangeX - PoolRadius * 4);
-        P.CZ = BaseZ + PoolRadius * 2 + Rng.RandRange(0, RangeZ - PoolRadius * 4);
-
-        // 掃描地表 Y（從頂部往下找第一個非 Air）
-        P.SurfaceY = WorldH - 2;
-        for (int32 y = 1; y < WorldH - 1; ++y)
-        {
-            if (World.GetTile(P.CX, y, P.CZ) != EMaterialType::Air)
-            {
-                P.SurfaceY = y;
-                break;
-            }
-        }
+        P.CX = bInfiniteX ? (CenterX + Rng.RandRange(-ScatterRadius, ScatterRadius))
+                           : Rng.RandRange(EdgeMargin, FMath::Max(EdgeMargin, WorldW - EdgeMargin));
+        P.CZ = bInfiniteZ ? (CenterZ + Rng.RandRange(-ScatterRadius, ScatterRadius))
+                           : Rng.RandRange(EdgeMargin, FMath::Max(EdgeMargin, WorldD - EdgeMargin));
+        P.Radius   = Rng.RandRange(RadiusMin, RadiusMax - 1) * G;
+        P.MaxDepth = Rng.RandRange(DepthMin, DepthMax - 1);
         Pools.Add(P);
     }
 }
 
-void FSurfaceWaterPool::PlaceInWorld(FTileWorld3D& World,
-                                     FIntVector ChunkMin, FIntVector ChunkMax)
+void FSurfaceWaterPool::Prepare(const TFunction<int32(int32, int32)>& GetHeight)
 {
-    for (const FPoolDesc& P : Pools)
+    // 以各池中心的自然高度固定水面 Y（對應 Godot Prepare() 70-75 行）。
+    // UE5 Y 增大 = 向下，故水面比中心地表「加深」(1-WaterFill) 比例（Godot Y-up 為「減」）。
+    for (FPoolDesc& P : Pools)
     {
-        const int32 R2 = PoolRadius * PoolRadius;
-        for (int32 dx = -PoolRadius; dx <= PoolRadius; ++dx)
-        for (int32 dz = -PoolRadius; dz <= PoolRadius; ++dz)
-        {
-            const float DistSq = (float)(dx*dx + dz*dz);
-            if (DistSq > R2) continue;
-
-            // 碗形：邊緣挖淺、中心挖深
-            const float FracDist = FMath::Sqrt(DistSq) / (float)PoolRadius;
-            const int32 Depth    = FMath::Max(1, (int32)(MaxDepth * (1.f - FracDist)));
-
-            const int32 wx = P.CX + dx;
-            const int32 wz = P.CZ + dz;
-
-            // 碗形填水：從地表 (SurfaceY) 往下 (Y 增大) 替換成 Water
-            for (int32 dy = 0; dy < Depth; ++dy)
-            {
-                const int32 wy = P.SurfaceY + dy;
-                if (!World.InBounds(wx, wy, wz)) continue;
-                World.SetTile(wx, wy, wz, EMaterialType::Water);
-            }
-
-            // 碗底設為 Dirt（Water 層正下方的一格）
-            const int32 BottomY = P.SurfaceY + Depth;
-            if (World.InBounds(wx, BottomY, wz))
-                World.SetTile(wx, BottomY, wz, EMaterialType::Dirt);
-        }
+        const int32 CenterH = GetHeight(P.CX, P.CZ);
+        P.WaterSurfaceY = CenterH + FMath::RoundToInt(P.MaxDepth * (1.f - WaterFill));
     }
 }
 
-EMaterialType FSurfaceWaterPool::GetSurfaceOverride(int32 x, int32 z) const
+bool FSurfaceWaterPool::QueryOverride(const TArray<FPoolDesc>& Pools, int32 WorldX, int32 WorldZ,
+                                       int32 NaturalSurfaceY, int32& OutEffectiveY, EMaterialType& OutMat)
 {
-    const int32 R2 = PoolRadius * PoolRadius;
+    // 對應 Godot GetSurfaceOverride() + BowlSurface()，座標方向已換算成 UE5 的 Y-down 慣例。
     for (const FPoolDesc& P : Pools)
     {
-        const int32 dx = x - P.CX;
-        const int32 dz = z - P.CZ;
-        if (dx*dx + dz*dz <= R2) return EMaterialType::Water;
+        if (P.Radius <= 0) continue;
+        const int64 Dx = (int64)WorldX - P.CX;
+        const int64 Dz = (int64)WorldZ - P.CZ;
+        const int64 Dist2 = Dx * Dx + Dz * Dz;
+        if (Dist2 > (int64)P.Radius * P.Radius) continue;
+
+        const float T         = FMath::Sqrt((float)Dist2) / (float)P.Radius;  // 0=中心 1=邊緣
+        const int32 BowlDepth = FMath::RoundToInt(P.MaxDepth * (1.f - T * T)); // 拋物面深度
+        if (BowlDepth <= 0) continue;  // 邊緣外，不影響
+
+        const int32 FloorY = NaturalSurfaceY + BowlDepth;  // 挖深 = Y 加大（向下）
+        if (FloorY >= P.WaterSurfaceY)
+        {
+            // 碗底已經深過水面 → 此處是水下
+            OutEffectiveY = P.WaterSurfaceY;
+            OutMat        = EMaterialType::Water;
+        }
+        else
+        {
+            // 碗緣還沒到水面 → 露出的凹陷土岸
+            OutEffectiveY = FloorY;
+            OutMat        = EMaterialType::Dirt;
+        }
+        return true;
     }
-    return EMaterialType::Air;
+    return false;
 }

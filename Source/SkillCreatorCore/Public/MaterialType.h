@@ -36,8 +36,24 @@ enum class EMaterialType : uint8
     Ore_Coal        = 14,  // Static + Flammable（可燃礦石）
     Ore_Copper      = 15,  // Static
     Ore_MagicCrystal= 16,  // Static
+    // 不可塑形可放置物的占位 tile（寶箱/工作臺等 PlacedFixtureActor 腳下格，純粹標記占用，
+    // 不可採、不影響 Greedy Meshing 顯示——Actor 自己有 mesh，見 docs/plan-item-crafting-system.md §六）
+    Fixture         = 17,
     // 繼續追加，不要重編已有 ID
     Count    UMETA(Hidden)
+};
+
+// 材質的「物理分類」（不同於 ETileCategory 的 gameplay 分類）：
+// 工具類別（EToolCategory，ItemData.h）要跟這個比對才給 MiningSpeedMult 加成
+// （docs/plan-item-crafting-system.md §四：木鏟只加速挖土/木斧只加速木製品/木鎬只加速石頭礦物）
+UENUM(BlueprintType)
+enum class EMaterialCategory : uint8
+{
+    None,
+    Soil,
+    Wood,
+    Stone,
+    Ore,
 };
 
 // Tile 資料單元：純 POD，背景 thread FArchive 序列化安全

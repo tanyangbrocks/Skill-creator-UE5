@@ -31,6 +31,7 @@
 #include "Components/SpinBox.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "SlateBrushHelpers.h"
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -83,7 +84,7 @@ void UBlockEditorWidget::BuildLayout()
     // viewport slot 等於整個螢幕，UBorder 填滿 slot 即可。
     // Godot AbilityEditorUI.cs:126 ColorRect(0.11,0.11,0.14)
     UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
-    Background->SetBrushColor(FLinearColor(0.11f, 0.11f, 0.14f, 0.98f));
+    Background->SetBrush(MakeSolidBrush(FLinearColor(0.11f, 0.11f, 0.14f, 0.98f)));
     WidgetTree->RootWidget = Background;
 
     // Overlay 讓 Phase 6/7 的確認彈窗能疊在整個編輯器上層
@@ -108,7 +109,7 @@ void UBlockEditorWidget::BuildLayout()
 
     // 確認彈窗用的全螢幕遮罩，初始隱藏（Phase 6/7 共用 ShowConfirmDialog 顯示）
     ConfirmOverlay = WidgetTree->ConstructWidget<UBorder>();
-    ConfirmOverlay->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.65f));
+    ConfirmOverlay->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.65f)));
     ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
     if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(ConfirmOverlay))
     {
@@ -124,7 +125,7 @@ UWidget* UBlockEditorWidget::BuildHeader()
     HeaderSize->SetHeightOverride(50.f);
 
     UBorder* HeaderBg = WidgetTree->ConstructWidget<UBorder>();
-    HeaderBg->SetBrushColor(FLinearColor(0.16f, 0.16f, 0.20f, 1.f));
+    HeaderBg->SetBrush(MakeSolidBrush(FLinearColor(0.16f, 0.16f, 0.20f, 1.f)));
     HeaderSize->SetContent(HeaderBg);
 
     UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -166,7 +167,7 @@ UWidget* UBlockEditorWidget::BuildHeader()
 
     // 彈性間隔，把 5 組 dot + 狀態文字推到右側
     UBorder* FlexSpacer = WidgetTree->ConstructWidget<UBorder>();
-    FlexSpacer->SetBrushColor(FLinearColor::Transparent);
+    FlexSpacer->SetBrush(MakeSolidBrush(FLinearColor::Transparent));
     if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(FlexSpacer))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
@@ -230,7 +231,7 @@ UWidget* UBlockEditorWidget::BuildBody()
     USizeBox* LeftSize = WidgetTree->ConstructWidget<USizeBox>();
     LeftSize->SetWidthOverride(220.f);
     LeftPanel = WidgetTree->ConstructWidget<UBorder>();
-    LeftPanel->SetBrushColor(FLinearColor(0.13f, 0.13f, 0.17f, 1.f));
+    LeftPanel->SetBrush(MakeSolidBrush(FLinearColor(0.13f, 0.13f, 0.17f, 1.f)));
     LeftSize->SetContent(LeftPanel);
     if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(LeftSize))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -266,7 +267,7 @@ UWidget* UBlockEditorWidget::BuildBody()
     USizeBox* RightSize = WidgetTree->ConstructWidget<USizeBox>();
     RightSize->SetWidthOverride(175.f);
     RightPanel = WidgetTree->ConstructWidget<UBorder>();
-    RightPanel->SetBrushColor(FLinearColor(0.14f, 0.14f, 0.18f, 1.f));
+    RightPanel->SetBrush(MakeSolidBrush(FLinearColor(0.14f, 0.14f, 0.18f, 1.f)));
     RightSize->SetContent(RightPanel);
     if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(RightSize))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -867,7 +868,7 @@ void UBlockEditorWidget::ShowConfirmDialog(const FString& Title, const FString& 
     ConfirmOverlay->ClearChildren();
 
     UBorder* DialogBox = WidgetTree->ConstructWidget<UBorder>();
-    DialogBox->SetBrushColor(FLinearColor(0.14f, 0.14f, 0.18f, 1.f));
+    DialogBox->SetBrush(MakeSolidBrush(FLinearColor(0.14f, 0.14f, 0.18f, 1.f)));
     DialogBox->SetPadding(FMargin(16.f));
 
     UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>();

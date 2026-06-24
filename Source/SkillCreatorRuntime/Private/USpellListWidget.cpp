@@ -24,6 +24,7 @@
 #include "Components/SizeBox.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
+#include "SlateBrushHelpers.h"
 
 static constexpr float GCircleSize    = 260.f;
 static constexpr float GCircleSpacing =  22.f;
@@ -72,7 +73,7 @@ void USpellListWidget::BuildLayout()
     // ── 整體背景 + 主 VBox ────────────────────────────────────────────────────
     // 對應 Godot SpellListUI.cs:64-71 ColorRect bg(0.08,0.08,0.12,0.97) + VBoxContainer
     UBorder* MainBg = WidgetTree->ConstructWidget<UBorder>();
-    MainBg->SetBrushColor(FLinearColor(0.08f, 0.08f, 0.12f, 0.97f));
+    MainBg->SetBrush(MakeSolidBrush(FLinearColor(0.08f, 0.08f, 0.12f, 0.97f)));
     MainBg->SetPadding(FMargin(0.f));
     RootCanvas->AddChild(MainBg);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(MainBg->Slot))
@@ -87,7 +88,7 @@ void USpellListWidget::BuildLayout()
     // ── 標題列（Header）──────────────────────────────────────────────────────
     // 對應 Godot SpellListUI.cs:73-122 header PanelContainer + HBoxContainer
     UBorder* Header = WidgetTree->ConstructWidget<UBorder>();
-    Header->SetBrushColor(FLinearColor(0.12f, 0.12f, 0.18f, 1.f));
+    Header->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.18f, 1.f)));
     Header->SetPadding(FMargin(0.f));
     {
         USizeBox* HeaderSize = WidgetTree->ConstructWidget<USizeBox>();
@@ -200,7 +201,7 @@ void USpellListWidget::BuildLayout()
     // 對應 Godot SpellListUI.cs:124-163
     {
         UBorder* CircleAreaBg = WidgetTree->ConstructWidget<UBorder>();
-        CircleAreaBg->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.14f, 1.f));
+        CircleAreaBg->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.14f, 1.f)));
         CircleAreaBg->SetPadding(FMargin(0.f));
         if (UVerticalBoxSlot* S = MainVBox->AddChildToVerticalBox(CircleAreaBg))
         {
@@ -241,7 +242,7 @@ void USpellListWidget::BuildLayout()
     // 對應 Godot SpellListUI.cs:166-200
     {
         UBorder* Footer = WidgetTree->ConstructWidget<UBorder>();
-        Footer->SetBrushColor(FLinearColor(0.12f, 0.12f, 0.18f, 1.f));
+        Footer->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.18f, 1.f)));
         Footer->SetPadding(FMargin(0.f));
 
         USizeBox* FooterSize = WidgetTree->ConstructWidget<USizeBox>();
@@ -307,7 +308,7 @@ void USpellListWidget::BuildLayout()
     // 靠 NativeTick 在 CanvasPanel 內追蹤滑鼠位置
     {
         TooltipPanel = WidgetTree->ConstructWidget<UBorder>();
-        TooltipPanel->SetBrushColor(FLinearColor(0.10f, 0.10f, 0.15f, 0.96f));
+        TooltipPanel->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.15f, 0.96f)));
         TooltipPanel->SetPadding(FMargin(12.f, 8.f));
         TooltipPanel->SetVisibility(ESlateVisibility::Hidden);
         RootCanvas->AddChild(TooltipPanel);

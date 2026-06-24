@@ -81,6 +81,15 @@ void FFlowSaveSystem::PregenerateSpawnArea(FTileWorld3D& World, FMapGenerator3D&
         FPlatformProcess::Sleep(0.005f);
         Gen.ApplyPendingChunks(World, /*MaxPerFrame=*/999);
     }
+
+    // 連通性後處理（FloodFill 打通出生區孤立洞穴）：所有 pending chunk 都 Apply 完後才能呼叫，
+    // 範圍跟 StartPregenerateSpawnArea() 的 EnsureChunksAround Radius=2 一致。
+    const FSpawnData Spawn = Gen.ComputeSpawnPoint(World);
+    const int32 CCX = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.X) / WorldScale::ChunkSize);
+    const int32 CCY = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Y) / WorldScale::ChunkSize);
+    const int32 CCZ = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Z) / WorldScale::ChunkSize);
+    Gen.PostProcessRegion(World, FIntVector(CCX - 2, CCY - 2, CCZ - 2), FIntVector(CCX + 2, CCY + 2, CCZ + 2));
+
     FinishPregenerateSpawnArea(World, WorldMeta);
 }
 

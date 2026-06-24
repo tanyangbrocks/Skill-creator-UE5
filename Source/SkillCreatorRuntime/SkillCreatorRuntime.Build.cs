@@ -8,7 +8,7 @@ public class SkillCreatorRuntime : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "InputCore", "GameplayTags",
             "EnhancedInput", "AIModule", "NavigationSystem", "GameplayTasks",
-            "SkillCreatorCore", "AbilitySystem", "VoxelWorld",
+            "SkillCreatorCore", "AbilitySystem", "VoxelWorld", "NPCBrain",
             "Json", "JsonUtilities",
             "UMG", "SlateCore", "Slate"
         });

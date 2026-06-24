@@ -2,6 +2,7 @@
 #include "FBlockNode.h"
 #include "Instruction.h"
 #include "TotemLibrary.h"
+#include "ManaTypeRegistry.h"
 #include "UCardDragHandleWidget.h"
 #include "UBlockDropZoneWidget.h"
 #include "BlockUIDescriptor.h"
@@ -15,6 +16,7 @@
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "SlateBrushHelpers.h"
 
 // ── 卡片顏色/名稱（對應 Godot ScratchCanvas.BlockColor/BlockName）─────────────────
 // 一般積木走 Phase 4 的 FBlockUIRegistry 集中表（逐型別精確色+中文名）；
@@ -199,7 +201,7 @@ void UBlockCardWidget::BuildCardRow(UVerticalBox* Outer)
     USizeBox* CardSize = WidgetTree->ConstructWidget<USizeBox>();
     CardSize->SetHeightOverride(32.f);
     UBorder* Card = WidgetTree->ConstructWidget<UBorder>();
-    Card->SetBrushColor(FLinearColor(0.17f, 0.17f, 0.21f, 1.f));
+    Card->SetBrush(MakeSolidBrush(FLinearColor(0.17f, 0.17f, 0.21f, 1.f)));
     CardSize->SetContent(Card);
 
     UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -254,10 +256,25 @@ void UBlockCardWidget::BuildCardRow(UVerticalBox* Outer)
             }
             if (Args->TotemType != ETotemType::Passive)
             {
-                UParamTextEditWidget* ManaEdit = CreateWidget<UParamTextEditWidget>(this);
-                ManaEdit->Setup(Args->ManaTypeKey.ToString(), FText::FromString(TEXT("MP 類型")), 64.f,
+                // 對應 Godot ScratchCanvas.cs:824-841：下拉選單列出 ManaTypeRegistry 全部類型
+                // （原先用純文字框讓使用者手打 key，看不出有哪些選項可選，改回真正的下拉選單）
+                UParamTinyLabelWidget* ManaLbl = CreateWidget<UParamTinyLabelWidget>(this);
+                ManaLbl->Setup(FText::FromString(TEXT("MP 類型")));
+                if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(ManaLbl))
+                    S->SetVerticalAlignment(VAlign_Center);
+
+                TArray<FString> Values{ FString() };
+                TArray<FString> Labels{ TEXT("─") };
+                for (const FManaType* MT : FManaTypeRegistry::Get().GetSortedForHud())
+                {
+                    Values.Add(MT->Key.ToString());
+                    Labels.Add(MT->DisplayName.ToString());
+                }
+
+                UParamDropdownWidget* ManaDrop = CreateWidget<UParamDropdownWidget>(this);
+                ManaDrop->Setup(Values, Labels, Args->ManaTypeKey.ToString(), 96.f,
                     [Args](const FString& T) { Args->ManaTypeKey = FName(*T); });
-                if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(ManaEdit))
+                if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(ManaDrop))
                     S->SetVerticalAlignment(VAlign_Center);
             }
         }
@@ -295,7 +312,7 @@ void UBlockCardWidget::BuildCardRow(UVerticalBox* Outer)
 
     // 彈性間隔，把刪除鈕推到最右
     UBorder* Flex = WidgetTree->ConstructWidget<UBorder>();
-    Flex->SetBrushColor(FLinearColor::Transparent);
+    Flex->SetBrush(MakeSolidBrush(FLinearColor::Transparent));
     if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(Flex))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
@@ -338,7 +355,7 @@ UWidget* UBlockCardWidget::BuildBranchPanel(const FString& Label, TArray<TUnique
 {
     // 綠色邊框容器（對應 Godot BuildBranch，ScratchCanvas.cs:198-256）
     UBorder* Wrap = WidgetTree->ConstructWidget<UBorder>();
-    Wrap->SetBrushColor(FLinearColor(0.13f, 0.15f, 0.13f, 1.f));
+    Wrap->SetBrush(MakeSolidBrush(FLinearColor(0.13f, 0.15f, 0.13f, 1.f)));
     Wrap->SetPadding(FMargin((Indent + 1) * 14.f, 2.f, 2.f, 2.f));
 
     UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>();

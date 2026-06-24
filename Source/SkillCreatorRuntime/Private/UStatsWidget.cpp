@@ -8,6 +8,7 @@
 #include "Components/Border.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "SlateBrushHelpers.h"
 
 void UStatsWidget::NativeOnInitialized()
 {
@@ -18,7 +19,7 @@ void UStatsWidget::NativeOnInitialized()
 
     // 左上角面板（自動高度）
     UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
-    Panel->SetBrushColor(FLinearColor(0.06f, 0.06f, 0.10f, 0.96f));
+    Panel->SetBrush(MakeSolidBrush(FLinearColor(0.06f, 0.06f, 0.10f, 0.96f)));
     Panel->SetPadding(FMargin(10.f, 8.f));
     Root->AddChild(Panel);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Panel->Slot))
@@ -45,15 +46,13 @@ void UStatsWidget::Refresh(const FCharacterStats& Stats, float Hp, float MaxHp,
 {
     if (!ContentLabel) return;
 
-    FString Wn  = TEXT("─");
-    FString An  = TEXT("─");
-    FString Acn = TEXT("─");
-
-    if (Equip)
+    // 2026-06-23：裝備欄改成動態跑 FEquipmentSlotRegistry 全部欄位，不寫死武器/防具/飾品
+    FString EquipLine;
+    for (const FEquipmentSlotDef& Def : FEquipmentSlotRegistry::GetAll())
     {
-        if (Equip->WeaponId    != EItemId::None) Wn  = FItemRegistry::Get(Equip->WeaponId).DisplayName.ToString();
-        if (Equip->ArmorId     != EItemId::None) An  = FItemRegistry::Get(Equip->ArmorId).DisplayName.ToString();
-        if (Equip->AccessoryId != EItemId::None) Acn = FItemRegistry::Get(Equip->AccessoryId).DisplayName.ToString();
+        const EItemId Eq = Equip ? Equip->GetEquipped(Def.Id) : EItemId::None;
+        const FString Name = Eq != EItemId::None ? FItemRegistry::Get(Eq).DisplayName.ToString() : TEXT("─");
+        EquipLine += FString::Printf(TEXT("  %s：%s"), *Def.DisplayName.ToString(), *Name);
     }
 
     float TotalMp = MaxMp + (Equip ? Equip->GetTotalMpBonus() : 0.f);
@@ -75,7 +74,7 @@ void UStatsWidget::Refresh(const FCharacterStats& Stats, float Hp, float MaxHp,
         FString::Printf(TEXT("  移速 ×%.2f  攻速 ×%.2f\n"), Stats.MoveSpeedMult, Stats.AtkSpeedMult) +
         FString::Printf(TEXT("  命中 %.0f%%  閃避 %.0f%%\n"), Stats.HitRate * 100.f, Stats.DodgeRate * 100.f) +
         FString::Printf(TEXT("[裝備]\n")) +
-        FString::Printf(TEXT("  武器：%s  防具：%s  飾品：%s\n"), *Wn, *An, *Acn) +
+        EquipLine + TEXT("\n") +
         FString::Printf(TEXT("[天賦]\n")) +
         FString::Printf(TEXT("  體魄 %d  肌力 %d  耐力 %d\n"), Stats.TalentConstitution, Stats.TalentStrength, Stats.TalentEndurance) +
         FString::Printf(TEXT("  敏捷 %d  智慧 %d  魅力 %d  幸運 %d"), Stats.TalentAgility, Stats.TalentWisdom, Stats.TalentCharisma, Stats.TalentLuck);

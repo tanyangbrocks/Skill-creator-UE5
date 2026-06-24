@@ -22,6 +22,19 @@ void FMapGenerator3D::InitTerrainParams(int32 Width, int32 Height, int32 Depth, 
     WorldH    = FMath::Max(Height, 16);
     WorldD    = Depth;
     WorldSeed = Seed;
+
+    // 地表水池：Initialize 算佈局，Prepare 用 GetHeightAt 固定各池水面 Y
+    // （對應 Godot MapGenerator3D.cs:104-113 InitTerrainParams 同步呼叫）
+    WaterPool.Initialize(WorldSeed, WorldW, WorldH, WorldD);
+    WaterPool.Prepare([this](int32 X, int32 Z) { return GetHeightAt(X, Z); });
+}
+
+void FMapGenerator3D::ResetGenerationState()
+{
+    GeneratedChunks.Empty();
+    InFlightChunks.Empty();
+    FPendingChunk Discard;
+    while (ReadyQueue.Dequeue(Discard)) {}
 }
 
 // ============================================================
@@ -59,6 +72,7 @@ int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
 //   Y == WorldH - 1        → Stone（基岩，不可雕刻）
 
 void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
+                                        const TArray<FSurfaceWaterPool::FPoolDesc>& WaterPools,
                                         TArray<FTileCell>& OutCells)
 {
     // 高度圖 noise（FBm 7 octave：對應 Godot MapGenerator3D.cs:70-74，freq=0.001/7 octave 產生平緩大地形）
@@ -108,17 +122,39 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
             (int32)(Height * 0.30f + Hv * Height * 0.08f),
             (int32)(Height * 0.15f), (int32)(Height * 0.45f));
 
-        uint8 MatID = 0;  // Air
-        if (wy == SurfaceY)
-            MatID = (uint8)EMaterialType::Grass;
-        else if (wy > SurfaceY && wy <= SurfaceY + 3)
-            MatID = (uint8)EMaterialType::Dirt;
-        else if (wy > SurfaceY + 3)
-            MatID = (uint8)EMaterialType::Stone;
-        // wy < SurfaceY → Air（保持 0）
+        // 地表水池覆寫（FSurfaceWaterPool::QueryOverride，對應 Godot GetSurfaceOverride()，
+        // 懶加載每個 tile 查詢，跟 SurfaceY 一樣每格都要算，所以不能用全域一次性 PlaceInWorld）
+        int32 EffSurfaceY = SurfaceY;
+        EMaterialType PoolMat = EMaterialType::Air;
+        const bool bPoolHit = FSurfaceWaterPool::QueryOverride(WaterPools, wx, wz, SurfaceY, EffSurfaceY, PoolMat);
+        const bool bIsWaterPool = bPoolHit && PoolMat == EMaterialType::Water;
 
-        // 洞穴雕刻（只雕刻地下石頭/泥土，保留地表 + 基岩）
-        if (MatID != 0 && wy > SurfaceY && wy < Height - 1)
+        uint8 MatID = 0;  // Air
+        if (wy < EffSurfaceY)
+        {
+            MatID = 0;  // 水池水面以上（或一般地表以上）開放空間
+        }
+        else if (bIsWaterPool && wy < SurfaceY)
+        {
+            // 水位到原始自然地表之間：填水（水池真正看到水的範圍）
+            MatID = (uint8)EMaterialType::Water;
+        }
+        else if (wy == EffSurfaceY)
+        {
+            MatID = bPoolHit ? (uint8)PoolMat : (uint8)EMaterialType::Grass;
+        }
+        else if (wy > EffSurfaceY && wy <= EffSurfaceY + 3)
+        {
+            MatID = (uint8)EMaterialType::Dirt;
+        }
+        else if (wy > EffSurfaceY + 3)
+        {
+            MatID = (uint8)EMaterialType::Stone;
+        }
+        // wy < EffSurfaceY → Air（保持 0，上面已處理）
+
+        // 洞穴雕刻（只雕刻地下石頭/泥土，保留地表 + 基岩 + 水池水體本身不被雕空）
+        if (MatID != 0 && MatID != (uint8)EMaterialType::Water && wy > SurfaceY && wy < Height - 1)
         {
             float a = CA.GetNoise((float)wx, (float)wy, (float)wz);
             float b = CB.GetNoise((float)wx + 1000.f, (float)wy + 1000.f, (float)wz + 1000.f);
@@ -173,13 +209,15 @@ void FMapGenerator3D::EnsureChunksAround(FTileWorld3D& World,
         int32 Seed   = WorldSeed;
         int32 Height = WorldH;
         TQueue<FPendingChunk, EQueueMode::Mpsc>* Queue = &ReadyQueue;
+        // 拷貝水池佈局（POD 陣列）進閉包，背景 thread 只讀，thread-safe
+        TArray<FSurfaceWaterPool::FPoolDesc> Pools = WaterPool.GetPools();
 
         UE::Tasks::Launch(UE_SOURCE_LOCATION,
-            [CC, Seed, Height, Queue]()
+            [CC, Seed, Height, Queue, Pools = MoveTemp(Pools)]()
             {
                 FPendingChunk P;
                 P.Coord = CC;
-                ComputeChunkData(CC, Seed, Height, P.Cells);
+                ComputeChunkData(CC, Seed, Height, Pools, P.Cells);
                 Queue->Enqueue(MoveTemp(P));
             });
     }
@@ -457,10 +495,7 @@ void FMapGenerator3D::PostProcessRegion(FTileWorld3D& World,
             break;
         }
     }
-
-    // 地表水池（SurfaceWaterPool）
-    FSurfaceWaterPool WaterPool;
-    WaterPool.Initialize(WorldSeed, WorldW, WorldH, WorldD);
-    WaterPool.Prepare(World, ChunkMin, ChunkMax);
-    WaterPool.PlaceInWorld(World, ChunkMin, ChunkMax);
+    // 地表水池已改為 ComputeChunkData() 每格懶加載查詢（FSurfaceWaterPool::QueryOverride），
+    // 不再需要在此額外呼叫 PlaceInWorld（UE5 沒有 Godot 的「初始條帶」獨立路徑，全部 chunk
+    // 一律經由 ComputeChunkData 生成，PostProcessRegion 在此只負責連通性後處理）。
 }

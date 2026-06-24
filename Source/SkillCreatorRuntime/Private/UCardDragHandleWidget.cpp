@@ -2,6 +2,7 @@
 #include "UBlockDragDropOp.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "SlateBrushHelpers.h"
 
 void UCardDragHandleWidget::NativeOnInitialized()
 {
@@ -15,7 +16,7 @@ void UCardDragHandleWidget::Setup(const FLinearColor& InColor, TArray<TUniquePtr
     HandleColor   = InColor;
     ParentList    = InParentList;
     IndexInParent = InIndex;
-    if (Bg) Bg->SetBrushColor(HandleColor);
+    if (Bg) Bg->SetBrush(MakeSolidBrush(HandleColor));
 }
 
 FReply UCardDragHandleWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -34,7 +35,7 @@ void UCardDragHandleWidget::NativeOnDragDetected(const FGeometry& InGeometry, co
     Op->SourceIndex  = IndexInParent;
 
     UBorder* Preview = WidgetTree->ConstructWidget<UBorder>();
-    Preview->SetBrushColor(FLinearColor(HandleColor.R, HandleColor.G, HandleColor.B, 0.6f));
+    Preview->SetBrush(MakeSolidBrush(FLinearColor(HandleColor.R, HandleColor.G, HandleColor.B, 0.6f)));
     Op->DefaultDragVisual = Preview;
     Op->Pivot = EDragPivot::MouseDown;
     OutOperation = Op;
