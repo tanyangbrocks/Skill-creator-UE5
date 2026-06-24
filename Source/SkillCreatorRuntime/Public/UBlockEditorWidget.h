@@ -10,7 +10,9 @@ class UButton;
 class UEditableTextBox;
 class UHorizontalBox;
 class UVerticalBox;
-class UScrollBox;
+class UCanvasPanel;
+class UScaleBox;
+class UCanvasPanelSlot;
 class UProgressBar;
 class USpinBox;
 struct FBlockNode;
@@ -79,11 +81,34 @@ private:
 
     // ── Body（三欄容器，Phase 2/3/5 填內容）──────────────────────
     TObjectPtr<UBorder>         LeftPanel;
-    TObjectPtr<UScrollBox>      CenterScroll;
-    TObjectPtr<UVerticalBox>    CenterList;
+
+    // 中央縮放/平移畫布（對應 Godot ScriptCanvas.cs:32-33 _freeCanvas + 50-58 zoom/pan state）
+    TObjectPtr<UBorder>         CenterClip;          // ClipToBoundsAlways 邊界
+    TObjectPtr<UCanvasPanel>    CenterCanvas;         // 無限畫布（承載 ZoomBox）
+    TObjectPtr<UScaleBox>       ZoomBox;              // UserSpecified 縮放容器
+    UCanvasPanelSlot*           ZoomBoxSlot = nullptr; // 控制平移偏移
+    TObjectPtr<UVerticalBox>    CenterList;           // 積木卡片垂直清單
+
     TObjectPtr<UBorder>         RightPanel;
     // 垃圾桶（對應 Godot ScriptCanvas.cs:104-134 _trashZone，畫布右下角，拖入卡片即刪除）
     TObjectPtr<class UBlockTrashZoneWidget> TrashZone;
+
+    // ── 縮放/平移（對應 Godot ScriptCanvas.cs:50-58）────────────────────────────────────
+    float     ZoomFactor        = 1.0f;               // ZoomMin=0.20 ZoomMax=3.00 Step=0.12
+    FVector2D PanOffset         = FVector2D::ZeroVector;
+    bool      bPanning          = false;
+    FVector2D PanDragStart;
+    FVector2D PanOriginAtStart;
+
+    void ZoomAt(FVector2D LocalMousePos, float Delta); // 對應 Godot ScriptCanvas.cs:460-468
+    void ApplyCanvasTransform();                       // 對應 Godot ScriptCanvas.cs:454-457
+    void ResetView();                                  // 對應 Godot ScriptCanvas.cs:177-181
+    UFUNCTION() void OnResetViewClicked();
+
+    virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+    virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
     // Phase 3/5：正在編輯的技能整構（不擁有）+ 解開的積木樹裸指標（指向 Spell->Blocks）
     FSpellArray* CurrentSpell = nullptr;

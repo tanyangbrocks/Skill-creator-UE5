@@ -8,6 +8,9 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/ScaleBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
@@ -283,13 +286,54 @@ UWidget* UBlockEditorWidget::BuildBody()
     if (UHorizontalBoxSlot* S = BodyRow->AddChildToHorizontalBox(CenterOverlay))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
-    CenterScroll = WidgetTree->ConstructWidget<UScrollBox>();
-    CenterList = WidgetTree->ConstructWidget<UVerticalBox>();
-    CenterScroll->AddChild(CenterList);
-    if (UOverlaySlot* S = CenterOverlay->AddChildToOverlay(CenterScroll))
+    // 中央縮放/平移畫布（對應 Godot ScriptCanvas.cs:62-76）
+    // 架構：CenterClip(clip) → CenterCanvas(無限畫布) → ZoomBox(UScaleBox UserSpecified) → CenterList
+    // UScaleBox UserSpecified 在 layout 階段套用縮放，hit-testing 與視覺一致（非 RenderTransform）
+    CenterClip = WidgetTree->ConstructWidget<UBorder>();
+    CenterClip->SetBrush(MakeSolidBrush(FLinearColor(0.08f, 0.09f, 0.13f, 1.f)));
+    CenterClip->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+    if (UOverlaySlot* S = CenterOverlay->AddChildToOverlay(CenterClip))
     {
         S->SetHorizontalAlignment(HAlign_Fill);
         S->SetVerticalAlignment(VAlign_Fill);
+    }
+
+    CenterCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
+    CenterClip->SetContent(CenterCanvas);
+
+    ZoomBox = WidgetTree->ConstructWidget<UScaleBox>();
+    ZoomBox->SetStretch(EStretch::UserSpecified);
+    ZoomBox->SetUserSpecifiedScale(1.0f);
+
+    CenterList = WidgetTree->ConstructWidget<UVerticalBox>();
+    ZoomBox->SetContent(CenterList);
+
+    ZoomBoxSlot = CenterCanvas->AddChildToCanvas(ZoomBox);
+    ZoomBoxSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+    ZoomBoxSlot->SetPosition(FVector2D::ZeroVector);
+    ZoomBoxSlot->SetAutoSize(true);
+    ZoomBoxSlot->SetAlignment(FVector2D::ZeroVector);
+
+    // 重置視角按鈕（左下角固定 overlay，對應 Godot ScriptCanvas.cs:137-151）
+    {
+        UButton* ResetBtn = WidgetTree->ConstructWidget<UButton>();
+        ResetBtn->SetBackgroundColor(FLinearColor(0.08f, 0.08f, 0.12f, 0.85f));
+        ResetBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnResetViewClicked);
+        UTextBlock* ResetTxt = WidgetTree->ConstructWidget<UTextBlock>();
+        ResetTxt->SetText(FText::FromString(TEXT("⌖ 重置視角")));
+        ResetTxt->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.70f)));
+        {
+            FSlateFontInfo F = ResetTxt->GetFont();
+            F.Size = 10;
+            ResetTxt->SetFont(F);
+        }
+        ResetBtn->AddChild(ResetTxt);
+        if (UOverlaySlot* S = CenterOverlay->AddChildToOverlay(ResetBtn))
+        {
+            S->SetHorizontalAlignment(HAlign_Left);
+            S->SetVerticalAlignment(VAlign_Bottom);
+            S->SetPadding(FMargin(8.f, 0.f, 0.f, 8.f));
+        }
     }
 
     TrashZone = CreateWidget<UBlockTrashZoneWidget>(this);
@@ -1218,4 +1262,112 @@ bool UBlockEditorWidget::AutoInsertBaseEngravings()
         bInserted = true;
     }
     return bInserted;
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  畫布縮放/平移（對應 Godot ScriptCanvas.cs 互動邏輯）
+// ══════════════════════════════════════════════════════════════════
+
+FReply UBlockEditorWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // 只在滑鼠位於中央畫布內時縮放（Godot ScriptCanvas.cs:271-276 GetGlobalRect().HasPoint 判斷）
+    if (!CenterClip) return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+
+    const FGeometry& ClipGeo  = CenterClip->GetCachedGeometry();
+    const FVector2D  ScreenPos = InMouseEvent.GetScreenSpacePosition();
+    const FVector2D  LocalPos  = ClipGeo.AbsoluteToLocal(ScreenPos);
+    const FVector2D  ClipSize  = ClipGeo.GetLocalSize();
+    const bool bOverCanvas = LocalPos.X >= 0.f && LocalPos.Y >= 0.f
+                          && LocalPos.X <= ClipSize.X && LocalPos.Y <= ClipSize.Y;
+    if (!bOverCanvas)
+        return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
+
+    // ZoomStep=0.12 對應 Godot ScriptCanvas.cs:58
+    const float Delta = InMouseEvent.GetWheelDelta() > 0.f ? 0.12f : -0.12f;
+    ZoomAt(LocalPos, Delta);
+    return FReply::Handled();
+}
+
+FReply UBlockEditorWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // 中鍵按下 → 開始平移（Godot ScriptCanvas.cs:278-286 MouseButton.Middle）
+    if (InMouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton && CenterClip)
+    {
+        const FGeometry& ClipGeo  = CenterClip->GetCachedGeometry();
+        const FVector2D  LocalPos  = ClipGeo.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+        const FVector2D  ClipSize  = ClipGeo.GetLocalSize();
+        const bool bOverCanvas = LocalPos.X >= 0.f && LocalPos.Y >= 0.f
+                              && LocalPos.X <= ClipSize.X && LocalPos.Y <= ClipSize.Y;
+        if (bOverCanvas)
+        {
+            bPanning         = true;
+            PanDragStart     = InMouseEvent.GetScreenSpacePosition();
+            PanOriginAtStart = PanOffset;
+            TSharedPtr<SWidget> Slate = GetCachedWidget();
+            if (Slate.IsValid())
+                return FReply::Handled().CaptureMouse(Slate.ToSharedRef());
+            return FReply::Handled();
+        }
+    }
+    return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UBlockEditorWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // 平移中更新 PanOffset（Godot ScriptCanvas.cs:244-245）
+    if (bPanning)
+    {
+        PanOffset = PanOriginAtStart + (InMouseEvent.GetScreenSpacePosition() - PanDragStart);
+        ApplyCanvasTransform();
+        return FReply::Handled();
+    }
+    return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+}
+
+FReply UBlockEditorWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // 中鍵放開 → 結束平移（Godot ScriptCanvas.cs:300-305）
+    if (InMouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton && bPanning)
+    {
+        bPanning = false;
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+    return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void UBlockEditorWidget::ZoomAt(FVector2D LocalMousePos, float Delta)
+{
+    // 以滑鼠為軸心縮放（Godot ScriptCanvas.cs:460-468 ZoomAt）
+    constexpr float ZoomMin = 0.20f, ZoomMax = 3.00f;
+    const float NewZoom = FMath::Clamp(ZoomFactor + Delta, ZoomMin, ZoomMax);
+    if (FMath::IsNearlyEqual(NewZoom, ZoomFactor)) return;
+
+    // pivot = 滑鼠在 CenterClip 的本機座標
+    // pan  = pivot - (pivot - pan) * (newZoom / oldZoom)
+    const FVector2D Pivot = LocalMousePos;
+    PanOffset  = Pivot - (Pivot - PanOffset) * (NewZoom / ZoomFactor);
+    ZoomFactor = NewZoom;
+    ApplyCanvasTransform();
+}
+
+void UBlockEditorWidget::ApplyCanvasTransform()
+{
+    // 套用 pan/zoom 到 ZoomBox（Godot ScriptCanvas.cs:454-457）
+    // UScaleBox UserSpecified 在 layout 階段縮放 → hit-testing 正確（非 RenderTransform）
+    if (!ZoomBox || !ZoomBoxSlot) return;
+    ZoomBox->SetUserSpecifiedScale(ZoomFactor);
+    ZoomBoxSlot->SetPosition(PanOffset);
+}
+
+void UBlockEditorWidget::ResetView()
+{
+    // 重置視角到原點 1:1（Godot ScriptCanvas.cs:177-181）
+    ZoomFactor = 1.0f;
+    PanOffset  = FVector2D::ZeroVector;
+    ApplyCanvasTransform();
+}
+
+void UBlockEditorWidget::OnResetViewClicked()
+{
+    ResetView();
 }
