@@ -114,6 +114,9 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaTime) override;
 
+    // W-E：草地回復查詢（供 OnTileDestroyed 或挖掘後呼叫）
+    void NotifyDirtExposed(FIntVector TilePos);
+
 private:
     FTileWorld3D           TileWorld;
     FChunkStreamingManager Streaming;
@@ -130,4 +133,9 @@ private:
     // BeginPlay() 跟 ReinitializeForWorld() 共用的初始化邏輯（TileWorld 尺寸/Seed、
     // ChunkStreamingManager::Init、material slot 設定），抽出來避免兩處各自維護一份。
     void InitializeWorldState();
+
+    // W-E：草地回復系統（Dirt_Dry + Air above → 180 秒後回復為 Grass）
+    struct FRegrowthEntry { FIntVector Pos; float TimeLeft; };
+    TArray<FRegrowthEntry> GrassRegrowthQueue;
+    void TickGrassRegrowth(float DeltaTime);
 };

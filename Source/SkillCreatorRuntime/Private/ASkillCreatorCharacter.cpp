@@ -153,7 +153,12 @@ void ASkillCreatorCharacter::RebindWorldSystems()
             // K-5：任何方式摧毀的格子都要通知 Registry（不限完美移除路徑），
             // 對應 Godot Main.cs:404-407 全域 OnTileDestroyed → NotifyDestroyed
             if (AVoxelWorldActor* VW = WeakVoxelWorld.Get())
+            {
                 VW->GetPlacedRegistry().NotifyDestroyed(FIntVector(x, y, z));
+                // W-E：Grass tile 被挖掉，露出正下方的 Dirt_Dry → 開始 180s 回復計時
+                if (OldMat == EMaterialType::Grass)
+                    VW->NotifyDirtExposed(FIntVector(x, y + 1, z));  // UE5 Y 增大=向下，+1 是正下方
+            }
 
             auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
             if (!DropMgr) return;

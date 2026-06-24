@@ -230,6 +230,44 @@ void AVoxelWorldActor::Tick(float DeltaTime)
 
     for (const FIntVector& MC : DirtyMegaChunks)
         RebuildMegaChunk(MC);
+
+    // W-E：草地回復
+    TickGrassRegrowth(DeltaTime);
+}
+
+// ============================================================
+// W-E：草地回復系統
+// ============================================================
+
+void AVoxelWorldActor::NotifyDirtExposed(FIntVector TilePos)
+{
+    // 呼叫時機：挖掉 Grass tile（露出 Dirt_Dry）或放置後又挖走
+    // 加入回復佇列（如果同位置已有 entry 則重置計時）
+    for (FRegrowthEntry& E : GrassRegrowthQueue)
+    {
+        if (E.Pos == TilePos) { E.TimeLeft = 180.f; return; }
+    }
+    GrassRegrowthQueue.Add({ TilePos, 180.f });
+}
+
+void AVoxelWorldActor::TickGrassRegrowth(float DeltaTime)
+{
+    for (int32 i = GrassRegrowthQueue.Num() - 1; i >= 0; --i)
+    {
+        FRegrowthEntry& E = GrassRegrowthQueue[i];
+        E.TimeLeft -= DeltaTime;
+        if (E.TimeLeft > 0.f) continue;
+
+        const FIntVector& P = E.Pos;
+        // 條件：目前是 Dirt_Dry，且正上方（Y-1，UE5 Y增大=向下）是 Air
+        if (TileWorld.GetTile(P.X, P.Y, P.Z) == EMaterialType::Dirt_Dry &&
+            TileWorld.GetTile(P.X, P.Y - 1, P.Z) == EMaterialType::Air)
+        {
+            TileWorld.SetTile(P.X, P.Y, P.Z, EMaterialType::Grass);
+        }
+
+        GrassRegrowthQueue.RemoveAtSwap(i);
+    }
 }
 
 // ============================================================
