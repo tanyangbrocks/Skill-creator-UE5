@@ -19,6 +19,7 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
+    virtual void OnPossess(APawn* InPawn) override;
 
     // 2026-06-22 修復：MainMap World Settings 的 DefaultGameMode 被存成
     // BP_SkillCreatorGameMode_C（Blueprint 子類，繼承自 C++ ASkillCreatorGameMode），

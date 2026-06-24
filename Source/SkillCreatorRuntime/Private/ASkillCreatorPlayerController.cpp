@@ -1,5 +1,10 @@
 #include "ASkillCreatorPlayerController.h"
 #include "ASkillCreatorCharacter.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputMappingContext.h"
+#include "InputAction.h"
+#include "Misc/Paths.h"
+#include "Misc/ConfigCacheIni.h"
 #include "UPotionBagComponent.h"
 #include "UMapComponent.h"
 #include "UAfterimageFXComponent.h"
@@ -19,6 +24,50 @@
 void ASkillCreatorPlayerController::BeginPlay()
 {
     Super::BeginPlay();
+}
+
+void ASkillCreatorPlayerController::OnPossess(APawn* InPawn)
+{
+    Super::OnPossess(InPawn);
+
+    // K-23：套用存檔的自訂鍵位（對應 Godot InputBindings.cs，開機時從 input_bindings.json 讀入）
+    // UInputSettingsWidget::SaveBindings() 寫入，這裡在玩家 possess pawn 後立刻讀回並套用，
+    // 確保不需要打開設定面板就能生效（不同於 widget 的 LoadAndApplyBindings 只在開啟 UI 時跑）
+    ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(InPawn);
+    if (!Char) return;
+
+    UInputMappingContext* IMC = Char->GetDefaultMappingContext();
+    if (!IMC) return;
+
+    const FString CfgPath = FPaths::ProjectSavedDir() / TEXT("Config") / TEXT("PlayerInputBindings.ini");
+    if (!FPaths::FileExists(CfgPath)) return;
+
+    static const TCHAR* Section = TEXT("PlayerInputBindings");
+    const TArray<FEnhancedActionKeyMapping> Snapshot = IMC->GetMappings();
+
+    bool bChanged = false;
+    for (const FEnhancedActionKeyMapping& M : Snapshot)
+    {
+        if (!M.Action) continue;
+        FString KeyStr;
+        if (!GConfig->GetString(Section, *M.Action->GetName(), KeyStr, CfgPath)) continue;
+
+        FKey LoadedKey(*KeyStr);
+        if (!LoadedKey.IsValid() || LoadedKey == M.Key) continue;
+
+        UInputAction* Action = const_cast<UInputAction*>(M.Action.Get());
+        IMC->UnmapKey(Action, M.Key);
+        IMC->MapKey(Action, LoadedKey);
+        bChanged = true;
+    }
+
+    if (bChanged)
+        if (ULocalPlayer* LP = GetLocalPlayer())
+            if (UEnhancedInputLocalPlayerSubsystem* Sub = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+            {
+                Sub->RemoveMappingContext(IMC);
+                Sub->AddMappingContext(IMC, 0);
+            }
 }
 
 void ASkillCreatorPlayerController::SpawnDefaultHUD()
