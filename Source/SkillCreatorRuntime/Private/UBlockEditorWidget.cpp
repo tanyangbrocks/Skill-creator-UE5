@@ -243,7 +243,7 @@ UWidget* UBlockEditorWidget::BuildHeader()
         GearTxt->SetText(FText::FromString(TEXT("⚙")));
         GearBtn->AddChild(GearTxt);
         GearBtn->SetToolTipText(FText::FromString(TEXT("編輯器設定")));
-        GearBtn->OnClicked.AddLambda([this]() { ShowEditorSettingsPopup(); });
+        GearBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnGearBtnClicked);
         if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(GearBtn))
         {
             S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -1183,11 +1183,7 @@ void UBlockEditorWidget::ShowEditorSettingsPopup()
 
     UCheckBox* Check = WidgetTree->ConstructWidget<UCheckBox>();
     Check->SetIsChecked(bAutoInsertBaseEngraving);
-    Check->OnCheckStateChanged.AddLambda([this](bool bChecked)
-    {
-        bAutoInsertBaseEngraving = bChecked;
-        SaveEditorSettings();
-    });
+    Check->OnCheckStateChanged.AddDynamic(this, &UBlockEditorWidget::OnAutoInsertCheckChanged);
     if (UHorizontalBoxSlot* CS = CheckRow->AddChildToHorizontalBox(Check))
     {
         CS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -1212,11 +1208,7 @@ void UBlockEditorWidget::ShowEditorSettingsPopup()
     UTextBlock* CloseTxt = WidgetTree->ConstructWidget<UTextBlock>();
     CloseTxt->SetText(FText::FromString(TEXT("關閉")));
     CloseBtn->AddChild(CloseTxt);
-    CloseBtn->OnClicked.AddLambda([this]()
-    {
-        if (EditorSettingsOverlay)
-            EditorSettingsOverlay->SetVisibility(ESlateVisibility::Collapsed);
-    });
+    CloseBtn->OnClicked.AddDynamic(this, &UBlockEditorWidget::OnEditorSettingsCloseClicked);
     if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(CloseBtn))
         S->SetHorizontalAlignment(HAlign_Center);
 
@@ -1411,4 +1403,21 @@ void UBlockEditorWidget::ResetView()
 void UBlockEditorWidget::OnResetViewClicked()
 {
     ResetView();
+}
+
+void UBlockEditorWidget::OnGearBtnClicked()
+{
+    ShowEditorSettingsPopup();
+}
+
+void UBlockEditorWidget::OnEditorSettingsCloseClicked()
+{
+    if (EditorSettingsOverlay)
+        EditorSettingsOverlay->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void UBlockEditorWidget::OnAutoInsertCheckChanged(bool bIsChecked)
+{
+    bAutoInsertBaseEngraving = bIsChecked;
+    SaveEditorSettings();
 }

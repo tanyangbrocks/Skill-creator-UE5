@@ -135,6 +135,10 @@ private:
     bool AutoInsertBaseEngravings();             // 對應 Godot AutoInsertBaseEngravings()
     void LoadEditorSettings();
     void SaveEditorSettings();
+    // Dynamic delegate wrappers（AddDynamic 只支援 UFUNCTION，不能用 AddLambda）
+    UFUNCTION() void OnGearBtnClicked();
+    UFUNCTION() void OnEditorSettingsCloseClicked();
+    UFUNCTION() void OnAutoInsertCheckChanged(bool bIsChecked);
 
     // ── Phase 7：儲存/驗證/未儲存確認/技能組切換 ──────────────────
     bool bIsDirty = false;
