@@ -1268,6 +1268,35 @@ bool UBlockEditorWidget::AutoInsertBaseEngravings()
 //  畫布縮放/平移（對應 Godot ScriptCanvas.cs 互動邏輯）
 // ══════════════════════════════════════════════════════════════════
 
+FReply UBlockEditorWidget::NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+    // Ctrl+左鍵拖曳平移（Godot ScriptCanvas.cs:287-295）
+    // NativeOnPreviewMouseButtonDown 是 top-down 路由：比子 widget 先收到，可安全截取 Ctrl+Left
+    // 返回 Handled + CaptureMouse 後子 widget 不再收到此 LeftButton 事件（畫布平移優先）
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton
+        && InMouseEvent.IsControlDown()
+        && CenterClip)
+    {
+        const FGeometry& ClipGeo = CenterClip->GetCachedGeometry();
+        const FVector2D  LocalPos = ClipGeo.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+        const FVector2D  ClipSize = ClipGeo.GetLocalSize();
+        const bool bOverCanvas = LocalPos.X >= 0.f && LocalPos.Y >= 0.f
+                              && LocalPos.X <= ClipSize.X && LocalPos.Y <= ClipSize.Y;
+        if (bOverCanvas)
+        {
+            bPanning         = true;
+            bPanWithLeft     = true;
+            PanDragStart     = InMouseEvent.GetScreenSpacePosition();
+            PanOriginAtStart = PanOffset;
+            TSharedPtr<SWidget> Slate = GetCachedWidget();
+            if (Slate.IsValid())
+                return FReply::Handled().CaptureMouse(Slate.ToSharedRef());
+            return FReply::Handled();
+        }
+    }
+    return Super::NativeOnPreviewMouseButtonDown(InGeometry, InMouseEvent);
+}
+
 FReply UBlockEditorWidget::NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     // 只在滑鼠位於中央畫布內時縮放（Godot ScriptCanvas.cs:271-276 GetGlobalRect().HasPoint 判斷）
@@ -1314,9 +1343,15 @@ FReply UBlockEditorWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, 
 
 FReply UBlockEditorWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-    // 平移中更新 PanOffset（Godot ScriptCanvas.cs:244-245）
+    // 平移中更新 PanOffset（Godot ScriptCanvas.cs:236-247）
     if (bPanning)
     {
+        // Ctrl+Left 模式：Ctrl 放開即結束平移（Godot ScriptCanvas.cs:239-243）
+        if (bPanWithLeft && !InMouseEvent.IsControlDown())
+        {
+            bPanning = bPanWithLeft = false;
+            return FReply::Handled().ReleaseMouseCapture();
+        }
         PanOffset = PanOriginAtStart + (InMouseEvent.GetScreenSpacePosition() - PanDragStart);
         ApplyCanvasTransform();
         return FReply::Handled();
@@ -1327,9 +1362,15 @@ FReply UBlockEditorWidget::NativeOnMouseMove(const FGeometry& InGeometry, const 
 FReply UBlockEditorWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
     // 中鍵放開 → 結束平移（Godot ScriptCanvas.cs:300-305）
-    if (InMouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton && bPanning)
+    if (InMouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton && bPanning && !bPanWithLeft)
     {
         bPanning = false;
+        return FReply::Handled().ReleaseMouseCapture();
+    }
+    // Ctrl+左鍵放開 → 結束平移（Godot ScriptCanvas.cs:307-315）
+    if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPanning && bPanWithLeft)
+    {
+        bPanning = bPanWithLeft = false;
         return FReply::Handled().ReleaseMouseCapture();
     }
     return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);

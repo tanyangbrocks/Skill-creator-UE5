@@ -97,6 +97,7 @@ private:
     float     ZoomFactor        = 1.0f;               // ZoomMin=0.20 ZoomMax=3.00 Step=0.12
     FVector2D PanOffset         = FVector2D::ZeroVector;
     bool      bPanning          = false;
+    bool      bPanWithLeft      = false;   // true = Ctrl+左鍵平移；false = 中鍵平移
     FVector2D PanDragStart;
     FVector2D PanOriginAtStart;
 
@@ -105,6 +106,7 @@ private:
     void ResetView();                                  // 對應 Godot ScriptCanvas.cs:177-181
     UFUNCTION() void OnResetViewClicked();
 
+    virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual FReply NativeOnMouseWheel(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
     virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
