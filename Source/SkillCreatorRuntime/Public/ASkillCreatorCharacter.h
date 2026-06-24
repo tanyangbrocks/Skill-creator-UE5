@@ -342,6 +342,13 @@ private:
     float                 MiningProgress = 0.f;
     void CancelMining() { MiningTarget.Reset(); MiningProgress = 0.f; }
 
+    // ── W-D：採集狀態（Entity 採集，固定 0.5s）────────────────────────────
+    // 不同於採掘：對象是世界中的可採集 Actor（AWeedEntity 等），無材質硬度，固定時間。
+    static constexpr float CollectFixedTime = 0.5f;
+    TWeakObjectPtr<AActor> CollectTarget;
+    float                  CollectProgress = 0.f;
+    void CancelCollect() { CollectTarget.Reset(); CollectProgress = 0.f; }
+
     // ── 放置節流狀態（對應 Godot Main.cs _placeCooldown/_rightWasPressed）──
     float PlaceCooldown          = 0.f;
     bool  bRightMouseWasPressed  = false;

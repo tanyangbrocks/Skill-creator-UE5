@@ -29,6 +29,8 @@
 #include "PlacedUnit.h"
 #include "MaterialRegistry.h"
 #include "IInteractable.h"
+#include "ICollectible.h"
+#include "Engine/OverlapResult.h"
 #include "UPotionBagComponent.h"
 #include "UMapComponent.h"
 #include "UAfterimageFXComponent.h"
@@ -1312,15 +1314,58 @@ void ASkillCreatorCharacter::OnMine()
         }
     }
 
-    if (!CachedVoxelWorld) { CancelMining(); return; }
+    if (!CachedVoxelWorld) { CancelMining(); CancelCollect(); return; }
     FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld();
-    if (!TW) { CancelMining(); return; }
+    if (!TW) { CancelMining(); CancelCollect(); return; }
     APlayerController* PC = Cast<APlayerController>(GetController());
-    if (!PC) { CancelMining(); return; }
+    if (!PC) { CancelMining(); CancelCollect(); return; }
 
     // K-22：游標在熱鍵欄格上時阻斷採掘（Godot Main.cs:1198-1199 _mouseOverHotbar）
     if (const ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>())
-        if (HUD->bMouseOverHotbar) { CancelMining(); return; }
+        if (HUD->bMouseOverHotbar) { CancelMining(); CancelCollect(); return; }
+
+    // W-D：採集分流 — 在 tile raycast 之前先找最近的 ICollectible Entity
+    // （範圍 = WorldScale::MiningRangeTiles tiles 球形 overlap；Entity 優先於 tile）
+    {
+        const float CollectRangeCm = WorldScale::MiningRangeTiles * WorldScale::TileSizeCm;
+        TArray<FOverlapResult> Overlaps;
+        FCollisionQueryParams QParams;
+        QParams.AddIgnoredActor(this);
+        GetWorld()->OverlapMultiByChannel(Overlaps,
+            GetActorLocation(), FQuat::Identity,
+            ECC_WorldDynamic,
+            FCollisionShape::MakeSphere(CollectRangeCm),
+            QParams);
+
+        AActor* NearestCollectible = nullptr;
+        float   NearestDist        = FLT_MAX;
+        for (const FOverlapResult& R : Overlaps)
+        {
+            AActor* A = R.GetActor();
+            if (!A || !A->Implements<UCollectible>()) continue;
+            if (!Cast<ICollectible>(A)->CanBeCollected(PC)) continue;
+            const float D = FVector::Dist(GetActorLocation(), A->GetActorLocation());
+            if (D < NearestDist) { NearestDist = D; NearestCollectible = A; }
+        }
+
+        if (NearestCollectible)
+        {
+            CancelMining();
+            if (CollectTarget.Get() != NearestCollectible)
+            {
+                CollectTarget   = NearestCollectible;
+                CollectProgress = 0.f;
+            }
+            CollectProgress += GetWorld()->GetDeltaSeconds();
+            if (CollectProgress >= CollectFixedTime)
+            {
+                Cast<ICollectible>(NearestCollectible)->Collect(PC);
+                CancelCollect();
+            }
+            return;
+        }
+        CancelCollect();
+    }
 
     FVector CamLoc;
     FRotator CamRot;
