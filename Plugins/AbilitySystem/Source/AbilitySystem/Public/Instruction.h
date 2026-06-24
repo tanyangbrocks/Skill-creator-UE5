@@ -147,6 +147,9 @@ struct FTotemBlockArgs
 
     // 此插槽注入的 MP 類型（None = 未指定）
     UPROPERTY() FName ManaTypeKey;
+
+    // AutoInsertBaseEngravings() 已處理過此節點（對應 Godot AbilityEditorUI.cs:1212 _actInserted）
+    UPROPERTY() bool bActInserted = false;
 };
 
 // EBlockType::Engraving 設計時參數（Params["args"]）
@@ -269,7 +272,8 @@ struct FVecMakeArgs
 };
 
 // 向量雙目運算（VecAdd / VecSub / VecDot / VecCross）
-// VecDot：Result 為純量變數；其餘為向量名稱
+// VecDot、VecCross：Result 為純量變數（存入 InstanceVars[Result]）
+// VecAdd、VecSub：Result 為向量名稱（存入 Result.x / Result.y / Result.z 三鍵）
 USTRUCT()
 struct FVecBinopArgs
 {

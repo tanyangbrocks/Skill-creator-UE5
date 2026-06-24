@@ -873,14 +873,16 @@ void FExecutionLoop::Execute(const FInstruction& Instr, FExecutionContext& Ctx)
 
         case EOpCode::VecCross:
         {
+            // Godot ExecutionLoop.cs:697-710: GetVec 只取 (ax,ay) 二維分量，
+            // 結果 = ax*by - ay*bx（純量），存入 InstanceVars[resultVar]（非向量三鍵）。
+            // 原 UE5 誤用 SetVec 存 3D 向量（Result.x/y/z），讀取端拿 Result 純量時永遠得 0。
             const FVecBinopArgs* A = Instr.Payload.GetPtr<FVecBinopArgs>();
-            if (!A) { ++Ctx.PC; break; }
+            if (!A || A->Result.IsNone()) { ++Ctx.PC; break; }
             auto& Vars = A->bGlobal ? FExecutionContext::GlobalVars : Ctx.InstanceVars;
             float Ax, Ay, Az, Bx, By, Bz;
             GetVec(Vars, A->VecA, Ax, Ay, Az);
             GetVec(Vars, A->VecB, Bx, By, Bz);
-            SetVec(Vars, A->Result,
-                   Ay*Bz - Az*By, Az*Bx - Ax*Bz, Ax*By - Ay*Bx);
+            Vars.FindOrAdd(A->Result) = Ax*By - Ay*Bx;
             ++Ctx.PC;
             break;
         }

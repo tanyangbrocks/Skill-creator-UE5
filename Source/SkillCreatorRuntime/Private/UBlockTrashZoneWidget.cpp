@@ -19,8 +19,8 @@ void UBlockTrashZoneWidget::NativeOnInitialized()
     // 48×48，對應 Godot ScriptCanvas.cs:126-133（OffsetLeft/Top=-56, OffsetRight/Bottom=-8
     // → 48px 寬高，錨點畫布右下角）
     USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
-    Size->SetWidthOverride(40.f);
-    Size->SetHeightOverride(40.f);
+    Size->SetWidthOverride(48.f);
+    Size->SetHeightOverride(48.f);
     WidgetTree->RootWidget = Size;
 
     Bg = WidgetTree->ConstructWidget<UBorder>();

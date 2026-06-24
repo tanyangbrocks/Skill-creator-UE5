@@ -29,9 +29,19 @@
 #include "SpellGroup.h"
 #include "Components/ProgressBar.h"
 #include "Components/SpinBox.h"
+#include "Components/CheckBox.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "SlateBrushHelpers.h"
+
+// ── 編輯器設定 INI（對應 Godot EditorSettings 持久化）──────────────────────────────────────────
+
+static const TCHAR* BlockEditorCfgSection = TEXT("BlockEditorSettings");
+
+static FString BlockEditorCfgPath()
+{
+    return FPaths::ProjectUserDir() / TEXT("BlockEditorSettings.ini");
+}
 
 // ── Palette 顏色表（對應 Godot AbilityEditorUI.cs:1486-1498 TotemClr / 1528-1542 EngraveClr）──
 
@@ -112,6 +122,17 @@ void UBlockEditorWidget::BuildLayout()
     ConfirmOverlay->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.65f)));
     ConfirmOverlay->SetVisibility(ESlateVisibility::Collapsed);
     if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(ConfirmOverlay))
+    {
+        S->SetHorizontalAlignment(HAlign_Fill);
+        S->SetVerticalAlignment(VAlign_Fill);
+    }
+
+    // 編輯器設定彈窗遮罩（Godot AbilityEditorUI.cs:211-216 gearBtn + ShowSettingsPopup）
+    LoadEditorSettings();
+    EditorSettingsOverlay = WidgetTree->ConstructWidget<UBorder>();
+    EditorSettingsOverlay->SetBrush(MakeSolidBrush(FLinearColor(0.f, 0.f, 0.f, 0.65f)));
+    EditorSettingsOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(EditorSettingsOverlay))
     {
         S->SetHorizontalAlignment(HAlign_Fill);
         S->SetVerticalAlignment(VAlign_Fill);
@@ -209,6 +230,23 @@ UWidget* UBlockEditorWidget::BuildHeader()
             S->SetVerticalAlignment(VAlign_Center);
         }
         GroupDots[i] = Dot;
+    }
+
+    // 齒輪按鈕（Godot AbilityEditorUI.cs:211-216，30×30，tooltip "編輯器設定"）
+    {
+        UButton* GearBtn = WidgetTree->ConstructWidget<UButton>();
+        GearBtn->SetBackgroundColor(FLinearColor(0.18f, 0.18f, 0.24f, 1.f));
+        UTextBlock* GearTxt = WidgetTree->ConstructWidget<UTextBlock>();
+        GearTxt->SetText(FText::FromString(TEXT("⚙")));
+        GearBtn->AddChild(GearTxt);
+        GearBtn->SetToolTipText(FText::FromString(TEXT("編輯器設定")));
+        GearBtn->OnClicked.AddLambda([this]() { ShowEditorSettingsPopup(); });
+        if (UHorizontalBoxSlot* S = Row->AddChildToHorizontalBox(GearBtn))
+        {
+            S->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+            S->SetPadding(FMargin(4.f, 0.f));
+            S->SetVerticalAlignment(VAlign_Center);
+        }
     }
 
     // 狀態文字（黃字，Godot 右側狀態提示）
@@ -630,6 +668,10 @@ void UBlockEditorWidget::RebuildList()
 
 void UBlockEditorWidget::RebuildListImmediate()
 {
+    // Godot AbilityEditorUI.cs:865: bool inserted = AutoInsertBaseEngravings(); if (inserted) SyncCanvas();
+    // UE5：在重建前先插入，重建結果即包含插入後的積木序列，不需二次 RebuildList()
+    AutoInsertBaseEngravings();
+
     bIsDirty = true; // 對應 Godot 幾乎每個編輯 callback 都設 _isDirty=true；SetEditingSpell 載入後會重置回 false
     if (!CenterList) return;
     CenterList->ClearChildren();
@@ -1038,4 +1080,142 @@ void UBlockEditorWidget::RefreshGroupDotHighlight()
         GroupDots[i]->SetBackgroundColor(i == Active
             ? FLinearColor(0.40f, 0.85f, 1.00f) : FLinearColor(0.50f, 0.50f, 0.60f));
     }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 編輯器設定（Godot AbilityEditorUI.cs:211-358 + 1204-1227）
+// ══════════════════════════════════════════════════════════════════
+
+void UBlockEditorWidget::LoadEditorSettings()
+{
+    // Godot EditorSettings.AutoInsertBaseEngraving（持久化，預設 true）
+    bool bVal = true;
+    GConfig->GetBool(BlockEditorCfgSection, TEXT("AutoInsertBaseEngraving"), bVal, BlockEditorCfgPath());
+    bAutoInsertBaseEngraving = bVal;
+}
+
+void UBlockEditorWidget::SaveEditorSettings()
+{
+    GConfig->SetBool(BlockEditorCfgSection, TEXT("AutoInsertBaseEngraving"), bAutoInsertBaseEngraving, BlockEditorCfgPath());
+    GConfig->Flush(false, BlockEditorCfgPath());
+}
+
+void UBlockEditorWidget::ShowEditorSettingsPopup()
+{
+    // Godot AbilityEditorUI.cs:331-358 ShowSettingsPopup
+    if (!EditorSettingsOverlay) return;
+    EditorSettingsOverlay->ClearChildren();
+
+    // 彈窗主體：330px 寬，深色背景，內邊距 14/10/14/12（對應 Godot MarginContainer override）
+    UBorder* PopupBox = WidgetTree->ConstructWidget<UBorder>();
+    PopupBox->SetBrush(MakeSolidBrush(FLinearColor(0.14f, 0.14f, 0.18f, 1.f)));
+    PopupBox->SetPadding(FMargin(14.f, 10.f, 14.f, 12.f));
+
+    USizeBox* PopupSize = WidgetTree->ConstructWidget<USizeBox>();
+    PopupSize->SetWidthOverride(330.f);
+    PopupSize->SetContent(PopupBox);
+
+    UVerticalBox* VBox = WidgetTree->ConstructWidget<UVerticalBox>();
+    PopupBox->SetContent(VBox);
+
+    // 標題（Godot：Label "編輯器設定"，font_size 13，色 0.85,0.85,0.45）
+    UTextBlock* TitleTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    TitleTxt->SetText(FText::FromString(TEXT("編輯器設定")));
+    TitleTxt->SetColorAndOpacity(FSlateColor(FLinearColor(0.85f, 0.85f, 0.45f)));
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(TitleTxt))
+        S->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+
+    // 分隔線（Godot：HSeparator）
+    USizeBox* SepSize = WidgetTree->ConstructWidget<USizeBox>();
+    SepSize->SetHeightOverride(1.f);
+    UBorder* SepLine = WidgetTree->ConstructWidget<UBorder>();
+    SepLine->SetBrush(MakeSolidBrush(FLinearColor(0.5f, 0.5f, 0.5f, 1.f)));
+    SepSize->SetContent(SepLine);
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(SepSize))
+        S->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+
+    // 勾選框（Godot AbilityEditorUI.cs:351-354：CheckButton + Toggled → AutoInsertBaseEngraving）
+    UHorizontalBox* CheckRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+
+    UCheckBox* Check = WidgetTree->ConstructWidget<UCheckBox>();
+    Check->SetIsChecked(bAutoInsertBaseEngraving);
+    Check->OnCheckStateChanged.AddLambda([this](bool bChecked)
+    {
+        bAutoInsertBaseEngraving = bChecked;
+        SaveEditorSettings();
+    });
+    if (UHorizontalBoxSlot* CS = CheckRow->AddChildToHorizontalBox(Check))
+    {
+        CS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+        CS->SetVerticalAlignment(VAlign_Center);
+    }
+
+    UTextBlock* CheckTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    CheckTxt->SetText(FText::FromString(TEXT("技能因子加入時自動插入基礎 Action 刻印")));
+    if (UHorizontalBoxSlot* CS = CheckRow->AddChildToHorizontalBox(CheckTxt))
+    {
+        CS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        CS->SetPadding(FMargin(6.f, 0.f));
+        CS->SetVerticalAlignment(VAlign_Center);
+    }
+
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(CheckRow))
+        S->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+
+    // 關閉按鈕（Godot 無此按鈕，用點擊彈窗外關閉；UE5 加關閉鈕較直觀）
+    UButton* CloseBtn = WidgetTree->ConstructWidget<UButton>();
+    CloseBtn->SetBackgroundColor(FLinearColor(0.25f, 0.25f, 0.30f, 1.f));
+    UTextBlock* CloseTxt = WidgetTree->ConstructWidget<UTextBlock>();
+    CloseTxt->SetText(FText::FromString(TEXT("關閉")));
+    CloseBtn->AddChild(CloseTxt);
+    CloseBtn->OnClicked.AddLambda([this]()
+    {
+        if (EditorSettingsOverlay)
+            EditorSettingsOverlay->SetVisibility(ESlateVisibility::Collapsed);
+    });
+    if (UVerticalBoxSlot* S = VBox->AddChildToVerticalBox(CloseBtn))
+        S->SetHorizontalAlignment(HAlign_Center);
+
+    EditorSettingsOverlay->SetContent(PopupSize);
+    EditorSettingsOverlay->SetHorizontalAlignment(HAlign_Center);
+    EditorSettingsOverlay->SetVerticalAlignment(VAlign_Center);
+    EditorSettingsOverlay->SetVisibility(ESlateVisibility::Visible);
+}
+
+bool UBlockEditorWidget::AutoInsertBaseEngravings()
+{
+    // Godot AbilityEditorUI.cs:1204-1227
+    if (!bAutoInsertBaseEngraving || !CurrentBlocks) return false;
+
+    const TMap<FName, FName>& IdMap = FTotemLibrary::DefaultActionEngraveId();
+    bool bInserted = false;
+
+    for (int32 i = 0; i < CurrentBlocks->Num(); ++i)
+    {
+        FBlockNode* Node = (*CurrentBlocks)[i].Get();
+        if (!Node || Node->Type != EBlockType::Totem) continue;
+
+        FInstancedStruct* ParamsPtr = Node->Params.Find(TEXT("args"));
+        if (!ParamsPtr) continue;
+
+        FTotemBlockArgs* Args = ParamsPtr->GetMutablePtr<FTotemBlockArgs>();
+        if (!Args || Args->bActInserted) continue;
+
+        Args->bActInserted = true;
+
+        const FName* ActId = IdMap.Find(Args->TotemId);
+        if (!ActId) continue; // "custom" 或未知 → 標記但不插入（對應 Godot AbilityEditorUI.cs:677）
+
+        TUniquePtr<FBlockNode> EngNode = MakeUnique<FBlockNode>();
+        EngNode->Type = EBlockType::Engraving;
+        FEngravingBlockArgs EngArgs;
+        EngArgs.EngraveId = *ActId;
+        EngArgs.Points    = 0.f;
+        EngNode->Params.Add(TEXT("args"), FInstancedStruct::Make<FEngravingBlockArgs>(EngArgs));
+
+        CurrentBlocks->Insert(MoveTemp(EngNode), i + 1);
+        ++i; // 跳過剛插入的刻印（對應 Godot AbilityEditorUI.cs:1223 i++）
+        bInserted = true;
+    }
+    return bInserted;
 }

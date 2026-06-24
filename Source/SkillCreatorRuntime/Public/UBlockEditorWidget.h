@@ -98,7 +98,16 @@ private:
     // ── Phase 6：容器巢狀導覽（對應 Godot AbilityEditorUI.cs:29-34 _navStack）─────
     FSpellArray* RootSpell = nullptr;
     TArray<TPair<FSpellArray*, FString>> NavStack;
-    TObjectPtr<UBorder> ConfirmOverlay; // 進入容器效果前/未儲存確認/驗證錯誤共用的彈窗
+    TObjectPtr<UBorder> ConfirmOverlay;          // 進入容器效果前/未儲存確認/驗證錯誤共用的彈窗
+
+    // ── 編輯器設定（Godot AbilityEditorUI.cs:211-358 gearBtn + ShowSettingsPopup）──────
+    bool bAutoInsertBaseEngraving = true;        // Godot EditorSettings.AutoInsertBaseEngraving
+    TObjectPtr<UBorder> EditorSettingsOverlay;   // 設定彈窗遮罩（gear 按下後顯示）
+
+    void ShowEditorSettingsPopup();
+    bool AutoInsertBaseEngravings();             // 對應 Godot AutoInsertBaseEngravings()
+    void LoadEditorSettings();
+    void SaveEditorSettings();
 
     // ── Phase 7：儲存/驗證/未儲存確認/技能組切換 ──────────────────
     bool bIsDirty = false;
