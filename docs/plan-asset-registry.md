@@ -160,36 +160,34 @@ struct FEffectEntry : public FTableRowBase
 };
 ```
 
-### 5-3 UVoxelAssetRegistry / UVoxelMaterialPalette
+### 5-3 體素化管線（純 C++ 路徑，不需 Editor DataAsset）
 
-體素化管線的兩張登記表，遵循與 `UTileMaterialRegistry` 相同的 DataAsset 模式。
 完整設計見 [`plan-voxelization.md`](plan-voxelization.md) §六、§七。
 
-```cpp
-// ── 調色盤（palette index → EMaterialType）──────────────────────────────
-USTRUCT(BlueprintType)
-struct FVoxelPaletteEntry : public FTableRowBase
-{
-    GENERATED_BODY()
-    UPROPERTY(EditAnywhere) uint8         PaletteIndex; // 1-255（0 = Air 保留）
-    UPROPERTY(EditAnywhere) EMaterialType Material;
-};
-// DataAsset 名稱：DA_VoxelMaterialPalette.uasset
+**調色盤**：已改為靜態 C++ 函式（`VoxParser.cpp::DefaultPaletteResolve`），
+MagicaVoxel palette index 直接等於 `EMaterialType` 底層值（0=Air，1=Stone，2=Dirt…）。
+不再需要 `DA_VoxelMaterialPalette.uasset`。
 
-// ── 體素資產登記表（FName → .vox 解析後的 UVoxelAsset）─────────────────
-USTRUCT(BlueprintType)
-struct FVoxelAssetEntry : public FTableRowBase
-{
-    GENERATED_BODY()
-    // RowName = VoxelAssetId（e.g. "chest_wood"、"statue_stone"）
-    UPROPERTY(EditAnywhere) TSoftObjectPtr<UVoxelAsset> Asset;
-    UPROPERTY(EditAnywhere) FVector                     PivotOffset; // 注入時的原點偏移
-};
-// DataAsset 名稱：DA_VoxelAssetRegistry.uasset
+**資產登記**：`ADestructibleMeshActor.VoxFilePath`（相對 `Content/` 的路徑）在 runtime
+用 `FFileHelper::LoadFileToArray` + `VoxParser::Parse` 直接讀取 `.vox` 二進位檔。
+不再需要 `DA_VoxelAssetRegistry.uasset` DataTable。
+
+```
+流程：.vox 檔案放 Content/VoxelAssets/
+       ↓ runtime 讀檔 (FFileHelper)
+       ↓ VoxParser::Parse → TArray<FVoxelCell>
+       ↓ FVoxelInjector::Inject(Cells, Transform, World, ...)
+       ↓ AVoxelWorldActor::TriggerVoxelDestruction
+       ↓ UDroppedItemManager::SpawnDebris
 ```
 
-`UVoxelAsset` 本身是 `UDataAsset` 子類（持有 `TArray<FVoxelCell>` 和調色盤索引引用），
-非同步載入策略與其他軟參照登記表相同（見 §六）。
+打包時需在 `DefaultGame.ini [Staging]` 加：
+```ini
++AdditionalNonUSFDirectories=Content/VoxelAssets
+```
+
+`UVoxelAsset` DataAsset 類別保留供 Editor 預建快取路徑使用（`VoxelAssetDirect` 欄位），
+但正常流程不需要手動建立任何 `.uasset`。
 
 ---
 

@@ -3,7 +3,6 @@
 #include "AVoxelizableActor.h"
 #include "VoxelAsset.h"
 #include "WorldTypes.h"
-#include "Engine/StreamableManager.h"
 #include "ADestructibleMeshActor.generated.h"
 
 // 路線 B：平時 StaticMesh 展示，毀壞時注入體素並走碎片管線
@@ -15,30 +14,28 @@ class SKILLCREATORRUNTIME_API ADestructibleMeshActor : public AVoxelizableActor
 public:
     ADestructibleMeshActor();
 
-    // 平時渲染的 StaticMesh
     UPROPERTY(VisibleAnywhere, Category="Voxelization")
     UStaticMeshComponent* DisplayMesh = nullptr;
 
-    // 直接指派 VoxelAsset（測試用；正式流程用 VoxelAssetId 查 DataTable）
+    // 優先：直接指派 UVoxelAsset（Editor 預建 DataAsset 備用路徑，通常不需要）
     UPROPERTY(EditAnywhere, Category="Voxelization")
     UVoxelAsset* VoxelAssetDirect = nullptr;
 
-    // DataTable row 名稱（正式流程：從 DA_VoxelAssetRegistry 查詢）
+    // 主要路徑：相對 Content/ 目錄的 .vox 檔案路徑，例如 "VoxelAssets/rock_small.vox"
+    // 打包時需在 DefaultGame.ini [Staging] 加 +AdditionalNonUSFDirectories=Content/VoxelAssets
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Voxelization")
-    FName VoxelAssetId;
+    FString VoxFilePath;
 
-    // 觸發毀壞：隱藏 DisplayMesh → 注入體素 → 呼叫 TriggerVoxelDestruction → Destroy()
     UFUNCTION(BlueprintCallable, Category="Voxelization")
     void TriggerDestruction(EDestroyReason Reason, float Intensity = 1.f,
                             FVector SlashDirection = FVector::ZeroVector);
 
 protected:
     virtual void BeginPlay() override;
-
-    // AVoxelizableActor 介面（Auto 模式未使用，但必須實作純虛函式）
     virtual void SwitchToFullVoxel()   override {}
     virtual void SwitchToMeshDisplay() override { if (DisplayMesh) DisplayMesh->SetVisibility(true); }
 
 private:
-    UVoxelAsset* ResolveAsset() const;
+    // 嘗試取得 cells：先 VoxelAssetDirect，再載入 VoxFilePath
+    bool LoadCells(TArray<FVoxelCell>& OutCells) const;
 };

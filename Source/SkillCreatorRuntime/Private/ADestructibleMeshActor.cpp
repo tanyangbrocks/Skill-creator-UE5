@@ -1,7 +1,10 @@
 #include "ADestructibleMeshActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "FVoxelInjector.h"
+#include "VoxParser.h"
 #include "AVoxelWorldActor.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Engine/World.h"
 
 ADestructibleMeshActor::ADestructibleMeshActor()
@@ -16,34 +19,49 @@ ADestructibleMeshActor::ADestructibleMeshActor()
 void ADestructibleMeshActor::BeginPlay()
 {
     Super::BeginPlay();
-    // 啟動時維持 Mesh 顯示（ForceMeshWithVoxel 預設）
 }
 
-UVoxelAsset* ADestructibleMeshActor::ResolveAsset() const
+bool ADestructibleMeshActor::LoadCells(TArray<FVoxelCell>& OutCells) const
 {
-    if (VoxelAssetDirect) return VoxelAssetDirect;
+    // 備用路徑：Editor 預建的 UVoxelAsset
+    if (VoxelAssetDirect && VoxelAssetDirect->Cells.Num() > 0)
+    {
+        OutCells = VoxelAssetDirect->Cells;
+        return true;
+    }
 
-    // DataTable 查詢（待 DA_VoxelAssetRegistry.uasset 建立後才能查到）
-    if (VoxelAssetId.IsNone()) return nullptr;
+    // 主要路徑：runtime 讀 .vox 檔
+    if (VoxFilePath.IsEmpty()) return false;
 
-    UDataTable* Registry = LoadObject<UDataTable>(nullptr,
-        TEXT("/Game/Data/DA_VoxelAssetRegistry.DA_VoxelAssetRegistry"));
-    if (!Registry) return nullptr;
+    const FString FullPath = FPaths::ProjectContentDir() / VoxFilePath;
+    TArray<uint8> Raw;
+    if (!FFileHelper::LoadFileToArray(Raw, *FullPath))
+    {
+        UE_LOG(LogTemp, Warning,
+               TEXT("ADestructibleMeshActor: 找不到 .vox 檔案：%s"), *FullPath);
+        return false;
+    }
 
-    const FVoxelAssetEntry* Row = Registry->FindRow<FVoxelAssetEntry>(VoxelAssetId, TEXT(""));
-    if (!Row || Row->Asset.IsNull()) return nullptr;
+    FIntVector BoundsMax;
+    if (!VoxParser::Parse(Raw, OutCells, BoundsMax))
+    {
+        UE_LOG(LogTemp, Warning,
+               TEXT("ADestructibleMeshActor: .vox 解析失敗：%s"), *FullPath);
+        return false;
+    }
 
-    return Row->Asset.LoadSynchronous();
+    return OutCells.Num() > 0;
 }
 
 void ADestructibleMeshActor::TriggerDestruction(EDestroyReason Reason, float Intensity,
                                                   FVector SlashDirection)
 {
-    UVoxelAsset* Asset = ResolveAsset();
-    if (!Asset)
+    TArray<FVoxelCell> Cells;
+    if (!LoadCells(Cells))
     {
-        UE_LOG(LogTemp, Warning, TEXT("ADestructibleMeshActor: no VoxelAsset for '%s'"),
-               *VoxelAssetId.ToString());
+        UE_LOG(LogTemp, Warning,
+               TEXT("ADestructibleMeshActor '%s': 無體素資料，直接銷毀"),
+               *GetName());
         Destroy();
         return;
     }
@@ -54,10 +72,10 @@ void ADestructibleMeshActor::TriggerDestruction(EDestroyReason Reason, float Int
     if (!VW) { Destroy(); return; }
 
     FTileWorld3D* World = VW->GetTileWorld();
-    const int32 WorldH  = VW->WorldHeight;
+    const int32   WorldH = VW->WorldHeight;
 
     FIntVector BoundsMin, BoundsMax;
-    FVoxelInjector::Inject(Asset, GetActorTransform(), World, WorldH, BoundsMin, BoundsMax);
+    FVoxelInjector::Inject(Cells, GetActorTransform(), World, WorldH, BoundsMin, BoundsMax);
 
     VW->TriggerVoxelDestruction(BoundsMin, BoundsMax, Reason, Intensity, SlashDirection);
     Destroy();

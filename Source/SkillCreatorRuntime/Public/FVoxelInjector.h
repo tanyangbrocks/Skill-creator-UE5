@@ -6,16 +6,23 @@
 class FTileWorld3D;
 
 // 執行期體素注入（plan-voxelization.md §八）
-// 將 UVoxelAsset 的 tile 資料注入到 FTileWorld3D（Route B 毀壞時呼叫）
 struct FVoxelInjector
 {
-    // 注入並回傳世界 tile 座標的包圍盒（供後續 TriggerVoxelDestruction 使用）
-    // WorldH：TileWorld->Height（用於 UE5↔Voxel 座標轉換）
+    // 主要路徑：直接傳入解析後的 FVoxelCell 陣列（runtime .vox 載入後使用）
     static void Inject(
-        const UVoxelAsset*   Asset,
-        const FTransform&    WorldTransform,
-        FTileWorld3D*        World,
-        int32                WorldH,
-        FIntVector&          OutBoundsMin,
-        FIntVector&          OutBoundsMax);
+        const TArray<FVoxelCell>& Cells,
+        const FTransform&         WorldTransform,
+        FTileWorld3D*             World,
+        int32                     WorldH,
+        FIntVector&               OutBoundsMin,
+        FIntVector&               OutBoundsMax);
+
+    // 備用路徑：傳入 UVoxelAsset（Editor 預建 DataAsset 時使用）
+    static void Inject(
+        const UVoxelAsset*  Asset,
+        const FTransform&   WorldTransform,
+        FTileWorld3D*       World,
+        int32               WorldH,
+        FIntVector&         OutBoundsMin,
+        FIntVector&         OutBoundsMax);
 };
