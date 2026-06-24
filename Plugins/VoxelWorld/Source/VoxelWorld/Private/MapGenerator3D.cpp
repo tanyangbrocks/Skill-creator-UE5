@@ -227,6 +227,9 @@ void FMapGenerator3D::EnsureChunksAround(FTileWorld3D& World,
 // 主執行緒：套用已算完的 chunk
 // ============================================================
 
+// 樹木生成前向宣告（實作在下方）
+static void PlantTreesForChunk(FTileWorld3D& World, FIntVector CC, int32 Seed);
+
 void FMapGenerator3D::ApplyPendingChunks(FTileWorld3D& World, int32 MaxPerFrame)
 {
     constexpr int32 S = WorldScale::ChunkSize;
@@ -240,11 +243,24 @@ void FMapGenerator3D::ApplyPendingChunks(FTileWorld3D& World, int32 MaxPerFrame)
 
         FChunk3D* C = World.GetOrCreateChunk(CC);
         check(Pending.Cells.Num() == S*S*S);
-        FMemory::Memcpy(C->Cells, Pending.Cells.GetData(), sizeof(C->Cells));
+
+        // 保護已種植的樹木 tile：若現有 tile 是 Wood/Leaves（由鄰居 chunk 的樹已寫入），
+        // 跳過覆寫，避免後生成的地形把跨 chunk 的樹磨掉（決策 3）
+        const uint8 WoodID   = (uint8)EMaterialType::Wood;
+        const uint8 LeavesID = (uint8)EMaterialType::Leaves;
+        for (int32 i = 0; i < S*S*S; ++i)
+        {
+            uint8 ExistingMat = C->Cells[i].MaterialID;
+            if (ExistingMat == WoodID || ExistingMat == LeavesID) continue;
+            C->Cells[i] = Pending.Cells[i];
+        }
 
         // 標記整個 chunk 的 dirty AABB → 觸發 Mesh 重建
         C->MarkDirty(0,   0,   0  );
         C->MarkDirty(S-1, S-1, S-1);
+
+        // 套用後立刻種樹（主執行緒，可跨 chunk 呼叫 SetTile）
+        PlantTreesForChunk(World, CC, WorldSeed);
 
         ++Applied;
     }
@@ -356,6 +372,93 @@ void FMapGenerator3D::EnsureWalkableCavesInChunk(TArray<FTileCell>& Cells)
                     if (ty < 0) break;
                     Cells[lz*S*S + ty*S + lx].MaterialID = 0;
                 }
+            }
+        }
+    }
+}
+
+// ============================================================
+// ============================================================
+// 樹木生成（主執行緒，ApplyPendingChunks 後呼叫，可跨 chunk 寫入）
+// 決策 3：ComputeChunkData 只算地形，樹木在此階段用 SetTile 跨 chunk 放置
+// 決策 4：純 tile，樹幹間距 ≥ 6 tiles，BFS 天然以空氣隔斷——不需 ATreeActor
+// ============================================================
+
+static void PlantTreesForChunk(FTileWorld3D& World, FIntVector CC, int32 Seed)
+{
+    constexpr int32 S       = WorldScale::ChunkSize;
+    constexpr int32 TrunkMin = 5;   // 樹幹最短高度（tile）
+    constexpr int32 TrunkMax = 7;   // 樹幹最長高度
+    constexpr int32 CrownR   = 2;   // 樹冠半徑
+    constexpr int32 CrownH   = 3;   // 樹冠層數（往上）
+    constexpr int32 MinSpacing = 6; // 樹幹間距（保證樹冠不相連，決策 4）
+
+    // 確定性隨機（根據 CC + Seed）
+    uint32 St = (uint32)(CC.X * 1013904223u ^ CC.Z * 1664525u ^ (uint32)Seed ^ 0xF00Du);
+    auto RandU = [&]() -> uint32 { return St = St * 1664525u + 1013904223u; };
+    auto RandN = [&](int32 N) -> int32 { return N > 0 ? (int32)(RandU() % (uint32)N) : 0; };
+    auto RandF = [&]() -> float { return float(RandU() & 0xFFFF) / 65535.f; };
+
+    // 以 MinSpacing 為格距，在此 chunk 的 XZ 格點上嘗試種樹
+    for (int32 lz = 0; lz < S; lz += MinSpacing)
+    for (int32 lx = 0; lx < S; lx += MinSpacing)
+    {
+        // 在格點附近 ±2 tile 隨機偏移，避免規律性排列
+        int32 ox = lx + RandN(MinSpacing);
+        int32 oz = lz + RandN(MinSpacing);
+        if (ox >= S || oz >= S) continue;
+
+        // 20% 機率在此位置嘗試種樹
+        if (RandF() > 0.20f) continue;
+
+        int32 wx = CC.X * S + ox;
+        int32 wz = CC.Z * S + oz;
+
+        // 找地表（從 chunk 頂往下掃，找第一個 Grass tile）
+        int32 SurfaceY = -1;
+        int32 ChunkTopY    = CC.Y * S;
+        int32 ChunkBottomY = ChunkTopY + S - 1;
+        for (int32 wy = ChunkTopY; wy <= ChunkBottomY; ++wy)
+        {
+            if (World.GetTile(wx, wy, wz) == EMaterialType::Grass)
+            {
+                SurfaceY = wy;
+                break;
+            }
+        }
+        if (SurfaceY < 0) continue;  // 此 XZ 在此 chunk 沒有地表
+
+        // 確認樹根上方有足夠空間（最高到 SurfaceY - TrunkMax - CrownH）
+        int32 TrunkH = TrunkMin + RandN(TrunkMax - TrunkMin + 1);
+        int32 TreeTop = SurfaceY - TrunkH - CrownH;
+        if (TreeTop < 0) continue;  // 超出世界頂部
+
+        // 確認所有樹幹格為 Air（避免插進已有的樹/洞穴頂板）
+        bool bClear = true;
+        for (int32 dy = 1; dy <= TrunkH + CrownH && bClear; ++dy)
+        {
+            if (World.GetTile(wx, SurfaceY - dy, wz) != EMaterialType::Air)
+                bClear = false;
+        }
+        if (!bClear) continue;
+
+        // 種樹幹（從 SurfaceY-1 往上 TrunkH tiles）
+        for (int32 dy = 1; dy <= TrunkH; ++dy)
+            World.SetTile(wx, SurfaceY - dy, wz, EMaterialType::Wood);
+
+        // 種樹冠（頂部 CrownH 層，半徑 CrownR 球形）
+        int32 CrownBase = SurfaceY - TrunkH;  // 最底一層樹冠
+        for (int32 cy = 0; cy < CrownH; ++cy)
+        {
+            // 越靠頂端半徑越小：底層 R=2，中層 R=2，頂層 R=1
+            int32 R = (cy == CrownH - 1) ? 1 : CrownR;
+            int32 wy = CrownBase - cy;
+            for (int32 dz = -R; dz <= R; ++dz)
+            for (int32 dx = -R; dx <= R; ++dx)
+            {
+                if (dx*dx + dz*dz > R*R) continue;  // 圓形裁切
+                if (World.GetTile(wx+dx, wy, wz+dz) == EMaterialType::Air)
+                    World.SetTile(wx+dx, wy, wz+dz, EMaterialType::Leaves);
             }
         }
     }
