@@ -160,7 +160,7 @@ bool FNPCBrainTest_PerceptionHazardDiff::RunTest(const FString&)
 {
 	TestTrue(TEXT("Lava 是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Lava));
 	TestTrue(TEXT("Fire 是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Fire));
-	TestFalse(TEXT("Stone 不是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Stone));
+	TestFalse(TEXT("Stone 不是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Stone_Cobble));
 	TestFalse(TEXT("Water 不是危險材質"), FNPCPerceptionLogic::IsHazardMaterial(EMaterialType::Water));
 
 	FNPCWorldSnapshot Prev;

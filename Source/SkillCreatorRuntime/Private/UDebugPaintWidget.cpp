@@ -30,7 +30,7 @@ FString UDebugPaintWidget::MatName(EMaterialType Mat)
     {
         case EMaterialType::Sand:  return TEXT("沙");
         case EMaterialType::Water: return TEXT("水");
-        case EMaterialType::Stone: return TEXT("石");
+        case EMaterialType::Stone_Cobble: return TEXT("石");
         case EMaterialType::Wood:  return TEXT("木");
         case EMaterialType::Fire:  return TEXT("火");
         case EMaterialType::Lava:  return TEXT("岩漿");
@@ -68,7 +68,7 @@ void UDebugPaintWidget::NativeOnInitialized()
 
     // ── 材質按鈕（對應 Godot Main.cs:569-583）────────────────────────
     static const EMaterialType Mats[MatCount] = {
-        EMaterialType::Sand, EMaterialType::Water, EMaterialType::Stone,
+        EMaterialType::Sand, EMaterialType::Water, EMaterialType::Stone_Cobble,
         EMaterialType::Wood, EMaterialType::Fire,  EMaterialType::Lava,
     };
 
@@ -162,7 +162,7 @@ void UDebugPaintWidget::SelectBrush(int32 Radius)
 void UDebugPaintWidget::RefreshHighlight()
 {
     static const EMaterialType Mats[MatCount] = {
-        EMaterialType::Sand, EMaterialType::Water, EMaterialType::Stone,
+        EMaterialType::Sand, EMaterialType::Water, EMaterialType::Stone_Cobble,
         EMaterialType::Wood, EMaterialType::Fire,  EMaterialType::Lava,
     };
     for (int32 i = 0; i < MatCount; ++i)
@@ -185,7 +185,7 @@ void UDebugPaintWidget::RefreshHighlight()
 
 void UDebugPaintWidget::OnMat0Clicked() { SelectMaterial(EMaterialType::Sand);  }
 void UDebugPaintWidget::OnMat1Clicked() { SelectMaterial(EMaterialType::Water); }
-void UDebugPaintWidget::OnMat2Clicked() { SelectMaterial(EMaterialType::Stone); }
+void UDebugPaintWidget::OnMat2Clicked() { SelectMaterial(EMaterialType::Stone_Cobble); }
 void UDebugPaintWidget::OnMat3Clicked() { SelectMaterial(EMaterialType::Wood);  }
 void UDebugPaintWidget::OnMat4Clicked() { SelectMaterial(EMaterialType::Fire);  }
 void UDebugPaintWidget::OnMat5Clicked() { SelectMaterial(EMaterialType::Lava);  }

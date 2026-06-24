@@ -111,7 +111,7 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         if (wy >= Height - 1)
         {
             int32 Idx = lz*S*S + ly*S + lx;
-            OutCells[Idx].MaterialID = (uint8)EMaterialType::Stone;
+            OutCells[Idx].MaterialID = (uint8)EMaterialType::Stone_Cobble;
             continue;
         }
 
@@ -145,11 +145,11 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         }
         else if (wy > EffSurfaceY && wy <= EffSurfaceY + 3)
         {
-            MatID = (uint8)EMaterialType::Dirt;
+            MatID = (uint8)EMaterialType::Dirt_Dry;
         }
         else if (wy > EffSurfaceY + 3)
         {
-            MatID = (uint8)EMaterialType::Stone;
+            MatID = (uint8)EMaterialType::Stone_Cobble;
         }
         // wy < EffSurfaceY → Air（保持 0，上面已處理）
 
@@ -298,7 +298,7 @@ void FMapGenerator3D::PlaceOreVeinsInChunk(TArray<FTileCell>& Cells,
         {
             int32 lx = RandN(S), ly = LYMin + RandN(LYMax - LYMin + 1), lz = RandN(S);
             int32 SI = lz*S*S + ly*S + lx;
-            if (Cells[SI].MaterialID != (uint8)EMaterialType::Stone) continue;
+            if (Cells[SI].MaterialID != (uint8)EMaterialType::Stone_Cobble) continue;
 
             Cells[SI].MaterialID = (uint8)Cfg.Mat;
             int32 Placed = 1;
@@ -316,7 +316,7 @@ void FMapGenerator3D::PlaceOreVeinsInChunk(TArray<FTileCell>& Cells,
                     int32 nx = ix+D[0], ny = iy+D[1], nz = iz+D[2];
                     if ((uint32)nx>=(uint32)S||(uint32)ny>=(uint32)S||(uint32)nz>=(uint32)S) continue;
                     int32 NI = nz*S*S + ny*S + nx;
-                    if (Cells[NI].MaterialID != (uint8)EMaterialType::Stone) continue;
+                    if (Cells[NI].MaterialID != (uint8)EMaterialType::Stone_Cobble) continue;
                     if (RandF() < 0.65f) { Cells[NI].MaterialID = (uint8)Cfg.Mat; BfsQ.Add(NI); ++Placed; }
                 }
             }
@@ -378,7 +378,7 @@ void FMapGenerator3D::AddDecorInChunk(TArray<FTileCell>& Cells, FIntVector CC, i
     for (int32 lx = 0; lx < S; ++lx)
     {
         if (Cells[lz*S*S + ly*S + lx].MaterialID     != 0)                       continue;
-        if (Cells[lz*S*S + (ly-1)*S + lx].MaterialID != (uint8)EMaterialType::Stone) continue;
+        if (Cells[lz*S*S + (ly-1)*S + lx].MaterialID != (uint8)EMaterialType::Stone_Cobble) continue;
         if (RandF() >= 0.04f) continue;
 
         int32 Len = 1 + RandN(3);
@@ -388,7 +388,7 @@ void FMapGenerator3D::AddDecorInChunk(TArray<FTileCell>& Cells, FIntVector CC, i
             if (ty >= S) break;
             int32 TI = lz*S*S + ty*S + lx;
             if (Cells[TI].MaterialID != 0) break;
-            Cells[TI].MaterialID = (uint8)EMaterialType::Stone;
+            Cells[TI].MaterialID = (uint8)EMaterialType::Stone_Cobble;
         }
     }
 
@@ -398,7 +398,7 @@ void FMapGenerator3D::AddDecorInChunk(TArray<FTileCell>& Cells, FIntVector CC, i
     for (int32 lx = 1; lx < S-1; ++lx)
     {
         if (Cells[lz*S*S + ly*S + lx].MaterialID     != 0)                       continue;
-        if (Cells[lz*S*S + (ly+1)*S + lx].MaterialID != (uint8)EMaterialType::Stone) continue;
+        if (Cells[lz*S*S + (ly+1)*S + lx].MaterialID != (uint8)EMaterialType::Stone_Cobble) continue;
         if (RandF() >= 0.03f) continue;
 
         for (int32 dz = -1; dz <= 1; ++dz)

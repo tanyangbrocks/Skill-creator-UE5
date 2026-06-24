@@ -680,7 +680,7 @@ void FTileWorld3D::CheckElementalCaReactions(int32 x, int32 y, int32 z)
 
         // Water（NativeElement） + Dirt 鄰格 → Sand（慢速 0.5%）
         if (MatData.NativeElement == ESkillElementType::Water &&
-            NMat == EMaterialType::Dirt &&
+            NMat == EMaterialType::Dirt_Dry &&
             Rng.GetFraction() < 0.005f)
         {
             // 延遲寫入：在 CA sweep 結束後才套用，避免中途修改鄰格（CA 一致性）
@@ -692,7 +692,7 @@ void FTileWorld3D::CheckElementalCaReactions(int32 x, int32 y, int32 z)
             NData.NativeElement == ESkillElementType::Water &&
             Rng.GetFraction() < 0.03f)
         {
-            CaReactionQueue.Add({x,  y,  z,  EMaterialType::Stone});
+            CaReactionQueue.Add({x,  y,  z,  EMaterialType::Stone_Cobble});
             CaReactionQueue.Add({nx, ny, nz, EMaterialType::Steam});
             return;
         }
@@ -714,7 +714,7 @@ void FTileWorld3D::ApplyElementalImpact(int32 x, int32 y, int32 z, ESkillElement
 
     if (Reaction->Name == TEXT("沸騰"))          // Fire hits Water → Steam
         SetTile(x, y, z, EMaterialType::Steam);
-    else if (Reaction->Name == TEXT("流沙") && Mat == EMaterialType::Dirt)  // Water hits Dirt → Sand
+    else if (Reaction->Name == TEXT("流沙") && Mat == EMaterialType::Dirt_Dry)  // Water hits Dirt → Sand
         SetTile(x, y, z, EMaterialType::Sand);
     else if (Reaction->Name == TEXT("燃燒"))     // Fire hits Wood → ignite
         IgniteMaterial(x, y, z);

@@ -13,9 +13,9 @@ static const FMaterialData GMatData[] =
 {
     // ID  0 — Air
     { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  0,   I::None           },
-    // ID  1 — Stone
+    // ID  1 — Stone_Cobble（圓石，石頭當前唯一子類型）
     { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::FragmentStone, false, EMaterialCategory::Stone, 1.2f },
-    // ID  2 — Dirt
+    // ID  2 — Dirt_Dry（乾泥，泥土當前唯一子類型）
     { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
     // ID  3 — Grass
     { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
@@ -47,6 +47,8 @@ static const FMaterialData GMatData[] =
     { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,2, 2.f,  3.f,  210, I::OreMagicCrystal,false,EMaterialCategory::Ore,  1.5f },
     // ID 17 — Fixture（不可塑形可放置物腳下占位 tile：不可採、無物理模擬，純粹占用標記）
     { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  255, I::None           },
+    // ID 18 — FallenLeaf（落葉 tile：可塑形可放置，可燃，硬度極低）
+    { P::Static, 0.f,  true,  10,  30,  E::Wood,  true,  0.2f,0, 0.1f, 0.f,  210, I::FallenLeaf,    false, EMaterialCategory::Wood,  0.6f },
 };
 
 static constexpr uint8 GMatDataCount = (uint8)(sizeof(GMatData) / sizeof(GMatData[0]));
@@ -96,6 +98,7 @@ static const FLinearColor GMatColors[] =
     FLinearColor(0.60f, 0.40f, 0.20f, 1.f),    // 15: Ore_Copper (copper)
     FLinearColor(0.60f, 0.40f, 1.00f, 0.82f),  // 16: Ore_MagicCrystal (purple)
     FLinearColor(0.40f, 0.40f, 0.45f, 1.f),    // 17: Fixture (slate grey，通常被 Actor mesh 蓋住看不到)
+    FLinearColor(0.55f, 0.38f, 0.12f, 0.82f),  // 18: FallenLeaf (橘褐，半透明)
 };
 
 FLinearColor FMaterialRegistry::GetColor(EMaterialType Mat, uint8 Variant)
@@ -116,10 +119,10 @@ FLinearColor FMaterialRegistry::GetColor(EMaterialType Mat, uint8 Variant)
 // ── 顯示名稱查找表（中文）────────────────────────────────────────────────
 static const TCHAR* const GMatNames[] =
 {
-    TEXT("空氣"),     TEXT("石頭"),   TEXT("泥土"),   TEXT("草地"),   TEXT("沙"),
+    TEXT("空氣"),     TEXT("圓石"),   TEXT("乾泥"),   TEXT("草地"),   TEXT("沙"),
     TEXT("水"),       TEXT("熔岩"),   TEXT("木頭"),   TEXT("樹葉"),   TEXT("鐵礦石"),
     TEXT("金礦石"),   TEXT("火焰"),   TEXT("蒸汽"),   TEXT("灰燼"),   TEXT("煤礦"),
-    TEXT("銅礦石"),   TEXT("魔法水晶"), TEXT("固定物"),
+    TEXT("銅礦石"),   TEXT("魔法水晶"), TEXT("固定物"), TEXT("落葉"),
 };
 
 FText FMaterialRegistry::GetDisplayName(EMaterialType Mat)
@@ -152,22 +155,30 @@ TArray<FItemDrop> FMaterialRegistry::GetDefaultDrops(EMaterialType Mat)
     // 2026-06-23 修復：單格採掘（DestroyReason::Mining）對應 Godot MaterialRegistry.cs:26-50
     // 的 DefaultDrops，掉的是完整方塊（BlockXxx×1），不是碎片——FragmentXxx 只該由
     // SpawnFragments()（材質單位批次換算）產生，本表先前誤填成 Fragment 系列。
-    case EMaterialType::Stone:
+    case EMaterialType::Stone_Cobble:
         Out.Add(FItemDrop(EItemId::BlockStone, 1, 1));
         break;
-    case EMaterialType::Dirt:
+    case EMaterialType::Dirt_Dry:
         Out.Add(FItemDrop(EItemId::BlockDirt, 1, 1));
         break;
     case EMaterialType::Grass:
-        // Godot 沒有 Grass 這個材質（UE5 新增的地表層），沿用 Dirt 同款掉落
-        // （挖開草地本質上拿到的就是底下的土）。
         Out.Add(FItemDrop(EItemId::BlockDirt, 1, 1));
         break;
     case EMaterialType::Sand:
         Out.Add(FItemDrop(EItemId::BlockSand, 1, 1));
         break;
     case EMaterialType::Wood:
-        Out.Add(FItemDrop(EItemId::BlockWood, 1, 1));
+        // 樹幹掉落橡木原木（W-A，原為 BlockWood）
+        Out.Add(FItemDrop(EItemId::OakLog, 1, 1));
+        break;
+    case EMaterialType::Leaves:
+        // 主掉落：落葉；機率掉落：橡木樹苗(5%)、橡木果實(10%)
+        Out.Add(FItemDrop(EItemId::FallenLeaf,  1, 2, 1.0f));
+        Out.Add(FItemDrop(EItemId::OakSapling,  1, 1, 0.05f));
+        Out.Add(FItemDrop(EItemId::OakFruit,    1, 1, 0.10f));
+        break;
+    case EMaterialType::FallenLeaf:
+        Out.Add(FItemDrop(EItemId::FallenLeaf, 1, 1));
         break;
     case EMaterialType::Ash:
         Out.Add(FItemDrop(EItemId::BlockAsh, 1, 1));

@@ -30,7 +30,7 @@ class VOXELWORLD_API UTileMaterialRegistry : public UDataAsset
 {
 	GENERATED_BODY()
 public:
-	// 長度應等於 (int32)EMaterialType::Count（共 17 格）
+	// 長度應等於 (int32)EMaterialType::Count（共 19 格：ID 0-18 + FallenLeaf）
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FTileMaterialEntry> Entries;
 

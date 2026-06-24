@@ -147,8 +147,8 @@ bool FWorldPreflightTest_MineableHasFragment::RunTest(const FString&)
 {
     // 已知的可採礦材質列表（與 GMatData 中 bIsMineable=true 的條目對應）
     const EMaterialType MineableTypes[] = {
-        EMaterialType::Stone,
-        EMaterialType::Dirt,
+        EMaterialType::Stone_Cobble,
+        EMaterialType::Dirt_Dry,
         EMaterialType::Grass,
         EMaterialType::Sand,
         EMaterialType::Wood,

@@ -598,7 +598,7 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
                     int32 tx = Origin.X + FX*d + PX*s;
                     int32 tz = Origin.Z + FZ*d + PZ*s;
                     if (!TW->InBounds(tx, Origin.Y, tz)) continue;
-                    if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone) continue;
+                    if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone_Cobble) continue;
                     bRowBlocked = false;
                     TW->Explode(tx, Origin.Y, tz, 1);
                     if (M.bFire)  SpawnEffectTiles(VW, "fire",  FGridPos(tx, Origin.Y, tz), 1);
@@ -626,10 +626,10 @@ void USpellCaster::ExecuteArea(const FString& Shape, const FSpellSlot& Slot,
                 for (int32 s = -1; s <= 1; ++s)
                 {
                     int32 bx = tx + PX*s, bz = tz + PZ*s;
-                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone)
+                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone_Cobble)
                         TW->SetTile(bx, Origin.Y, bz, (M.bWater || M.bIce) ? EMaterialType::Water : EMaterialType::Fire);
                 }
-                if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone) break;
+                if (TW->GetTile(tx, Origin.Y, tz) == EMaterialType::Stone_Cobble) break;
             }
         }
     }
@@ -701,7 +701,7 @@ void USpellCaster::ExecuteTechnique(const FSpellSlot& Slot, FGridPos Origin,
             {
                 int32 tx = Origin.X + FX*i, tz = Origin.Z + FZ*i;
                 EMaterialType Mat = TW->GetTile(tx, Origin.Y, tz);
-                if (Mat == EMaterialType::Stone) break;
+                if (Mat == EMaterialType::Stone_Cobble) break;
                 TW->SetTile(tx, Origin.Y, tz, (M.bWater || M.bIce) ? EMaterialType::Water : EMaterialType::Fire);
                 if (Mat != EMaterialType::Air) break;
             }
@@ -726,7 +726,7 @@ void USpellCaster::ExecuteTechnique(const FSpellSlot& Slot, FGridPos Origin,
                 for (int32 s = -1; s <= 1; ++s)
                 {
                     int32 bx = tx + PX*s, bz = tz + PZ*s;
-                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone)
+                    if (TW->GetTile(bx, Origin.Y, bz) != EMaterialType::Stone_Cobble)
                         TW->SetTile(bx, Origin.Y, bz, M.bWater ? EMaterialType::Water : EMaterialType::Fire);
                 }
             }
@@ -876,7 +876,7 @@ void USpellCaster::ExecuteSummon(const FSpellSlot& Slot, FGridPos Origin, AVoxel
     {
         if (FTileWorld3D* TW = VW ? VW->GetTileWorld() : nullptr)
             for (int32 dy = -1; dy <= 1; ++dy)
-                TW->SetTile(Sp.X, Sp.Y + dy, Sp.Z, EMaterialType::Stone);
+                TW->SetTile(Sp.X, Sp.Y + dy, Sp.Z, EMaterialType::Stone_Cobble);
     }
     else if (TotemId == "summon_guardian")
     {
@@ -904,7 +904,7 @@ void USpellCaster::ExecuteDomain(const FSpellSlot& Slot, FGridPos Origin, AVoxel
             const int32 tx = Origin.X + (int32)(FMath::Cos(Rad) * 8.f);
             const int32 tz = Origin.Z + (int32)(FMath::Sin(Rad) * 8.f);
             if (TW->InBounds(tx, Origin.Y, tz))
-                TW->SetTile(tx, Origin.Y, tz, EMaterialType::Stone);
+                TW->SetTile(tx, Origin.Y, tz, EMaterialType::Stone_Cobble);
         }
     }
     else if (TotemId == "domain_terrain")

@@ -67,5 +67,11 @@ enum class EItemId : uint8
     // ── 道具（消耗品）────────────────────────────────────────────
     ConsumableBerry,
 
+    // ── 樹木產物（W-A）───────────────────────────────────────────
+    OakLog,         // 橡木原木（樹幹掉落，可放置為 Wood tile，可作加工素材）
+    FallenLeaf,     // 落葉（樹葉掉落，可放置為 FallenLeaf tile，可塑形）
+    OakSapling,     // 橡木樹苗（樹葉機率掉落；random tick 後可生長為橡木）
+    OakFruit,       // 橡木果實（樹葉機率掉落；效果待定）
+
     COUNT UMETA(Hidden),
 };

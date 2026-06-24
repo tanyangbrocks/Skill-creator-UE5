@@ -19,15 +19,15 @@ enum class ETileCategory : uint8
 UENUM(BlueprintType)
 enum class EMaterialType : uint8
 {
-    Air      = 0,
-    Stone    = 1,
-    Dirt     = 2,
-    Grass    = 3,
-    Sand     = 4,
-    Water    = 5,
-    Lava     = 6,
-    Wood     = 7,
-    Leaves   = 8,
+    Air           = 0,
+    Stone_Cobble  = 1,   // 圓石（石頭唯一當前子類型，舊 Stone ID 保留以對齊存檔）
+    Dirt_Dry      = 2,   // 乾泥（泥土唯一當前子類型，舊 Dirt ID 保留以對齊存檔）
+    Grass         = 3,
+    Sand          = 4,
+    Water         = 5,
+    Lava          = 6,
+    Wood          = 7,
+    Leaves        = 8,
     Ore_Iron        =  9,
     Ore_Gold        = 10,
     Fire            = 11,  // Gas（CA 模擬）；CA_State = 倒計時 30-90 frames
@@ -39,6 +39,7 @@ enum class EMaterialType : uint8
     // 不可塑形可放置物的占位 tile（寶箱/工作臺等 PlacedFixtureActor 腳下格，純粹標記占用，
     // 不可採、不影響 Greedy Meshing 顯示——Actor 自己有 mesh，見 docs/plan-item-crafting-system.md §六）
     Fixture         = 17,
+    FallenLeaf      = 18,  // 落葉 tile（可放置可塑形；EItemId::FallenLeaf 物品放回地面即此材質）
     // 繼續追加，不要重編已有 ID
     Count    UMETA(Hidden)
 };

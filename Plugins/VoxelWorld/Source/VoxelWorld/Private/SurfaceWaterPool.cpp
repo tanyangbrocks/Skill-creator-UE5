@@ -90,7 +90,7 @@ bool FSurfaceWaterPool::QueryOverride(const TArray<FPoolDesc>& Pools, int32 Worl
         {
             // 碗緣還沒到水面 → 露出的凹陷土岸
             OutEffectiveY = FloorY;
-            OutMat        = EMaterialType::Dirt;
+            OutMat        = EMaterialType::Dirt_Dry;
         }
         return true;
     }

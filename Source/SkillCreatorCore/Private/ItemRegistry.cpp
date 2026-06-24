@@ -61,8 +61,8 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
     Set(FItemData{});
 
     // 方塊
-    Set(MakeBlock(EItemId::BlockDirt,  INVTEXT("泥土"),  EMaterialType::Dirt));
-    Set(MakeBlock(EItemId::BlockStone, INVTEXT("圓石"),  EMaterialType::Stone));
+    Set(MakeBlock(EItemId::BlockDirt,  INVTEXT("泥土"),  EMaterialType::Dirt_Dry));
+    Set(MakeBlock(EItemId::BlockStone, INVTEXT("圓石"),  EMaterialType::Stone_Cobble));
     // BlockWood＝原木（2026-06-23 改名對齊規格，原值「木材」語意上應該是加工物 MaterialPlank；
     // 原木同時是加工系統的原素材，bIsMaterial/bIsComponent=true）
     Set(MakeMoldablePlaceable(EItemId::BlockWood, INVTEXT("原木"), EMaterialType::Wood));
@@ -100,6 +100,12 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
 
     // 道具（消耗品，左鍵使用）
     Set(MakeConsumable(EItemId::ConsumableBerry, INVTEXT("野莓")));
+
+    // 樹木產物（W-A）
+    Set(MakeMoldablePlaceable(EItemId::OakLog,    INVTEXT("橡木原木"), EMaterialType::Wood));
+    Set(MakeMoldablePlaceable(EItemId::FallenLeaf,INVTEXT("落葉"),     EMaterialType::FallenLeaf));
+    Set(MakeMat(EItemId::OakSapling, INVTEXT("橡木樹苗")));  // 種植效果待 W-G
+    Set(MakeConsumable(EItemId::OakFruit, INVTEXT("橡木果實")));  // 效果待定
 
     // 礦石原材料（J-3：OreCoal/Copper/Iron/Magic 可放回地圖重建礦脈，Godot ItemRegistry.cs:41-44）
     Set(MakeBlock(EItemId::OreCoal,         INVTEXT("煤炭"),   EMaterialType::Ore_Coal));
