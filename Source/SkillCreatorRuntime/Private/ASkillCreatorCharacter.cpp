@@ -139,8 +139,11 @@ void ASkillCreatorCharacter::RebindWorldSystems()
     {
         TWeakObjectPtr<UWorld>            WeakWorld(GetWorld());
         TWeakObjectPtr<AVoxelWorldActor>  WeakVoxelWorld(CachedVoxelWorld);
-        TW->OnTileDestroyed = [WeakWorld, WeakVoxelWorld](int32 x, int32 y, int32 z,
-                                           EMaterialType OldMat, EDestroyReason Reason)
+        // W-C：樹木倒塌狀態旗標（lambda 共享，防止 BFS→DestroyTile 遞迴觸發二次 BFS）
+        TSharedPtr<bool> bInTreeCollapse = MakeShared<bool>(false);
+
+        TW->OnTileDestroyed = [WeakWorld, WeakVoxelWorld, bInTreeCollapse]
+            (int32 x, int32 y, int32 z, EMaterialType OldMat, EDestroyReason Reason)
         {
             UWorld* W = WeakWorld.Get();
             if (!W) return;
@@ -152,6 +155,62 @@ void ASkillCreatorCharacter::RebindWorldSystems()
 
             auto* DropMgr = W->GetSubsystem<UDroppedItemManager>();
             if (!DropMgr) return;
+
+            // W-C：採掘樹幹 → BFS 連帶崩塌整棵樹（純 tile 設計，無 TreeActor）
+            if (OldMat == EMaterialType::Wood && Reason == EDestroyReason::Mining && !(*bInTreeCollapse))
+            {
+                if (AVoxelWorldActor* VW = WeakVoxelWorld.Get())
+                {
+                    if (FTileWorld3D* TileWorld = VW->GetTileWorld())
+                    {
+                        *bInTreeCollapse = true;
+
+                        // BFS：Root 已是 Air，從 6 方向鄰居找連通 Wood/Leaves
+                        TQueue<FIntVector>  BFSQueue;
+                        TSet<FIntVector>    Visited;
+                        const FIntVector    Root(x, y, z);
+                        Visited.Add(Root);
+
+                        static const FIntVector Dirs6[] = {
+                            {1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}
+                        };
+                        for (const FIntVector& D : Dirs6)
+                        {
+                            FIntVector N = Root + D;
+                            EMaterialType NM = TileWorld->GetTile(N.X, N.Y, N.Z);
+                            if ((NM == EMaterialType::Wood || NM == EMaterialType::Leaves) && !Visited.Contains(N))
+                            { Visited.Add(N); BFSQueue.Enqueue(N); }
+                        }
+
+                        TArray<FIntVector> ToRemove;
+                        while (!BFSQueue.IsEmpty())
+                        {
+                            FIntVector Cur; BFSQueue.Dequeue(Cur);
+                            ToRemove.Add(Cur);
+                            for (const FIntVector& D : Dirs6)
+                            {
+                                FIntVector N = Cur + D;
+                                if (Visited.Contains(N)) continue;
+                                EMaterialType NM = TileWorld->GetTile(N.X, N.Y, N.Z);
+                                if (NM == EMaterialType::Wood || NM == EMaterialType::Leaves)
+                                { Visited.Add(N); BFSQueue.Enqueue(N); }
+                            }
+                        }
+
+                        // DestroyTile 觸發遞迴 OnTileDestroyed → bInTreeCollapse=true → 走一般掉落路徑
+                        for (const FIntVector& T : ToRemove)
+                            TileWorld->DestroyTile(T.X, T.Y, T.Z, EDestroyReason::Mining);
+
+                        *bInTreeCollapse = false;
+
+                        // 原始採掘格補掉落（本次 callback 不走下方一般路徑）
+                        DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
+                        return;
+                    }
+                }
+            }
+
+            // 一般掉落路徑（非樹木倒塌，或樹木倒塌期間的遞迴呼叫）
             DropMgr->SpawnForReason(x, y, z, OldMat, Reason);
         };
 
