@@ -140,4 +140,8 @@ private:
     void ExtinguishFire(int32 x, int32 y, int32 z);
     void TryIgniteAround(int32 x, int32 y, int32 z, float Chance);
     bool HasAdjacentMaterial(int32 x, int32 y, int32 z, EMaterialType Mat) const;
+
+    // --- 元素傳播（Phase 2） ---
+    // P-4：Thunder 感電傳播，BFS 沿 ElectricalConductivity > Threshold 的格子擴散
+    void PropagateThunder(int32 x, int32 y, int32 z, float Threshold = 0.3f, int32 MaxSteps = 20);
 };

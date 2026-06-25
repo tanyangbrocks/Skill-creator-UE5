@@ -386,12 +386,12 @@ uint8 DangerFlags = 0;
 
 > 這一步純粹是資料結構，不改任何執行時邏輯，風險最低。
 
-### Phase 2 — 接入高優先邏輯（P-1 ~ P-5）
-5. `FreezeToMaterial`：接入 `ApplyElementalImpact(Ice)`
-6. `MeltToMaterial`：接入 `ApplyElementalImpact(Fire/Lava)`
-7. `LuminanceLevel`：Chunk 建立時對發光格加點光源
-8. `ElectricalConductivity`：Thunder 感電傳播 BFS
-9. `AutoignitionTemp`：`CheckTemperatureEffects()` 周圍溫度掃描
+### Phase 2 ✅ — 接入高優先邏輯（P-1 ~ P-5）
+5. [x] `FreezeToMaterial`：接入 `ApplyElementalImpact(Ice)`
+6. [x] `MeltToMaterial`：接入 `ApplyElementalImpact(Fire)`
+7. [ ] `LuminanceLevel`：Chunk 建立時對發光格加點光源（延後：涉及大量 UPointLightComponent 管理，獨立實作）
+8. [x] `ElectricalConductivity`：`PropagateThunder()` BFS（Threshold=0.3, MaxSteps=20）
+9. [x] `AutoignitionTemp`：`IgniteMaterial` + `TryIgniteAround` 加 AutoignitionTemp 材質支援（AutoignitionTemp≥0 可被引燃；機率 = Chance × max(1, 300/AutoignitionTemp)）
 
 ### Phase 3 — CA 物理細化（P-6 ~ P-11）
 10. 液體流速 / 黏度接入 CPU `UpdateLiquid()`

@@ -420,16 +420,26 @@ void FTileWorld3D::Tick(int32 ActiveCX, int32 ActiveCY, int32 ActiveCZ, int32 Si
             int32 wy = CC.Y * FChunk3D::Size + ly;
             int32 wz = CC.Z * FChunk3D::Size + lz;
 
-            // GPU zone 內的 Powder/Liquid 這幀已經由 TickGpuZone() 算過，CPU 不要重算一次
-            // （否則同一格被 CPU/GPU 各動一次，行為打架）。Gas/Static 維持全 CPU——GPU
-            // shader 只做 Margolus 重力，火/蒸汽/燃燒等化學反應不在 GPU 範圍內。
+            // GPU zone 內的 Powder/Liquid 移動已由 TickGpuZone() 算過，CPU 不重算移動。
+            // 但 Lava 的點火（TryIgniteAround）與元素 CA 反應（CheckElementalCaReactions）
+            // 是化學反應，GPU shader 不負責，GPU zone 內仍要跑 CPU 版（Godot TileWorld3D.cs:287-288）。
             switch (FMaterialRegistry::GetPhysics(Cell.MaterialID))
             {
                 case EPhysicsCategory::Powder:
                     if (!InGpuZone(wx, wy, wz)) UpdatePowder(wx, wy, wz);
                     break;
                 case EPhysicsCategory::Liquid:
-                    if (!InGpuZone(wx, wy, wz)) UpdateLiquid(wx, wy, wz);
+                    if (!InGpuZone(wx, wy, wz))
+                    {
+                        UpdateLiquid(wx, wy, wz);
+                    }
+                    else if (static_cast<EMaterialType>(Cell.MaterialID) == EMaterialType::Lava
+                             && Frame % 3 == 0)
+                    {
+                        // GPU zone 內 Lava：僅執行點火 + 元素反應（移動由 GPU 負責）
+                        TryIgniteAround(wx, wy, wz, 0.1f);
+                        CheckElementalCaReactions(wx, wy, wz);
+                    }
                     break;
                 case EPhysicsCategory::Gas:    UpdateGas(wx, wy, wz);    break;
                 case EPhysicsCategory::Static: UpdateStatic(wx, wy, wz); break;
@@ -470,8 +480,8 @@ bool FTileWorld3D::TryMove(int32 fx, int32 fy, int32 fz, int32 tx, int32 ty, int
     bool bPassable = false;
     if (ToCell.MaterialID == 0)  // Air
         bPassable = true;
-    else if (FromData.Physics == EPhysicsCategory::Liquid &&
-             ToData.Physics   == EPhysicsCategory::Liquid)
+    else if (ToData.Physics == EPhysicsCategory::Liquid)
+        // Godot TileWorld3D.cs:357-359：目標是 Liquid 且移入方比目標重 → 可取代（含 Powder 沉水）
         bPassable = (FromData.Density > ToData.Density);
 
     if (!bPassable || IsOccupied(tx, ty, tz) || IsUpdated(tx, ty, tz))
@@ -610,8 +620,11 @@ void FTileWorld3D::IgniteMaterial(int32 x, int32 y, int32 z)
 {
     FTileCell Cell = GetCell(x, y, z);
     const FMaterialData& Data = FMaterialRegistry::Get(static_cast<EMaterialType>(Cell.MaterialID));
-    if (!Data.bFlammable || Cell.CA_State > 0) return;
-    Cell.CA_State = static_cast<uint8>(Rng.RandRange(Data.BurnMin, Data.BurnMax));
+    // P-1: AutoignitionTemp >= 0 的材質也可被引燃（即使 bFlammable=false，如 Grass）
+    if ((!Data.bFlammable && Data.AutoignitionTemp < 0.f) || Cell.CA_State > 0) return;
+    int32 Min = Data.bFlammable ? Data.BurnMin : 10;
+    int32 Max = Data.bFlammable ? Data.BurnMax : 30;
+    Cell.CA_State = static_cast<uint8>(Rng.RandRange(Min, Max));
     WriteCell(x, y, z, Cell);
 }
 
@@ -627,8 +640,19 @@ void FTileWorld3D::TryIgniteAround(int32 x, int32 y, int32 z, float Chance)
     constexpr int32 Dy[] = { 0, 0, 1,-1, 0, 0};
     constexpr int32 Dz[] = { 0, 0, 0, 0, 1,-1};
     for (int32 i = 0; i < 6; ++i)
-        if (Rng.FRand() < Chance)
-            IgniteMaterial(x + Dx[i], y + Dy[i], z + Dz[i]);
+    {
+        int32 NX = x+Dx[i], NY = y+Dy[i], NZ = z+Dz[i];
+        // P-1: AutoignitionTemp — 低自燃溫度材質用更高機率被引燃（Grass 180°C >> 3×Chance）
+        float AdjChance = Chance;
+        if (InBounds(NX, NY, NZ))
+        {
+            const FMaterialData& ND = FMaterialRegistry::Get(GetTile(NX, NY, NZ));
+            if (!ND.bFlammable && ND.AutoignitionTemp >= 0.f)
+                AdjChance = Chance * FMath::Max(1.f, 300.f / FMath::Max(1.f, ND.AutoignitionTemp));
+        }
+        if (Rng.FRand() < AdjChance)
+            IgniteMaterial(NX, NY, NZ);
+    }
 }
 
 bool FTileWorld3D::HasAdjacentMaterial(int32 x, int32 y, int32 z, EMaterialType Mat) const
@@ -787,19 +811,76 @@ void FTileWorld3D::ApplyElementalImpact(int32 x, int32 y, int32 z, ESkillElement
 
     EMaterialType Mat = GetTile(x, y, z);
     const FMaterialData& TileData = FMaterialRegistry::Get(Mat);
+
+    // P-3: FreezeToMaterial — Ice 元素命中時直接轉換（優先於反應表）
+    if (ImpactElement == ESkillElementType::Ice
+        && TileData.FreezeToMaterial != EMaterialType::Air)
+    {
+        SetTile(x, y, z, TileData.FreezeToMaterial);
+        return;
+    }
+
+    // P-2: MeltToMaterial — Fire 元素命中時直接轉換（優先於反應表）
+    if (ImpactElement == ESkillElementType::Fire
+        && TileData.MeltToMaterial != EMaterialType::Air)
+    {
+        SetTile(x, y, z, TileData.MeltToMaterial);
+        return;
+    }
+
+    // P-4: Thunder — 感電傳播 BFS（不中斷，繼續查反應表）
+    if (ImpactElement == ESkillElementType::Thunder)
+        PropagateThunder(x, y, z);
+
     ESkillElementType TileElem = TileData.NativeElement;
     if (TileElem == ESkillElementType::None) return;
 
     const FReactionDef* Reaction = FElementalReactionTable::Lookup(ImpactElement, TileElem);
     if (!Reaction) return;
 
-    if (Reaction->Name == TEXT("沸騰"))          // Fire hits Water → Steam
+    if (Reaction->Name == TEXT("沸騰"))                          // Fire+Water → Steam
         SetTile(x, y, z, EMaterialType::Steam);
-    else if (Reaction->Name == TEXT("流沙") && Mat == EMaterialType::Dirt_Dry)  // Water hits Dirt → Sand
+    else if (Reaction->Name == TEXT("流沙") && Mat == EMaterialType::Dirt_Dry)  // Water+Earth → Sand
         SetTile(x, y, z, EMaterialType::Sand);
-    else if (Reaction->Name == TEXT("燃燒"))     // Fire hits Wood → ignite
+    else if (Reaction->Name == TEXT("燃燒"))                    // Fire+Wood → ignite
         IgniteMaterial(x, y, z);
-    // 其餘反應（W-3b 待填）：CA 效果保留給未來里程碑
+    else if (Reaction->Name == TEXT("熔爐"))                    // Fire+Metal → Lava（W-3b）
+        SetTile(x, y, z, EMaterialType::Lava);
+}
+
+// P-4: Thunder 感電傳播 BFS — 沿 ElectricalConductivity > Threshold 的鄰格擴散
+void FTileWorld3D::PropagateThunder(int32 x, int32 y, int32 z, float Threshold, int32 MaxSteps)
+{
+    struct FThunderCell { int32 X, Y, Z; };
+    TArray<FThunderCell> Queue;
+    TSet<FIntVector> Visited;
+
+    Queue.Add({x, y, z});
+    Visited.Add({x, y, z});
+
+    constexpr int32 Dx[] = { 1,-1, 0, 0, 0, 0};
+    constexpr int32 Dy[] = { 0, 0, 1,-1, 0, 0};
+    constexpr int32 Dz[] = { 0, 0, 0, 0, 1,-1};
+
+    int32 Steps = 0;
+    while (Queue.Num() > 0 && Steps < MaxSteps)
+    {
+        FThunderCell Cur = Queue[0];
+        Queue.RemoveAt(0, 1, false);
+        ++Steps;
+
+        const FMaterialData& D = FMaterialRegistry::Get(GetTile(Cur.X, Cur.Y, Cur.Z));
+        if (D.ElectricalConductivity < Threshold) continue;
+
+        for (int32 i = 0; i < 6; ++i)
+        {
+            int32 NX = Cur.X + Dx[i], NY = Cur.Y + Dy[i], NZ = Cur.Z + Dz[i];
+            FIntVector Key{NX, NY, NZ};
+            if (!InBounds(NX, NY, NZ) || Visited.Contains(Key)) continue;
+            Visited.Add(Key);
+            Queue.Add({NX, NY, NZ});
+        }
+    }
 }
 
 // ============================================================
