@@ -5,6 +5,7 @@
 #include "UDroppedItemManager.h"
 #include "ItemId.h"
 #include "GridPos.h"
+#include "WorldScale.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -14,8 +15,24 @@ AWeedEntity::AWeedEntity()
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
     RootComponent = MeshComp;
-    // 網格由 Content Browser 的 BP_WeedEntity 設定；C++ 只建立 slot
     MeshComp->SetCollisionProfileName(TEXT("OverlapAll"));
+
+    // 佔位網格：引擎內建 Plane（100×100 cm）；縮放成 0.4 tile 大小的矮草形狀
+    // 未來有專用草地 Mesh 時，直接替換此路徑或在 BP_WeedEntity 覆寫 MeshComp mesh
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneFinder(
+        TEXT("/Engine/BasicShapes/Plane.Plane"));
+    if (PlaneFinder.Succeeded())
+    {
+        MeshComp->SetStaticMesh(PlaneFinder.Object);
+        // Plane 預設 100cm 見方；縮放到 0.4 tile × 0.4 tile（雜草約半格寬）
+        const float TileSize = WorldScale::TileSizeCm;
+        const float S = TileSize * 0.4f / 100.f;
+        // Plane 預設朝 +Z；旋轉 90° 使其立起（朝 +X 方向）讓草看起來是豎立的
+        MeshComp->SetRelativeRotation(FRotator(90.f, 0.f, 0.f));
+        MeshComp->SetRelativeScale3D(FVector(S, S, S));
+        // 草根對齊地表（tile 頂面）：Plane 旋轉後中心在地表上方 TileSize*0.4*0.5 處
+        MeshComp->SetRelativeLocation(FVector(0.f, 0.f, TileSize * 0.2f));
+    }
 }
 
 void AWeedEntity::BeginPlay()
