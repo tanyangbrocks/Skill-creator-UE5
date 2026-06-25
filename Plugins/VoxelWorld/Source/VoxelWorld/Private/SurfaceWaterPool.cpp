@@ -55,11 +55,12 @@ void FSurfaceWaterPool::Initialize(int32 Seed, int32 WorldWidth, int32 WorldHeig
 void FSurfaceWaterPool::Prepare(const TFunction<int32(int32, int32)>& GetHeight)
 {
     // 以各池中心的自然高度固定水面 Y（對應 Godot Prepare() 70-75 行）。
-    // UE5 Y 增大 = 向下，故水面比中心地表「加深」(1-WaterFill) 比例（Godot Y-up 為「減」）。
+    // Godot(Y-up): WaterSurface = naturalH - MaxDepth * WaterFill
+    // UE5(Y-down): WaterSurfaceY = CenterH + MaxDepth * WaterFill（向下=加）
     for (FPoolDesc& P : Pools)
     {
         const int32 CenterH = GetHeight(P.CX, P.CZ);
-        P.WaterSurfaceY = CenterH + FMath::RoundToInt(P.MaxDepth * (1.f - WaterFill));
+        P.WaterSurfaceY = CenterH + FMath::RoundToInt(P.MaxDepth * WaterFill);
     }
 }
 

@@ -79,25 +79,23 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ### B-1 Godot Y-up → UE5 Y-down 符號反轉（座標公式）
 
-**風險**：Godot 用 Y-up（Y 增大 = 向上），UE5 用 Y-down（Y 增大 = 向下）。移植時加減號若未全部反轉，地形計算/水池碗形/碰撞高度會方向錯誤但不報錯。
+**2026-06-25 掃描結果**：
+- `SurfaceWaterPool::QueryOverride()` — 碗形公式 ✓（BowlDepth/FloorY 符號正確）
+- `SurfaceWaterPool::Prepare()` — **FIXED**: 水面 Y 公式用了 `(1-WaterFill)` 而非 `WaterFill`；Godot: `naturalH - MaxDepth*WaterFill`，UE5 正確: `CenterH + MaxDepth*WaterFill`，修前水池只有 30% 滿而非 70%
+- `FMapGenerator3D::GetHeightAt()`/`WorldScale::TileToWorld()` — 地形上已正確使用，沿用既有修正
 
-**高風險位置**：
-- `SurfaceWaterPool::QueryOverride()` — 碗形水面公式
-- `FMapGenerator3D::GetHeightAt()` — 地表 Y 回傳值
-- `WorldScale::TileToWorld()` — tile 座標轉世界座標的 Y 偏移
-
-**確認方式**：對照 Godot `SurfaceWaterPool.cs` / `MapGenerator3D.cs`，逐行比對有號數計算，加減號確認反轉。
+**確認方式（未來新增高度公式時）**：對照 Godot `SurfaceWaterPool.cs`/`MapGenerator3D.cs`，逐行比對有號數計算，Godot `-=X` 在 UE5 改 `+=X`。
 
 ---
 
 ### B-2 Delegate 有廣播但無訂閱者（或反過來）
 
-**風險**：廣播端 `Broadcast()` 跟訂閱端 `AddUObject()` 可能在不同 session 完成，沒有人確認兩邊接上。廣播出去但無人接收 = 功能靜默失效。
-
-**高風險 delegate**：
-- `AVoxelWorldActor::OnExplosionComplete`
-- `AVoxelWorldActor::OnVoxelDestructionComplete`
-- `UNPCBrainSubsystem` 的回應 callback
+**2026-06-25 掃描結果**：
+- `OnExplosionComplete` ✓ — 廣播 AVoxelWorldActor.cpp:147，訂閱 UDroppedItemManager.cpp:16 AddUObject
+- `OnVoxelDestructionComplete` ✓ — 廣播 AVoxelWorldActor.cpp:292，訂閱 UDroppedItemManager.cpp:17 AddUObject
+- `OnHpChanged` — 無訂閱者，但 HUD 從 `ASkillCreatorHUD::DrawHUD()` 每幀 polling，不需要 delegate → 正常
+- `OnAttackHit` / `OnParrySuccess` — 無訂閱者；核心功能 inline 完成（不靠 delegate），此 delegate 供未來 on-hit 咒語效果掛鉤，目前尚未實作訂閱端 → 不是現時 bug
+- `OnServerReady` — 廣播存在，無訂閱者；ANPCCharacter::TriggerDialogue 同步呼叫 IsReady() 不依賴此 delegate → 不是現時 bug
 
 **確認方式**：對每個 multicast delegate，分別 grep `Broadcast(` 和 `AddUObject(` / `AddDynamic(`，確認訂閱者存在且 lifetime 合理。
 
@@ -121,4 +119,4 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ---
 
-*最後更新：2026-06-25（A-1~A-4 全掃，修復 A-3 ANPCCharacter Disposition 漏存快照 bug）*
+*最後更新：2026-06-25（A-1~A-4 全掃修復 A-3；B-1 掃描修復 SurfaceWaterPool WaterFill 符號錯誤；B-2 掃描 delegate 全部正常）*
