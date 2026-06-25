@@ -59,7 +59,8 @@ private:
     UPROPERTY()
     TObjectPtr<class UBlockEditorWidget> BlockEditorWidget;
     bool bBlockEditorOpen = false;
-    bool bSpellListSlotClickBound = false; // SpellListPanel->OnSlotClicked 只需綁一次
+    bool bSpellListSlotClickBound   = false; // SpellListWidget->OnSlotClicked 只需綁一次
+    bool bPlayerPanelWasOpenBefore  = false; // BlockEditor 開啟前 PlayerPanel 是否可見
     void OpenBlockEditorForSlot(int32 SlotIndex);
     void OnBlockEditorSave(const FString& SpellName, int32 SlotIndex);
     void OnBlockEditorClosed();

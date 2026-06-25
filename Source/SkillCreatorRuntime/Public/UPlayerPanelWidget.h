@@ -34,8 +34,9 @@ public:
                          int32 Level, const FString& TierName,
                          const class UEquipmentComponent* Equip);
 
-    // SpellList delegate 綁定（Stage 3 由 PlayerController 呼叫一次）
-    USpellListWidget* GetSpellListWidget() const { return SpellListContent; }
+    // 供 PlayerController / HUD 一次性綁定 delegate
+    USpellListWidget*       GetSpellListWidget()   const { return SpellListContent;  }
+    UPlayerSettingsWidget*  GetSettingsWidget()    const { return SettingsContent;   }
 
 protected:
     virtual void NativeOnInitialized() override;

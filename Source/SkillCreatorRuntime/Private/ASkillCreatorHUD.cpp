@@ -6,6 +6,7 @@
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
 #include "UPlayerPanelWidget.h"
+#include "UPlayerSettingsWidget.h"
 #include "USettingsWidget.h"
 #include "UShapeMenuWidget.h"
 #include "USpellGroupWidget.h"
@@ -194,6 +195,15 @@ void ASkillCreatorHUD::BeginPlay()
         // 填滿視窗（與 UBlockEditorWidget 相同做法）
         PlayerPanel->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
         PlayerPanel->SetAlignmentInViewport(FVector2D::ZeroVector);
+        // 設定子面板 delegate（對應舊 SettingsPanel 的綁定）
+        if (UPlayerSettingsWidget* SW = PlayerPanel->GetSettingsWidget())
+        {
+            SW->OnHoldToPlaceChanged.BindLambda(
+                [this](bool b){ bHoldToPlace = b; });
+            SW->OnPerfectRemoveChanged.BindLambda(
+                [this](bool b){ bPerfectRemove = b; });
+            SW->SyncState(bHoldToPlace, bPerfectRemove);
+        }
     }
 
     // Settings（保留供 internal 用途；鍵位不再直接綁 B 鍵）

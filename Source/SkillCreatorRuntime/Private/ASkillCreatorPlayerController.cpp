@@ -293,12 +293,15 @@ void ASkillCreatorPlayerController::OnOpenEditor()
 }
 
 // 對應 Godot Main.cs:1794-1799 OnListActiveSpellClicked：圓球列表裡點擊主動技能槽位
-// → 隱藏列表、開啟積木編輯器編輯該槽位。
+// → 隱藏 PlayerPanel、開啟積木編輯器編輯該槽位。
 void ASkillCreatorPlayerController::OnSpellListSlotClicked(int32 SlotIndex)
 {
-    ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>();
-    if (HUD && HUD->SpellListPanel)
-        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
+    if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+    {
+        bPlayerPanelWasOpenBefore =
+            HUD->PlayerPanel && HUD->PlayerPanel->GetVisibility() == ESlateVisibility::Visible;
+        if (HUD->PlayerPanel) HUD->PlayerPanel->SetVisibility(ESlateVisibility::Collapsed);
+    }
     OpenBlockEditorForSlot(SlotIndex);
 }
 
@@ -338,7 +341,17 @@ void ASkillCreatorPlayerController::OnBlockEditorClosed()
     if (BlockEditorWidget)
         BlockEditorWidget->SetVisibility(ESlateVisibility::Hidden);
     bBlockEditorOpen = false;
-    SetShowMouseCursor(bCursorMode);  // 面板關閉後恢復 Shift 游標模式的狀態
+
+    // 若進入 BlockEditor 前 PlayerPanel 是開著的，關閉編輯器後恢復（SpellEditor Tab 仍選中）
+    if (bPlayerPanelWasOpenBefore)
+    {
+        bPlayerPanelWasOpenBefore = false;
+        if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+            if (HUD->PlayerPanel)
+                HUD->PlayerPanel->SetVisibility(ESlateVisibility::Visible);
+    }
+
+    SetShowMouseCursor(bCursorMode);
     SetInputMode(FInputModeGameAndUI());
 }
 
@@ -365,7 +378,45 @@ void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, 
 
 void ASkillCreatorPlayerController::OnOpenPlayerPanel()
 {
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->TogglePlayerPanel();
+    ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>();
+    if (!HUD || !HUD->PlayerPanel) return;
+
+    // SpellList delegate 一次性綁定（移自舊 OnOpenEditor()）
+    if (!bSpellListSlotClickBound)
+    {
+        if (USpellListWidget* SpellList = HUD->PlayerPanel->GetSpellListWidget())
+        {
+            SpellList->OnSlotClicked.BindUObject(
+                this, &ASkillCreatorPlayerController::OnSpellListSlotClicked);
+
+            SpellList->OnAddSpellRequested.BindLambda([this]()
+            {
+                ASkillCreatorCharacter* Char = GetPawn()
+                    ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+                if (!Char || !Char->SpellCasterComp) return;
+                const FSpellLoadout& Loadout =
+                    Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
+                int32 EmptySlot = -1;
+                for (int32 i = 0; i < FSpellLoadout::MaxSlots; ++i)
+                {
+                    if (!Loadout.Slots.IsValidIndex(i) || !Loadout.Slots[i].IsValid())
+                    { EmptySlot = i; break; }
+                }
+                if (EmptySlot < 0) return;
+                // 開 BlockEditor 前先隱藏 PlayerPanel
+                if (ASkillCreatorHUD* H = GetHUD<ASkillCreatorHUD>())
+                {
+                    bPlayerPanelWasOpenBefore =
+                        H->PlayerPanel && H->PlayerPanel->GetVisibility() == ESlateVisibility::Visible;
+                    if (H->PlayerPanel) H->PlayerPanel->SetVisibility(ESlateVisibility::Collapsed);
+                }
+                OpenBlockEditorForSlot(EmptySlot);
+            });
+            bSpellListSlotClickBound = true;
+        }
+    }
+
+    HUD->TogglePlayerPanel();
 }
 
 void ASkillCreatorPlayerController::OnOpenInventoryAndEquipment()

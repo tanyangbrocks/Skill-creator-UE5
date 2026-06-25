@@ -300,9 +300,42 @@ void UPlayerPanelWidget::BuildContentArea(UVerticalBox* Root)
 
 void UPlayerPanelWidget::CreateSubWidgets()
 {
-    // Stage 3 填入；Stage 2 此處為空
-    // UStatsWidget / USpellListWidget / UOccupationWidget / UInnerWorldWidget
-    // 分別用 CreateWidget<T>(GetOwningPlayer(), T::StaticClass()) 建立並加入對應 PageContainer
+    APlayerController* PC = GetOwningPlayer();
+    if (!PC) return;
+
+    // 建立各 Tab 的子 Widget，塞進對應的 PageContainer
+    // Tab 0: 個人資訊面板
+    StatsContent = CreateWidget<UStatsWidget>(PC, UStatsWidget::StaticClass());
+    if (StatsContent && PageContainers.IsValidIndex(0))
+        PageContainers[0]->SetContent(StatsContent);
+
+    // Tab 1: 職業能力（空白佔位）
+    OccupationContent = CreateWidget<UOccupationWidget>(PC, UOccupationWidget::StaticClass());
+    if (OccupationContent && PageContainers.IsValidIndex(1))
+        PageContainers[1]->SetContent(OccupationContent);
+
+    // Tab 2: 技能創建空間
+    SpellListContent = CreateWidget<USpellListWidget>(PC, USpellListWidget::StaticClass());
+    if (SpellListContent && PageContainers.IsValidIndex(2))
+        PageContainers[2]->SetContent(SpellListContent);
+
+    // Tab 3: 內部空間（空白佔位）
+    InnerWorldContent = CreateWidget<UInnerWorldWidget>(PC, UInnerWorldWidget::StaticClass());
+    if (InnerWorldContent && PageContainers.IsValidIndex(3))
+        PageContainers[3]->SetContent(InnerWorldContent);
+
+    // 引導 / 圖鑑 / 設定（全版頁面）
+    GuideContent = CreateWidget<UGuideWidget>(PC, UGuideWidget::StaticClass());
+    if (GuideContent && PageContainers.IsValidIndex(4))
+        PageContainers[4]->SetContent(GuideContent);
+
+    CompendiumContent = CreateWidget<UCompendiumWidget>(PC, UCompendiumWidget::StaticClass());
+    if (CompendiumContent && PageContainers.IsValidIndex(5))
+        PageContainers[5]->SetContent(CompendiumContent);
+
+    SettingsContent = CreateWidget<UPlayerSettingsWidget>(PC, UPlayerSettingsWidget::StaticClass());
+    if (SettingsContent && PageContainers.IsValidIndex(6))
+        PageContainers[6]->SetContent(SettingsContent);
 }
 
 // ── 頁面切換 ──────────────────────────────────────────────────────────────
@@ -331,6 +364,10 @@ void UPlayerPanelWidget::SwitchPage(EPage Page)
     // 切換內容
     if (ContentAreaBorder && PageContainers.IsValidIndex((int32)Page))
         ContentAreaBorder->SetContent(PageContainers[(int32)Page]);
+
+    // 切換到技能創建空間時刷新圓球列表
+    if (Page == EPage::SpellEditor && SpellListContent)
+        SpellListContent->RefreshSpellList();
 
     // 更新 Tab 底線高亮
     UpdateTabHighlight();
