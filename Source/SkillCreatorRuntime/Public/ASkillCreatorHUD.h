@@ -7,6 +7,7 @@
 #include "MaterialType.h"
 #include "ASkillCreatorHUD.generated.h"
 
+class UPlayerPanelWidget;
 class USettingsWidget;
 class UShapeMenuWidget;
 class USpellGroupWidget;
@@ -37,6 +38,10 @@ public:
     TObjectPtr<UPlayerHUDWidget> HUDWidget;
 
     // ── 面板 widget（開關式面板）────────────────────────────────────
+    // G 鍵主面板（Stage 2+）
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UPlayerPanelWidget> PlayerPanel;
+
     UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
     TObjectPtr<USettingsWidget>   SettingsPanel;
 
@@ -91,6 +96,10 @@ public:
     bool bMouseOverHotbar = false;
 
     // ── 面板開關 API（PlayerController 呼叫）────────────────────────
+    // 2026-06-25 整合：G → TogglePlayerPanel；R → ToggleInventoryAndEquipment
+    void TogglePlayerPanel();           // G 鍵；Stage 2 完成前為 stub
+    void ToggleInventoryAndEquipment(); // R 鍵：物品欄 + 裝備欄同時開關
+    // 下列方法保留供內部邏輯呼叫（寶箱開啟、Stage 7 清理前保持不刪）
     void ToggleSettings();
     void ToggleShapeMenu();
     void ToggleSpellGroup();

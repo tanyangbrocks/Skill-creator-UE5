@@ -64,13 +64,12 @@ private:
     void OnBlockEditorSave(const FString& SpellName, int32 SlotIndex);
     void OnBlockEditorClosed();
     void OnSpellListSlotClicked(int32 SlotIndex);
-    // 面板開關（2026-06-23 鍵位重整後）
-    void OnOpenSettings();       // B
-    void OnOpenShapeMenu();      // N
-    void OnOpenInventory();      // R（was Z）
-    void OnOpenEquipment();      // T（was X）
-    void OnOpenStats();          // G（was C）
-    // OnOpenEditor 已在上方宣告（V，was E；原本 V 的技能組切換移至編輯器面板 UI）
+    // 面板開關（2026-06-25 玩家面板整合後）
+    void OnOpenPlayerPanel();           // G → UPlayerPanelWidget（含 Stats / SpellEditor 等 Tab）
+    void OnOpenInventoryAndEquipment(); // R → 物品欄 + 裝備欄同時開關
+    void OnOpenShapeMenu();             // N
+    // OnOpenEditor 保留供 SpellList 綁定邏輯使用（Stage 3 移入 UPlayerPanelWidget 後刪除）
+    // V / B / T 已無預設鍵位
 
     // 動作快捷鍵（plan-player-actions.md）
     void OnUsePotion();           // Q — S-6 服用所有藥水袋（PotionBagComp->UseAllBags）

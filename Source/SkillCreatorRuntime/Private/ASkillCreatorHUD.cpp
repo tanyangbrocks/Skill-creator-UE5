@@ -5,6 +5,7 @@
 #include "UCharacterStateComponent.h"
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
+#include "UPlayerPanelWidget.h"
 #include "USettingsWidget.h"
 #include "UShapeMenuWidget.h"
 #include "USpellGroupWidget.h"
@@ -54,6 +55,59 @@ static void TogglePanel(UWidget* W)
                  || W->GetVisibility() == ESlateVisibility::SelfHitTestInvisible
                  || W->GetVisibility() == ESlateVisibility::HitTestInvisible;
     W->SetVisibility(bVisible ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+}
+
+void ASkillCreatorHUD::TogglePlayerPanel()
+{
+    if (!PlayerPanel) return;
+    const bool bWasVisible = PlayerPanel->GetVisibility() == ESlateVisibility::Visible;
+    if (!bWasVisible)
+    {
+        PlayerPanel->SetVisibility(ESlateVisibility::Visible);
+        if (APlayerController* PC = GetOwningPlayerController())
+        {
+            PC->SetShowMouseCursor(true);
+            PC->SetInputMode(FInputModeGameAndUI());
+        }
+    }
+    else
+    {
+        PlayerPanel->SetVisibility(ESlateVisibility::Collapsed);
+        if (APlayerController* PC = GetOwningPlayerController())
+        {
+            // 關閉後恢復遊戲輸入（PlayerController 的 bCursorMode 由 ToggleCursorMode 管理，
+            // 這裡只確保 GameAndUI 模式讓 HUD 滑鼠事件不殘留）
+            PC->SetShowMouseCursor(false);
+            PC->SetInputMode(FInputModeGameAndUI());
+        }
+    }
+}
+
+void ASkillCreatorHUD::ToggleInventoryAndEquipment()
+{
+    // 以 InventoryPanel 可見性為準決定開或關
+    const bool bCurrentlyVisible = InventoryPanel &&
+        InventoryPanel->GetVisibility() == ESlateVisibility::Visible;
+
+    if (!bCurrentlyVisible)
+    {
+        ASkillCreatorCharacter* Char = GetOwningPlayerController()
+            ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
+        if (Char)
+        {
+            if (InventoryPanel && Char->InventoryComp)
+                InventoryPanel->Refresh(Char->InventoryComp);
+            if (EquipmentPanel && Char->EquipmentComp)
+                EquipmentPanel->Refresh(Char->EquipmentComp);
+        }
+        if (InventoryPanel) InventoryPanel->SetVisibility(ESlateVisibility::Visible);
+        if (EquipmentPanel) EquipmentPanel->SetVisibility(ESlateVisibility::Visible);
+    }
+    else
+    {
+        if (InventoryPanel) InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
+        if (EquipmentPanel) EquipmentPanel->SetVisibility(ESlateVisibility::Collapsed);
+    }
 }
 
 void ASkillCreatorHUD::ToggleSettings()
@@ -133,7 +187,16 @@ void ASkillCreatorHUD::BeginPlay()
 
     // ── 面板 widget ────────────────────────────────────────────────────
 
-    // Settings
+    // PlayerPanel（G 鍵：4 Tab + 引導/圖鑑/設定）
+    PlayerPanel = CreatePanel<UPlayerPanelWidget>();
+    if (PlayerPanel)
+    {
+        // 填滿視窗（與 UBlockEditorWidget 相同做法）
+        PlayerPanel->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+        PlayerPanel->SetAlignmentInViewport(FVector2D::ZeroVector);
+    }
+
+    // Settings（保留供 internal 用途；鍵位不再直接綁 B 鍵）
     SettingsPanel = CreatePanel<USettingsWidget>();
     if (SettingsPanel)
     {
@@ -334,6 +397,15 @@ void ASkillCreatorHUD::DrawHUD()
     HUDWidget->UpdateManaSlots(Char->ActiveManaSlots);
 
     // ── 面板資料（若可見才刷新，避免不必要 CPU）─────────────────────
+    // PlayerPanel Stats Tab（Stage 3 起 StatsContent 接上後才真正有效）
+    if (PlayerPanel && PlayerPanel->GetVisibility() == ESlateVisibility::Visible)
+        PlayerPanel->RefreshStatsTab(
+            Char->Stats,
+            Char->CurrentHp, Char->Stats.MaxHpBase,
+            Char->CurrentMp, Char->Stats.MaxMpBase,
+            Char->Level, Char->GetTierName(Char->Level),
+            Char->EquipmentComp);
+    // 保留舊 StatsPanel 路徑直到 Stage 3 清理
     if (StatsPanel && StatsPanel->GetVisibility() == ESlateVisibility::Visible)
         StatsPanel->Refresh(Char->Stats,
             Char->CurrentHp, Char->Stats.MaxHpBase,

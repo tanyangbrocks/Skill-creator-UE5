@@ -118,14 +118,14 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Nine,  &ASkillCreatorPlayerController::OnHotbar9);
     Bind(EKeys::Zero,  &ASkillCreatorPlayerController::OnHotbar0);
 
-    // 面板開關（2026-06-23 鍵位重整）
-    Bind(EKeys::V, &ASkillCreatorPlayerController::OnOpenEditor);   // was E
-    Bind(EKeys::B, &ASkillCreatorPlayerController::OnOpenSettings);
+    // 面板開關（2026-06-25 玩家面板整合）
+    // G → 玩家個人面板（含 Stats / 職業能力 / 技能創建空間 / 內部空間 四 Tab）
+    Bind(EKeys::G, &ASkillCreatorPlayerController::OnOpenPlayerPanel);
+    // R → 物品欄 + 裝備欄同時開關
+    Bind(EKeys::R, &ASkillCreatorPlayerController::OnOpenInventoryAndEquipment);
+    // N → 形狀選單
     Bind(EKeys::N, &ASkillCreatorPlayerController::OnOpenShapeMenu);
-    Bind(EKeys::R, &ASkillCreatorPlayerController::OnOpenInventory); // was Z
-    Bind(EKeys::T, &ASkillCreatorPlayerController::OnOpenEquipment); // was X
-    Bind(EKeys::G, &ASkillCreatorPlayerController::OnOpenStats);     // was C
-    // V（SpellGroupSwitch）已移除：技能組切換改為積木編輯器面板內 UI 操作
+    // V / B / T 已無預設鍵位（移除綁定）
 
     // 動作快捷鍵
     Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);        // S-6 服用藥水袋
@@ -363,29 +363,19 @@ void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, 
 
 // ── HUD 面板開關 ──────────────────────────────────────────────────────────
 
-void ASkillCreatorPlayerController::OnOpenSettings()
+void ASkillCreatorPlayerController::OnOpenPlayerPanel()
 {
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleSettings();
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->TogglePlayerPanel();
+}
+
+void ASkillCreatorPlayerController::OnOpenInventoryAndEquipment()
+{
+    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInventoryAndEquipment();
 }
 
 void ASkillCreatorPlayerController::OnOpenShapeMenu()
 {
     if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleShapeMenu();
-}
-
-void ASkillCreatorPlayerController::OnOpenInventory()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleInventory();
-}
-
-void ASkillCreatorPlayerController::OnOpenEquipment()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleEquipment();
-}
-
-void ASkillCreatorPlayerController::OnOpenStats()
-{
-    if (auto* H = GetHUD<ASkillCreatorHUD>()) H->ToggleStats();
 }
 
 // ── 動作快捷鍵 ───────────────────────────────────────────────────────────
