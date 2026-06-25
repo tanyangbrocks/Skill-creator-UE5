@@ -9,6 +9,8 @@
 #include "CharacterStats.h"
 #include "ActionBus.h"
 #include "NPCIdentity.h"
+#include "NPCActionTypes.h"
+#include "CreatureTypes.h"
 #include "ANPCCharacter.generated.h"
 
 class USkeletalMeshComponent;
@@ -79,6 +81,24 @@ public:
     UPROPERTY() bool     bHasWanderTarget = false;
     UPROPERTY() float    WanderRetryTimer = 0.f;
 
+    // M-NPC-4: last LLM inference result (M-NPC-5 dialogue UI reads these).
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="NPC|Brain")
+    FString LastDialogue;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="NPC|Brain")
+    FString LastEmotion;
+
+    // M-NPC-6: action flags read by BT Tasks (UBTTask_NPCFlee / UBTTask_NPCFollow).
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="NPC|Brain")
+    bool bFleeRequested = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="NPC|Brain")
+    TObjectPtr<AActor> FollowTarget = nullptr;
+
+    // M-NPC-4: trigger a full LLM round-trip. PlayerInput may be empty (proximity / observation).
+    // Result is delivered asynchronously; HandleBrainResponse fires on game thread.
+    void TriggerDialogue(const FString& PlayerInput = TEXT(""));
+
     // SubtypeId 由 ANPCSpawnController 在 Spawn 後立刻呼叫；觸發 LoadOrGenerate（已有存檔
     // 直接讀回，沒有則生成）+ 依 Identity.RaceId 查 UMobMeshRegistry 套用模型
     void InitializeIdentity(FName InNPCId, FName SubtypeId);
@@ -91,6 +111,10 @@ public:
     void TakeDamageAmount(float Amount);
 
     virtual void Tick(float DeltaTime) override;
+
+    // ── 生物分類（plan-creature-redesign）────────────────────────
+    ECreatureKind GetCreatureKind() const { return ECreatureKind::NPC; }
+    bool          IsEnemy()        const { return Disposition == ENPCDisposition::Hostile; }
 
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return UniqueId; }
@@ -124,4 +148,9 @@ private:
     FWorldInterfaceAdapter* WorldAdapter = nullptr;
 
     void ApplyMeshFromRegistry();
+
+    // M-NPC-4: called on game thread after inference; writes memory note + dispatches action.
+    void HandleBrainResponse(const FNPCBrainResponse& Response);
+    // M-NPC-6: maps ENPCAction to concrete game behavior.
+    void DispatchBrainAction(ENPCAction Action);
 };

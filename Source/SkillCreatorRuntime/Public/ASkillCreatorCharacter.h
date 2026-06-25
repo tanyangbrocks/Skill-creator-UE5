@@ -12,6 +12,7 @@ struct FInputActionValue;
 #include "SkillCameraTypes.h"
 #include "ManaSlot.h"
 #include "AttackTypes.h"
+#include "CreatureTypes.h"
 #include "ASkillCreatorCharacter.generated.h"
 
 // S-1：玩家移動狀態機
@@ -246,6 +247,10 @@ public:
     // 把目前執行期狀態（Hp/Mp/Level/Xp/Position/Inventory/State/ManaCurrents）
     // 寫回 OutData。OutData 的 Id/CharacterName 由呼叫方事先填好（這裡不改動）。
     void FillSaveData(FCharacterSaveData& OutData) const;
+
+    // ── 生物分類（plan-creature-redesign）────────────────────────
+    ECreatureKind GetCreatureKind() const { return ECreatureKind::Player; }
+    bool          IsEnemy()        const { return false; }
 
     // ── ICreature ─────────────────────────────────────────────────
     virtual int32    GetCreatureId() const override { return -1; }
