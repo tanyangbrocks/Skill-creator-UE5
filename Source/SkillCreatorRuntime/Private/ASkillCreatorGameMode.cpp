@@ -1,4 +1,5 @@
 #include "ASkillCreatorGameMode.h"
+#include "UGameClockSubsystem.h"
 #include "ASkillCreatorCharacter.h"
 #include "ASkillCreatorHUD.h"
 #include "ASkillCreatorPlayerController.h"
@@ -88,6 +89,14 @@ void ASkillCreatorGameMode::StartGameplayWithWorld(const FWorldSaveData& World, 
     CurrentWorldSave     = World;
     CurrentCharacterSave = Character;
     bGameplayStarted     = true;
+
+    // 載入此世界的累積時間（新世界 = 0，舊世界 = 上次存檔的 ElapsedTicks）
+    if (UGameClockSubsystem* Clock =
+        GetGameInstance()->GetSubsystem<UGameClockSubsystem>())
+    {
+        Clock->SetTicks(World.ElapsedTicks);
+        Clock->ResumeClock();
+    }
 
     SpawnWorldAndMobs(World.Seed, World.Id);
 
@@ -184,6 +193,11 @@ void ASkillCreatorGameMode::PerformSave()
     // 記錄這次存檔的 TilePosition 屬於哪個世界（見 CharacterSaveData.h LastWorldId 註解），
     // StartGameplayWithWorld() 要靠這個判斷能不能信任 TilePosition。
     CurrentCharacterSave.LastWorldId = CurrentWorldSave.Id;
+
+    // 把此次遊戲的累積時間寫回世界存檔
+    if (UGameClockSubsystem* Clock =
+        GetGameInstance()->GetSubsystem<UGameClockSubsystem>())
+        CurrentWorldSave.ElapsedTicks = Clock->TotalTicks;
 
     FFlowSaveSystem::SaveCharacter(CurrentCharacterSave);
 

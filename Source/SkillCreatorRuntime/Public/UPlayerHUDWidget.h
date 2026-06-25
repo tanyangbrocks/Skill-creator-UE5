@@ -162,6 +162,10 @@ private:
     // ── 提示文字（底部中央）────────────────────────────────────────
     TObjectPtr<UTextBlock> HintLabel = nullptr;
 
+    // ── 遊戲時鐘（右上角）──────────────────────────────────────────
+    TObjectPtr<UTextBlock> ClockText       = nullptr;
+    int64                  LastClockMinute = -1;
+
     // ── 私有建構 helper ─────────────────────────────────────────────
     void BuildCrosshair(UCanvasPanel* Root);
     void BuildItemHotbar(UCanvasPanel* Root);
@@ -172,6 +176,7 @@ private:
     void BuildFloatTooltip(UCanvasPanel* Root);
     void BuildBreakthroughLabel(UCanvasPanel* Root);
     void BuildHintLabel(UCanvasPanel* Root);
+    void BuildClock(UCanvasPanel* Root);
 
     void RebuildManaRows();
 

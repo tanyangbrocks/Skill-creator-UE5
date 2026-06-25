@@ -1,4 +1,5 @@
 #include "UPlayerHUDWidget.h"
+#include "UGameClockSubsystem.h"
 #include "ASkillCreatorHUD.h"
 #include "ASkillCreatorCharacter.h"
 #include "UInventoryComponent.h"
@@ -226,6 +227,9 @@ void UPlayerHUDWidget::NativeOnInitialized()
 
     // ⑬ 浮動 Tooltip
     BuildFloatTooltip(Root);
+
+    // ⑭ 遊戲時鐘（右上角）
+    BuildClock(Root);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -594,8 +598,23 @@ void UPlayerHUDWidget::BuildHintLabel(UCanvasPanel* Root)
         FAnchors(0.5f, 1.f, 0.5f, 1.f), { 0.5f, 1.f });
 }
 
+void UPlayerHUDWidget::BuildClock(UCanvasPanel* Root)
+{
+    ClockText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ClockText"));
+    {
+        FSlateFontInfo F = ClockText->GetFont(); F.Size = 12; ClockText->SetFont(F);
+    }
+    ClockText->SetColorAndOpacity(FSlateColor(FLinearColor(0.90f, 0.88f, 0.75f)));
+    ClockText->SetJustification(ETextJustify::Right);
+    ClockText->SetText(FText::FromString(TEXT("蒼和5000年 01月01日 00：00 星期一")));
+    Root->AddChild(ClockText);
+    // 右上角，距右邊 10px，距頂 10px
+    Pin(ClockText, { -10.f, 10.f }, { 320.f, 18.f },
+        FAnchors(1.f, 0.f, 1.f, 0.f), { 1.f, 0.f });
+}
+
 // ══════════════════════════════════════════════════════════════════════════
-// NativeTick — breakthrough fade-out
+// NativeTick — breakthrough fade-out + clock update
 // ══════════════════════════════════════════════════════════════════════════
 
 void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
@@ -615,6 +634,22 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
 
     // K-22 + hover tooltip 偵測已改成 ItemSlotHoverButtons 的原生 OnHovered/OnUnhovered
     // 事件驅動（見 OnHotbarHoverChanged()），不再需要每幀手動讀座標比對。
+
+    // 時鐘：每遊戲分鐘更新一次（TicksPerMinute=20，1 分鐘=1 現實秒，每幀幾乎都要比對，
+    // 但 SetText 代價高，用 LastClockMinute 只在分鐘跳動時才呼叫）
+    if (ClockText)
+    {
+        if (UGameInstance* GI = GetGameInstance())
+        if (UGameClockSubsystem* Clock = GI->GetSubsystem<UGameClockSubsystem>())
+        {
+            const int64 CurrentMinute = Clock->TotalTicks / UGameClockSubsystem::TicksPerMinute;
+            if (CurrentMinute != LastClockMinute)
+            {
+                LastClockMinute = CurrentMinute;
+                ClockText->SetText(FText::FromString(Clock->GetFormattedTime()));
+            }
+        }
+    }
 }
 
 // 對應 Godot Main.cs:831-836 panel.MouseEntered/MouseExited → _mouseOverHotbar + ShowTooltip(idx)。

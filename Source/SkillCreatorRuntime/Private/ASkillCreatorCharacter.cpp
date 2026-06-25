@@ -12,6 +12,8 @@
 #include "ExecutionContext.h"
 #include "USnapshotManager.h"
 #include "AEnemy.h"
+#include "ABeastCharacter.h"
+#include "ANPCCharacter.h"
 #include "GridPos.h"
 #include "UDroppedItemManager.h"
 #include "UEquipmentComponent.h"
@@ -108,11 +110,6 @@ void ASkillCreatorCharacter::BeginPlay()
     ActiveManaSlots.Add(FManaSlot(TEXT("gui_dao"), Stats.MaxMpBase, Stats.MpRegenRate));
 
     RebindWorldSystems();
-
-    // 遊戲內時間歸零（新局開始）
-    if (auto* GI = GetWorld()->GetGameInstance())
-    if (auto* Clock = GI->GetSubsystem<UGameClockSubsystem>())
-        Clock->Reset();
 
     // T-01: 清除跨 PIE session 殘留的全域狀態
     FExecutionContext::GlobalVars.Empty();
@@ -512,6 +509,42 @@ void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterS
     const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
     if (Final < 0.f) return;
     TakeDirectDamage(Final);
+
+    // 元素接觸：攻擊者 NativeElement → 玩家；玩家防具 Element → 攻擊者
+    if (AuraComp)
+    {
+        // 攻擊者帶有 NativeElement（Beast/NPC 屬性）→ 施加到玩家
+        if (ABeastCharacter* Beast = Cast<ABeastCharacter>(Attacker))
+        {
+            if (Beast->AuraComp && Beast->AuraComp->NativeElement != ESkillElementType::None)
+                AuraComp->ApplyImmediate(Beast->AuraComp->NativeElement,
+                    UElementalAuraComponent::DefaultAuraDuration, this);
+        }
+        else if (ANPCCharacter* NPC = Cast<ANPCCharacter>(Attacker))
+        {
+            if (NPC->AuraComp && NPC->AuraComp->NativeElement != ESkillElementType::None)
+                AuraComp->ApplyImmediate(NPC->AuraComp->NativeElement,
+                    UElementalAuraComponent::DefaultAuraDuration, this);
+        }
+
+        // 裝備防具/飾品元素 → 攻擊者（「碰到我等於碰到這個元素」）
+        if (EquipmentComp && Attacker)
+        {
+            auto ApplyArmorElem = [&](FName Slot)
+            {
+                EItemId Id = EquipmentComp->GetEquipped(Slot);
+                if (Id == EItemId::None) return;
+                ESkillElementType Elem = FItemRegistry::Get(Id).Element;
+                if (Elem == ESkillElementType::None) return;
+                if (ABeastCharacter* B = Cast<ABeastCharacter>(Attacker))
+                    B->AuraComp->ApplyImmediate(Elem, UElementalAuraComponent::DefaultAuraDuration, B);
+                else if (ANPCCharacter* N = Cast<ANPCCharacter>(Attacker))
+                    N->AuraComp->ApplyImmediate(Elem, UElementalAuraComponent::DefaultAuraDuration, N);
+            };
+            ApplyArmorElem(FName("Armor"));
+            ApplyArmorElem(FName("Accessory"));
+        }
+    }
 }
 
 // B-3：能量傷害管線（特定MP防禦 → 通用能量防禦 → 特定MP減傷 → 通用能量減傷 → 暴擊/閃避）
@@ -1792,7 +1825,17 @@ void ASkillCreatorCharacter::UseConsumable()
     if (!InventoryComp) return;
     const int32 Idx = InventoryComp->ActiveHotbarIndex;
     if (!InventoryComp->Slots.IsValidIndex(Idx) || InventoryComp->Slots[Idx].IsEmpty()) return;
+
+    const EItemId ItemId = InventoryComp->Slots[Idx].ItemId;
     InventoryComp->Consume(Idx, 1);
+
+    // 物品元素：施加到使用者自身 AuraComp（藥水/食物的元素效果）
+    if (AuraComp)
+    {
+        const ESkillElementType ItemElem = FItemRegistry::Get(ItemId).Element;
+        if (ItemElem != ESkillElementType::None)
+            AuraComp->ApplyImmediate(ItemElem, UElementalAuraComponent::DefaultAuraDuration, this);
+    }
 }
 
 // 滑鼠右鍵鬆開：重置 rising-edge 狀態，讓下次按下能再次觸發放置（對應 Main.cs:1255 _rightWasPressed）
