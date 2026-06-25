@@ -29,18 +29,18 @@
 | 坑洞邊緣不規則像素 | 無 | sub-tile 噪音渲染（V 系列） | Hard | 🔵 V 系列 |
 | 相鄰坑洞視覺連通 | Greedy Meshing 已合併相同材質 ✓ | — | — | ✅ 視覺已完成 |
 | 掉落物 Minecraft 式拾取 | DroppedItemManager ✓ | — | — | ✅ 已完成 |
-| **2. 放置形狀（球/立方體/錐/柱）** | 單 tile PlaceAs ✓（尺度錯誤）| PlacementShape 系統：每次動作 = 1 material unit（radius=5, ~520–1000 tiles）、形狀預覽 | Medium | 🟡 R-4 |
+| **2. 放置形狀（球/立方體/錐/柱）** | `FPlacementShape::GetOffsets()` ✓ | — | — | ✅ 已完成 |
 | 相鄰形狀材質視覺無縫 | Greedy Meshing 已處理相鄰同材質 ✓ | 接合幾何補填（Junction Fill） | Medium | 🔵 V 系列（見 R-4-RENDER 分析） |
 | 重塑動作（推拉塑形） | 無 | 體素雕刻系統（Blender 概念） | Hard | 🔴 未來方向 |
-| 放置地點規則（水不可放等） | 無驗證器 | `PlacementValidator` 靜態類別 | Easy | 🟢 R-3+ |
-| **3. 碎片系統（外力爆裂→碎塊）** | 無（爆炸直接 Set→Air 不觸發事件） | `DestroyReason`、爆炸掉落碎片 | Medium | 🟡 R-5 |
-| Fragment 物品類型 | 無 FragmentXxx ItemId | 新 ItemId 變體 + ItemData | Medium | 🟡 R-5 |
-| 碎片 1% 質量門檻（= 10 tiles）¹ | 無 | 整數 tile 表示即可，無次 tile 問題² | Easy | 🟢 R-5 同批 |
-| 100 碎片 → 1 材質合成 | 無 | 合成系統 | Hard | 🔴 合成系統範疇 |
-| **4. 堆疊上限 99999** | MaxStack=99 | 改常數 + UI 標籤寬度 | Easy | 🟢 R-1 同批 |
-| **R-1 Raycast 面法線** | 回傳 `(Hit, MatId, bool)` | `FaceNormal` 第三返回值 | Easy | 🟢 R-1 |
-| **R-2 TPS/FPS 採掘改 Raycast** | MouseGridPos 螢幕投影 | `GetCenterRay()` + `MouseFaceNormal` | Easy | 🟢 R-2 |
-| **R-3 face-aligned 放置** | 放置在 MouseGridPos | `MouseGridPos + MouseFaceNormal` 偏移 | Easy | 🟢 R-3 |
+| 放置地點規則（水不可放等） | `FPlacementValidator::CanPlace()` ✓ | — | — | ✅ 已完成 |
+| **3. 碎片系統（外力爆裂→碎塊）** | `ADebrisActor` + `UDroppedItemManager::SpawnDebris()` ✓ | — | — | ✅ 已完成 |
+| Fragment 物品類型 | `FragmentXxx` × 9 `EItemId` ✓ | — | — | ✅ 已完成 |
+| 碎片 1% 質量門檻（= 10 tiles）¹ | `SpawnFragments()` tile 計數 ✓ | — | — | ✅ 已完成 |
+| 100 碎片 → 1 材質合成 | `RecipeRegistry.cpp` × 9 配方 ✓ | — | — | ✅ 已完成 |
+| **4. 堆疊上限 99999** | MaxStack=99（`ItemData.h:33`）| 改 MaxStack 預設值 + UI 標籤寬度 | Easy | 🟢 待辦 |
+| **R-1 Raycast 面法線** | `FRaycastResult3D.FaceNormal` ✓（`TileWorld3D.h:11`）| — | — | ✅ 已完成 |
+| **R-2 TPS/FPS 採掘改 Raycast** | `ASkillCreatorCharacter` Raycast ✓ | — | — | ✅ 已完成 |
+| **R-3 face-aligned 放置** | `Hit.HitCell + Hit.FaceNormal` ✓（`ASkillCreatorCharacter.cpp:1549`）| — | — | ✅ 已完成 |
 
 ---
 
@@ -454,26 +454,25 @@ event Action<GridPos, MaterialType, DestroyReason>? OnTileDestroyed;
 ## 七、Step 10 R 系列實作順序建議
 
 ```
-R-1  Raycast 面法線（TileWorld3D.cs ~15行）
+✅ R-1  FRaycastResult3D.FaceNormal（TileWorld3D.h:11）
   ↓
-R-2  CameraController.GetCenterRay + PlayerController.MouseFaceNormal
+✅ R-2  ASkillCreatorCharacter Raycast
   ↓
-R-3  face-aligned 放置 + PlacementValidator（Main.cs ~20行）
+✅ R-3  face-aligned 放置 + FPlacementValidator（Character.cpp:1549）
   ↓
-R-3+ MaxStack 99999 + UI 標籤寬度微調
+🟢 R-3+ MaxStack 99999 + UI 標籤寬度微調（ItemData.h:33 MaxStack=99 仍待改）
   ↓
-R-4  多形狀放置
-       ├─ N 鍵選單 UI（_shapePanel 浮動選單，預設 Cube）
-       ├─ PlacementShape.cs（enum + ShapeVoxels.GetOffsets）
-       ├─ HUD 形狀指示器
+✅ R-4  多形狀放置
+       ├─ N 鍵選單 UI（UShapeMenuWidget）
+       ├─ FPlacementShape::GetOffsets()
        └─ [預留] TODO: R-6 FillJunction 接合補填
   ↓
-[Breaking Change 確認] → R-5 DestroyReason + Fragment 系統
+✅ R-5  ADebrisActor + DestroyReason + Fragment 系統（FragmentXxx × 9 + RecipeRegistry）
 ```
 
-R-1 → R-3+ 為一次性 commit，無依賴衝突，約 3~4 小時工作量。
-R-4 UI 方案已確認（N 鍵選單，預設 Cube），可直接實作，約 2~3 小時。
-R-5 是 Breaking Change（event 簽名），需一次完整更新所有訂閱者。
+R-1 ~ R-5 已全部完成（2026-06-23），唯 R-3+ MaxStack 99999 尚未改（`ItemData.h:33` 預設值仍為 99）。
+R-6a~d（PlacedObjectRegistry + 持久化）已完成（2026-06-23）。
+R-6e 拉伸系統（Sculpt/Push-Pull）為未來方向，待 R-6a~d 穩定後另開計畫文件。
 
 ---
 

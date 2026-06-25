@@ -27,9 +27,9 @@
 | M-NPC-1 | 身分與個性系統 | ✅ |
 | M-NPC-2 | 記憶系統 | ✅ |
 | M-NPC-3 | 世界感知 | ✅（`IWorldInterface` 接通為待辦，見下方說明）|
-| M-NPC-4 | Prompt 組裝 + 回應解析 | ⏳ |
+| M-NPC-4 | Prompt 組裝 + 回應解析 | ✅（2026-06-25）|
 | M-NPC-5 | 玩家對話介面 | ⏳ |
-| M-NPC-6 | 行動系統 | ⏳ |
+| M-NPC-6 | 行動系統 | ✅（2026-06-25）；AI Tick 直接驅動 Flee/Follow/CounterAttack/Wander，不需 BT asset |
 | M-NPC-7 | 自動批量 NPC 生成 | ⏳ |
 | M-NPC-8 | Fine-tune 管線（選做，後期）| ⏳ |
 
@@ -159,14 +159,14 @@
 | `Public/UNPCPerceptionComponent.h/.cpp` | `UActorComponent`；`TickPerception(DeltaTime, OwnerPos)` 由擁有者手動呼叫（沿用 SpellRunner 手動累加器慣例，非引擎 `TickComponent`）；每 `PerceptionIntervalSeconds` 掃描一次半徑內生物（`IWorldInterface::GetEntitiesNear`）與危險材質（熔岩/火焰/蒸氣，Chebyshev 距離），與上次快照差異化後寫入同 Actor 上的 `UNPCMemoryComponent`（World 分類）|
 | `NPCBrain.Build.cs` | 新增 `SkillCreatorCore` 依賴（取得 `FGridPos`/`EMaterialType`/`ICreature`/`IWorldInterface`，刻意不依賴 `SkillCreatorRuntime`/`VoxelWorld`，保持 NPCBrain 與具體 Actor 型別解耦）|
 
-**架構決策**：未直接耦合 `AEnemy`/`AEnemyManager`/`TileWorld3D`，改用專案既有但目前**零實作**的 `IWorldInterface`（`SkillCreatorCore/Public/IWorldInterface.h`，原為 SpellCaster 設計但從未接通）作為依賴注入點。`UNPCPerceptionComponent::SetWorldInterface()` 在沒人呼叫前是安全的 no-op。
-**⚠️ 待辦（非本次範圍）**：要讓感知系統真正運作，需要某處實作 `IWorldInterface`（橋接 `AVoxelWorldActor` + `AEnemyManager`）並呼叫 `SetWorldInterface()` + 每幀呼叫 `TickPerception()`。這是既有的架構缺口，不是這次新增的技術債——建議在 M-NPC-5/6（真正接遊戲玩法）時一併處理。
+**架構決策**：未直接耦合 `AEnemy`/`AEnemyManager`/`TileWorld3D`，改用 `IWorldInterface`（`SkillCreatorCore/Public/IWorldInterface.h`）作為依賴注入點。
+**✅ 已接通（2026-06-23，`docs/plan-base-npc-system.md` §四）**：`ANPCCharacter::BeginPlay()` 建立 `FWorldInterfaceAdapter`（橋接 `AVoxelWorldActor` + `AEnemyManager`）並呼叫 `PerceptionComp->SetWorldInterface(WorldAdapter)`；`ANPCCharacter::Tick()` 每幀呼叫 `PerceptionComp->TickPerception(DeltaTime, GridPosition)`（`ANPCCharacter.cpp:47/119`）。
 **已驗證**：`FNPCPerceptionLogic::DescribeChanges` 的生物進出/危險材質出現消退判斷、`IsHazardMaterial` 分類正確性。
-**未驗證（需 `IWorldInterface` 接通後才能測）**：`UNPCPerceptionComponent` 實際掃描真實世界的行為。
+**尚未進行實機整合測試**：`UNPCPerceptionComponent` 實際掃描真實世界的行為，待 M-NPC-4+ 對話系統完成後一併測試。
 
 ---
 
-## M-NPC-4：Prompt 組裝 + 回應解析 ⏳
+## M-NPC-4：Prompt 組裝 + 回應解析 ✅（2026-06-25）
 
 **目標**：把所有資訊組成一個完整的 prompt，並正確解析模型輸出。
 
@@ -203,7 +203,7 @@
 
 ---
 
-## M-NPC-6：行動系統 ⏳
+## M-NPC-6：行動系統 ✅（2026-06-25）
 
 **目標**：LLM 輸出的 action 真的觸發遊戲行為。
 
@@ -212,9 +212,9 @@
 | LLM 輸出 `action` | 觸發 |
 |-------------------|------|
 | `Idle` | 維持當前狀態 |
-| `Attack` | BT Task → 現有攻擊系統 |
-| `Flee` | BT Task → 逃跑邏輯 |
-| `Follow` | BT Task → 跟隨目標 |
+| `Attack` | `ANPCAIController::StepCounterAttack()` → 追擊+近戰攻擊 |
+| `Flee` | `ANPCAIController::StepFlee()` → 逃跑邏輯 |
+| `Follow` | `ANPCAIController::StepFollow()` → 跟隨目標 |
 | `Trade` | 開啟交易 UI |
 | `CastSpell` | 接現有 SpellRunner |
 | `PlaceTile` / `BreakTile` | 呼叫 VoxelWorld API |

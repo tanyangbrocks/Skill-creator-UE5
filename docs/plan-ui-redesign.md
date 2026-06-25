@@ -1,7 +1,7 @@
 # 技能編輯器 UI 重構計畫
 
 > 建立日期：2026-06-10
-> 狀態：規格確認完畢，可進入 Stage 1 實作
+> 狀態：**全部完成（Stage 1~5 ✅，2026-06-23 完成）**
 > 前置依賴：`實作進度.md` 的「全 Scratch 模式重構」待辦項目
 
 ---
@@ -235,12 +235,12 @@
 - [x] 施放方式按鈕所有深度可見（容器效果可設定子容器類型）
 - [x] 返回行為改為：depth>0 pop navStack，depth=0 才 BackPressed
 - [x] 切換主槽位時 navStack.Clear()（不殘留舊路徑）
-- [ ] `SpellCompiler` 遞迴容器編譯（待容器實體 runtime 解除 TODO-STUB 後接入）
+- [x] `SpellCompiler` 遞迴容器編譯：UE5 設計上 `ContainerEffect` 是獨立 `FSpellArray`，觸發時另行呼叫 `FSpellCompiler::Compile()`，不需要編譯器內部遞迴
 
-### Stage 5：效果文案生成（可最後實作）
-- [ ] `SpellDescriptionGenerator.cs` 模板引擎
-- [ ] 接入圓球列表 Tooltip
+### Stage 5：效果文案生成 ✅（2026-06-23）
+- [x] `FSpellDescriptionGenerator.h/.cpp`（`GenerateStructured` + `GenerateProse`，遞迴處理 `ContainerEffect`）
+- [x] 接入 `USpellListWidget` Tooltip（`GenerateProse`）+ `UBlockEditorWidget` 描述欄（`GenerateStructured`）
 
 ---
 
-*此文件為計畫草案，C-1 / C-2 / C-6 / C-7 的決策確認後，Stage 1 才可開始實作。*
+*所有 Stage 已完成（Stage 1~5 ✅）。C-1 被動技能槽、C-3 容器遞迴序列化均已在 Stage 1 資料層一併實作。此文件保留作設計規格參照。*

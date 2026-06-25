@@ -9,8 +9,12 @@
 #include "UNPCIdentityGeneratorSubsystem.h"
 #include "FWorldInterfaceAdapter.h"
 #include "UMobMeshRegistry.h"
+#include "FPromptBuilder.h"
+#include "FNPCResponseParser.h"
+#include "UNPCBrainSubsystem.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
 #include "ANPCAIController.h"
 int32 ANPCCharacter::NextId = 1;
 
@@ -135,6 +139,103 @@ FEntitySnapshot ANPCCharacter::TakeSnapshot() const
     Snap.Mp        = 0.f;
     Snap.bWasAlive = IsAlive();
     return Snap;
+}
+
+void ANPCCharacter::TriggerDialogue(const FString& PlayerInput)
+{
+    UNPCBrainSubsystem* Brain = UNPCBrainSubsystem::Get(this);
+    if (!Brain || !Brain->IsReady())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ANPCCharacter '%s': TriggerDialogue — Brain not ready"), *Identity.Name);
+        return;
+    }
+
+    FNPCWorldSnapshot Snapshot;
+    if (PerceptionComp)
+        Snapshot = PerceptionComp->GetLastSnapshot();
+
+    const TArray<FNPCMessage> Messages = FPromptBuilder::Build(Identity, MemoryComp, Snapshot, PlayerInput);
+
+    TWeakObjectPtr<ANPCCharacter> WeakSelf(this);
+
+    FOnInferenceComplete OnDone;
+    OnDone.BindLambda([WeakSelf](const FString& Raw)
+    {
+        if (ANPCCharacter* Self = WeakSelf.Get())
+            Self->HandleBrainResponse(FNPCResponseParser::Parse(Raw));
+    });
+
+    FOnInferenceError OnErr;
+    OnErr.BindLambda([WeakSelf](int32 Code, const FString& Msg)
+    {
+        if (const ANPCCharacter* Self = WeakSelf.Get())
+            UE_LOG(LogTemp, Warning,
+                TEXT("ANPCCharacter '%s': inference error %d: %s"), *Self->Identity.Name, Code, *Msg);
+    });
+
+    Brain->SendMessages(Messages, OnDone, OnErr);
+}
+
+void ANPCCharacter::HandleBrainResponse(const FNPCBrainResponse& Response)
+{
+    if (!Response.bValid) return;
+
+    LastDialogue = Response.Dialogue;
+    LastEmotion  = Response.Emotion;
+
+    if (!Response.MemoryNote.IsEmpty() && MemoryComp)
+        MemoryComp->AddMemoryEvent(ENPCMemoryCategory::Observe, Response.MemoryNote);
+
+    DispatchBrainAction(Response.Action);
+}
+
+void ANPCCharacter::DispatchBrainAction(ENPCAction Action)
+{
+    switch (Action)
+    {
+    case ENPCAction::Idle:
+        break;
+
+    case ENPCAction::Attack:
+        Disposition              = ENPCDisposition::Hostile;
+        HostileCooldownRemaining = HostileCooldownDuration;
+        break;
+
+    case ENPCAction::Flee:
+        bFleeRequested = true;
+        FollowTarget   = nullptr;
+        break;
+
+    case ENPCAction::Follow:
+        bFleeRequested = false;
+        FollowTarget   = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+        break;
+
+    case ENPCAction::Trade:
+        UE_LOG(LogTemp, Log,
+            TEXT("ANPCCharacter '%s': Trade — stub (no trade system yet)"), *Identity.Name);
+        break;
+
+    case ENPCAction::CastSpell:
+        UE_LOG(LogTemp, Log,
+            TEXT("ANPCCharacter '%s': CastSpell — stub (no NPC spell slots yet)"), *Identity.Name);
+        break;
+
+    case ENPCAction::PlaceTile:
+        UE_LOG(LogTemp, Log,
+            TEXT("ANPCCharacter '%s': PlaceTile — stub (needs target tile)"), *Identity.Name);
+        break;
+
+    case ENPCAction::BreakTile:
+        UE_LOG(LogTemp, Log,
+            TEXT("ANPCCharacter '%s': BreakTile — stub (needs target tile)"), *Identity.Name);
+        break;
+
+    case ENPCAction::GiveItem:
+        UE_LOG(LogTemp, Log,
+            TEXT("ANPCCharacter '%s': GiveItem — stub (no NPC inventory yet)"), *Identity.Name);
+        break;
+    }
 }
 
 void ANPCCharacter::RestoreFromSnapshot(const FEntitySnapshot& Snap)

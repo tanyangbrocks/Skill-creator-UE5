@@ -1,6 +1,7 @@
 # 放置物件系統（PlacedObjectRegistry）實作計畫
 
-> 對應實作進度待辦：R-6a ~ R-6e
+> **UE5 狀態：R-6a~R-6d ✅ 已完成**（`PlacedObjectRegistry.h`/`PlacedUnit.h`，`ASkillCreatorCharacter.cpp:1456+1536+1664` 採掘/完美移除/登記均已接通）；R-6e 拉伸系統為未來方向。
+> 下方 C# 範例為 Godot 版設計原始碼，UE5 對應的 C++ 實作在 `Source/SkillCreatorRuntime/Public/PlacedObjectRegistry.h`。
 
 ---
 

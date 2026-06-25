@@ -42,6 +42,9 @@ public:
 	// Dependency injection point — see class comment.
 	void SetWorldInterface(IWorldInterface* InWorld) { WorldInterface = InWorld; }
 
+	// M-NPC-4: read the most recent snapshot for prompt assembly.
+	const FNPCWorldSnapshot& GetLastSnapshot() const { return LastSnapshot; }
+
 	void TickPerception(float DeltaTime, FGridPos OwnerPos);
 
 private:

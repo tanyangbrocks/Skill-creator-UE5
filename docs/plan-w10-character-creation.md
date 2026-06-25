@@ -7,7 +7,8 @@
 > `game-setting/選擇.md`（worldlore 計畫文件提到的步驟 4~10 設計來源）**目前專案內不存在**，
 > 以使用者新寫的 txt 為唯一權威來源。
 >
-> 本文件只是**架構規劃**，尚未動工。使用者原話：「先把整體架構、步驟給做出來，細節後續再慢慢調整」——
+> **實作狀態：Phase A~E 全部完成（2026-06-21 Build 通過，2026-06-25 使用者實機 PIE 確認）。**
+> 本文件保留設計規格與決策紀錄。使用者原話：「先把整體架構、步驟給做出來，細節後續再慢慢調整」——
 > 所以下面刻意把「現在做」和「先空白/先簡化，以後補」分開標注，不要超做。
 
 ---
@@ -311,7 +312,7 @@ void UPlayerCreateWidget::OnQuickCreateClicked()
 
 ---
 
-## 七、檔案清單（規劃，尚未建立）
+## 七、檔案清單（已建立，Phase A~E ✅）
 
 **新增：**
 - `Source/SkillCreatorCore/Public/RaceRegistry.h` + `Private/RaceRegistry.cpp`
@@ -331,9 +332,8 @@ void UPlayerCreateWidget::OnQuickCreateClicked()
 
 ## 八、實作階段拆分（建議，供下次動工排序）
 
-> 2026-06-21：Phase A~E 全部完成並 Build 通過（兩個 target 皆 0 錯誤 0 警告）。⚠️ 尚待實機
-> PIE 視覺驗證——computer-use 自動化點擊在測試視窗上不穩定（本次 session 反覆出現的限制），
-> 只確認到程式碼編譯通過，11 步流程是否真的順利、UI 排版是否正確仍待人工/下次 session 實測。
+> 2026-06-21：Phase A~E 全部完成並 Build 通過（兩個 target 皆 0 錯誤 0 警告）。
+> 2026-06-25：使用者實機測試通過，11 步流程確認可用。
 > 詳見 `實作進度.md`「UE5 最新完成」表格對應列。
 
 1. [x] **Phase A（架構骨架）**：`UPlayerCreateWidget` + `FPlayerCreateStep` 陣列機制 + 11 個

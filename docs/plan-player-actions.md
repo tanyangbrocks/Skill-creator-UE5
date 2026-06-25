@@ -252,8 +252,8 @@ NPC 交互只需補：
 - 1 material unit ≈ 1000 tiles（立方體半徑 5）= 100 碎片
 - 1% 門檻 = 10 tiles，純整數，無次 tile 精度需求
 
-**UE5 實作狀態（R-5）：⛔ 尚未實作**  
-前次 session 曾誤把 Godot 採掘掉落表填成 `FragmentXxx`，已改回 `BlockXxx`（正確）。碎片系統需要的 `DestroyReason` enum、Fragment ItemId 變體、爆炸掉落分流邏輯均未建立。
+**UE5 實作狀態（R-5）：✅ 已完成（2026-06-23）**  
+`EDestroyReason`（Mining/Explosion/Slash/Crush/Collapse，`WorldTypes.h`）、`FragmentDirt/Stone/Sand/Wood/Ash/Coal/Copper/Iron/MagicCrystal`（`ItemId.h:36-44`）、`MaterialRegistry` 各材質 `FragmentItem` 欄位、`DroppedItemManager` 依 Reason 分流邏輯均已建立；詳見 `docs/plan-debris-fragment.md` D-1~D-5 完成記錄。
 
 **UE5 實作步驟（參照 `plan-mining-placement.md R-5`）：**
 1. `TileWorld3D.h` 加 `EDestroyReason`（Mining / Explosion / Slash / Crush / Collapse）

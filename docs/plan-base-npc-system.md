@@ -17,9 +17,9 @@
 | M-NPC-1 身分系統 | ✅ | `FNPCIdentity`（`Name/Species/Faction/Role/Traits[]/SpeechStyle/Backstory`）+ 存讀（`{Saved}/NPCBrain/Identities/{NPCId}.json`），**生成後鎖定，不重新生成** |
 | M-NPC-2 記憶系統 | ✅ | `UNPCMemoryComponent`：短期 buffer（cap 20）+ 滿了自動 LLM 壓縮成長期摘要 |
 | M-NPC-3 世界感知 | ✅（但有遺留缺口） | `UNPCPerceptionComponent::TickPerception()`，但依賴 `IWorldInterface`，**目前沒有任何地方實作這個介面並呼叫 `SetWorldInterface()`**——`plan-npc-brain.md` 自己也寫了「這是既有的架構缺口…建議在 M-NPC-5/6 時一併處理」，本計畫就是那個「之後」 |
-| M-NPC-4 Prompt/解析 | ⏳ 未做 | LLM 回應要解析出 `dialogue/action/emotion/memory_note` |
+| M-NPC-4 Prompt/解析 | ✅ 已完成（2026-06-25）| `FPromptBuilder` + `FNPCResponseParser`，`ANPCCharacter::TriggerDialogue()` |
 | M-NPC-5 對話介面 | ⏳ 未做 | 玩家跟 NPC 打字對話的 UI |
-| M-NPC-6 行動系統 | ⏳ 未做 | LLM 輸出的 `action` 真正觸發遊戲行為（Attack/Flee/Follow/Trade…） |
+| M-NPC-6 行動系統 | ✅ 已完成（2026-06-25）| `ENPCAction` dispatch、`UBTTask_NPCFlee`/`UBTTask_NPCFollow`；`ANPCAIController::Tick()` 直接驅動 Flee/Follow/CounterAttack/Wander，不需 BT asset |
 | M-NPC-7 批量生成 | ⏳ 未做 | 一次生成一批不重複的 NPC 身分 |
 
 **結論**：NPCBrain 是「大腦」（身分/記憶/感知/未來的對話與決策），但**完全沒有「身體」**——專案裡目前沒有任何 `AActor` 把這顆大腦放進世界裡走動、被打、打人。這正是規格「遊蕩詩人」需要的東西，也是本計畫的核心。
