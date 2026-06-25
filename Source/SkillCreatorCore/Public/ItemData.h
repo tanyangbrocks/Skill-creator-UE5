@@ -30,7 +30,7 @@ struct SKILLCREATORCORE_API FItemData
     UPROPERTY(EditAnywhere, BlueprintReadWrite) bool              bIsTool        = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) int32             ToolTier       = 0;
     UPROPERTY(EditAnywhere, BlueprintReadWrite) float             MiningSpeedMult = 1.f;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32             MaxStack       = 99;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) int32             MaxStack       = 99999;
 
     // ── 裝備屬性（非裝備物品保持預設值）───────────────────────────
     // EquipSlot 改用 FName 對應 FEquipmentSlotRegistry 的 Id（NAME_None = 不可裝備），

@@ -1,6 +1,10 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "RenderGraphFwd.h"
+#include <atomic>
+
+// 前向宣告：只存指標，不需要 include RHIGPUReadback.h（避免非 Render 模組引用時找不到）
+class FRHIGPUBufferReadback;
 
 // M-10：GPU Compute Shader CA 模擬器（對應 Godot CaGpuSimulator.cs，逐行對照翻譯見
 // docs/plan-m10-gpu-ca.md）。Phase 2：同步阻塞版（對應 Godot 的 Submit()+Sync()，
@@ -52,6 +56,24 @@ public:
     using FSetCellCallback = TFunction<void(int32 LocalX, int32 LocalY, int32 LocalZ, uint32 PackedCell)>;
     void Download(FSetCellCallback SetCellCb);
 
+    // ── Phase 4：Stat Overlay ──────────────────────────────────
+    // PIE console 下 `stat quick` 可看到各步驟 CPU 時間（QUICK_SCOPE_CYCLE_COUNTER → STATGROUP_Quick）。
+    // 具體 ms 值每 10 秒從 TileWorld3D::TickGpuZone UE_LOG 輸出。
+
+    // ── Phase 5：1-frame latency async readback ────────────────
+    // BeginAsync：非同步踢 Upload+Simulate+ReadbackCopy，不阻塞 game thread。
+    // 若 zone 全靜態（無 Powder/Liquid），回傳 false，不踢 GPU 工作。
+    // PackedCells 以值傳遞——內部 move 進 lambda，呼叫端用 MoveTemp() 傳入。
+    bool BeginAsync(TArray<uint32> PackedCells, int32 InW, int32 InH, int32 InD, uint32 RngSeed);
+
+    // TryCollectAsync：收取上一幀 BeginAsync 踢的結果，若就緒則呼叫 WorldCellCb（world coords）。
+    // 回傳 true = 結果已收取並寫入世界；false = GPU 尚未就緒（通常下一幀就好了）。
+    using FWorldCellCb = TFunction<void(int32 wx, int32 wy, int32 wz, uint32 Cell)>;
+    bool TryCollectAsync(FWorldCellCb WorldCellCb);
+
+    // 是否有正在飛行中的 async readback（BeginAsync 踢了但 TryCollectAsync 尚未收取）
+    bool HasPendingAsync() const;
+
     // 釋放 GPU 資源
     void Release();
 
@@ -70,4 +92,18 @@ private:
     // ENQUEUE_RENDER_COMMAND，靠這個 pooled buffer 把同一份 GPU 資料接到下一次呼叫，
     // 見 docs/plan-m10-gpu-ca.md Phase 2）。
     TRefCountPtr<FRDGPooledBuffer> PooledBuffer;
+
+    // ── Phase 5 async state ───────────────────────────────────
+    // AsyncReadbackInFlight：render thread 建立後寫入此 atomic，game thread poll。
+    // 只有 BeginAsync/TryCollectAsync 的呼叫者（game thread）負責讀寫 non-atomic 成員；
+    // AsyncReadbackInFlight 本身用 acquire/release 保證 game↔render 可見性。
+    struct FAsyncCell { int32 WX, WY, WZ; uint32 Packed; };
+    std::atomic<FRHIGPUBufferReadback*> AsyncReadbackInFlight{nullptr};
+    TArray<FAsyncCell> AsyncCells;       // render thread 填 → FlushRenderingCommands → game thread 讀
+    int32 AsyncCornerX = 0;             // BeginAsync 時由 game thread 設，OriginX - InW/2
+    int32 AsyncCornerY = 0;
+    int32 AsyncCornerZ = 0;
+    int32 AsyncW       = 0;
+    int32 AsyncH       = 0;
+    int32 AsyncD       = 0;
 };

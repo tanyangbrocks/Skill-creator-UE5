@@ -63,9 +63,32 @@ void FTileWorld3D::SetCellFromGpu(int32 x, int32 y, int32 z, uint32 PackedCell)
     WriteCell(x, y, z, Cell);
 }
 
+// ── Phase 5 CVar：r.VoxelWorld.GpuCaAsync 1 開啟非同步 readback ──────────────
+// 預設 0（sync）；在 PIE 測量完 Phase 4 確認 sync 是瓶頸後，設 1 啟用 Phase 5。
+static TAutoConsoleVariable<int32> CVarGpuCaAsync(
+    TEXT("r.VoxelWorld.GpuCaAsync"), 0,
+    TEXT("0 = sync GPU CA (Phase 3/4)  1 = 1-frame async readback (Phase 5)"));
+
 void FTileWorld3D::TickGpuZone()
 {
-    // Zone 中心是玩家所在格（UpdateGpuOrigin 設的），這裡反推 zone 的世界座標最小角。
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_TickTotal);
+
+    // Phase 4 計時（每 10 秒 UE_LOG 一次，提供具體 ms 值）
+    static double GpuTickLastLogTime = 0.0;
+    const double TickStart = FPlatformTime::Seconds();
+
+    const bool bAsync = CVarGpuCaAsync.GetValueOnGameThread() != 0;
+
+    // ── Phase 5：先收上一幀 async 結果（若 GPU 已就緒）────────────────────────
+    if (bAsync && GpuSim.HasPendingAsync())
+    {
+        GpuSim.TryCollectAsync([this](int32 wx, int32 wy, int32 wz, uint32 Cell)
+        {
+            SetCellFromGpu(wx, wy, wz, Cell);
+        });
+    }
+
+    // Zone 中心是玩家所在格（UpdateGpuOrigin 設的），反推世界座標最小角。
     const int32 OX = GpuSim.GetOriginX() - FCaGpuSimulator::ZoneW / 2;
     const int32 OY = GpuSim.GetOriginY() - FCaGpuSimulator::ZoneH / 2;
     const int32 OZ = GpuSim.GetOriginZ() - FCaGpuSimulator::ZoneD / 2;
@@ -73,27 +96,85 @@ void FTileWorld3D::TickGpuZone()
     constexpr int32 H = FCaGpuSimulator::ZoneH;
     constexpr int32 D = FCaGpuSimulator::ZoneD;
 
-    // 把 zone 內現有 CPU chunk 資料打包成扁平 uint32 陣列上傳 GPU（對應 Godot
-    // CaGpuSimulator.cs 的 Upload() 呼叫端：每幀重新從 TileWorld 撈一次 zone 快照，
-    // 不維護額外的常駐 GPU-side 影子狀態）。
-    TArray<uint32> PackedCells;
-    PackedCells.SetNumUninitialized(W * H * D);
-    for (int32 z = 0; z < D; ++z)
-    for (int32 y = 0; y < H; ++y)
-    for (int32 x = 0; x < W; ++x)
+    // ── Phase 4：稀疏 chunk 打包（取代 4M 次 TMap::Find GetCell 呼叫）──────────
+    // Zone = 128×256×128，chunk = 16³，zone 最多覆蓋 8×16×8 = 1024 個 chunk slot，
+    // 其中大多數是 air chunk（不在 Chunks TMap），直接跳過。
+    // 實際有地形的 chunk（~200-400 個）各自做一次 4096 元素的 flat array 讀取，
+    // 大幅優於原版 4,194,304 次 TMap hash lookup。
     {
-        const FTileCell Cell = GetCell(OX + x, OY + y, OZ + z);
-        PackedCells[z * H * W + y * W + x] = CaCellPacking::Pack(Cell.MaterialID, Cell.CA_State, Cell.Variant);
+        QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_PackZone);
+
+        TArray<uint32> PackedCells;
+        PackedCells.SetNumZeroed(W * H * D);  // 預設 0 = Air = 無 physics bit
+
+        const FIntVector ChunkMin = WorldToChunk(OX,         OY,         OZ);
+        const FIntVector ChunkMax = WorldToChunk(OX + W - 1, OY + H - 1, OZ + D - 1);
+
+        for (int32 CZ = ChunkMin.Z; CZ <= ChunkMax.Z; ++CZ)
+        for (int32 CY = ChunkMin.Y; CY <= ChunkMax.Y; ++CY)
+        for (int32 CX = ChunkMin.X; CX <= ChunkMax.X; ++CX)
+        {
+            FChunk3D* const* Found = Chunks.Find(FIntVector(CX, CY, CZ));
+            if (!Found) continue;  // air chunk，PackedCells 對應位置已是 0
+            FChunk3D* Chunk = *Found;
+
+            const int32 WX0 = CX * FChunk3D::Size;
+            const int32 WY0 = CY * FChunk3D::Size;
+            const int32 WZ0 = CZ * FChunk3D::Size;
+
+            // chunk 中重疊 zone 的 local 範圍
+            const int32 lxMin = FMath::Max(0, OX - WX0);
+            const int32 lxMax = FMath::Min(FChunk3D::Size - 1, OX + W - 1 - WX0);
+            const int32 lyMin = FMath::Max(0, OY - WY0);
+            const int32 lyMax = FMath::Min(FChunk3D::Size - 1, OY + H - 1 - WY0);
+            const int32 lzMin = FMath::Max(0, OZ - WZ0);
+            const int32 lzMax = FMath::Min(FChunk3D::Size - 1, OZ + D - 1 - WZ0);
+
+            for (int32 lz = lzMin; lz <= lzMax; ++lz)
+            for (int32 ly = lyMin; ly <= lyMax; ++ly)
+            for (int32 lx = lxMin; lx <= lxMax; ++lx)
+            {
+                const FTileCell& Cell = Chunk->CellAt(lx, ly, lz);
+                if (Cell.MaterialID == 0) continue;  // Air，保留預設 0
+
+                const int32 zx = WX0 + lx - OX;
+                const int32 zy = WY0 + ly - OY;
+                const int32 zz = WZ0 + lz - OZ;
+                PackedCells[zz * H * W + zy * W + zx] =
+                    CaCellPacking::Pack(Cell.MaterialID, Cell.CA_State, Cell.Variant);
+            }
+        }
+
+        // ── 踢 GPU 工作（sync 或 async 路徑）────────────────────────────────────
+        if (bAsync)
+        {
+            // Phase 5：BeginAsync 踢出去，下一幀 TryCollectAsync 收結果（1-frame latency）
+            GpuSim.BeginAsync(MoveTemp(PackedCells), W, H, D, static_cast<uint32>(Frame));
+        }
+        else
+        {
+            // Phase 3/4 sync 路徑（Upload+Simulate+Download 各自 FlushRenderingCommands）
+            if (!GpuSim.Upload(PackedCells, W, H, D)) return;
+
+            GpuSim.Simulate(static_cast<uint32>(Frame));
+
+            GpuSim.Download([this, OX, OY, OZ](int32 lx, int32 ly, int32 lz, uint32 PackedCell)
+            {
+                SetCellFromGpu(OX + lx, OY + ly, OZ + lz, PackedCell);
+            });
+        }
     }
 
-    if (!GpuSim.Upload(PackedCells, W, H, D)) return; // zone 內全靜態/空，跳過
-
-    GpuSim.Simulate(static_cast<uint32>(Frame));
-
-    GpuSim.Download([this, OX, OY, OZ](int32 lx, int32 ly, int32 lz, uint32 PackedCell)
+    // Phase 4 UE_LOG：每 10 秒輸出一次 GPU CA tick 總 ms（包含 pack + 所有 FlushRenderingCommands）
+    const double TickEnd = FPlatformTime::Seconds();
+    if (TickEnd - GpuTickLastLogTime >= 10.0)
     {
-        SetCellFromGpu(OX + lx, OY + ly, OZ + lz, PackedCell);
-    });
+        GpuTickLastLogTime = TickEnd;
+        const double TotalMs = (TickEnd - TickStart) * 1000.0;
+        UE_LOG(LogTemp, Display,
+            TEXT("[M-10 Phase 4] TickGpuZone total=%.2fms  mode=%s  (PIE console: stat quick for per-step breakdown)"),
+            TotalMs, bAsync ? TEXT("async") : TEXT("sync"));
+    }
 }
 
 void FTileWorld3D::DestroyTile(int32 x, int32 y, int32 z, EDestroyReason Reason)

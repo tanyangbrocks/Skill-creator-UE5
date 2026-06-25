@@ -43,6 +43,7 @@ void FCaGpuSimulator::SetOrigin(int32 OX, int32 OY, int32 OZ)
 
 bool FCaGpuSimulator::Upload(const TArray<uint32>& PackedCells, int32 InW, int32 InH, int32 InD)
 {
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_Upload);
     if (!bAvailable) return false;
 
     // 對應 Godot CaGpuSimulator.cs:150-151,183：PhysMask = 0x300（bits 8-9），
@@ -87,6 +88,7 @@ bool FCaGpuSimulator::Upload(const TArray<uint32>& PackedCells, int32 InW, int32
 
 void FCaGpuSimulator::Simulate(uint32 RngSeed)
 {
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_Simulate);
     if (!bAvailable || !PooledBuffer.IsValid()) return;
 
     TRefCountPtr<FRDGPooledBuffer> LocalPooled = PooledBuffer;
@@ -132,6 +134,7 @@ void FCaGpuSimulator::Simulate(uint32 RngSeed)
 
 void FCaGpuSimulator::Download(FSetCellCallback SetCellCb)
 {
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_Download);
     if (!bAvailable || !PooledBuffer.IsValid()) return;
 
     TRefCountPtr<FRDGPooledBuffer> LocalPooled = PooledBuffer;
@@ -195,6 +198,154 @@ void FCaGpuSimulator::Download(FSetCellCallback SetCellCb)
     FlushRenderingCommands();
 }
 
+// ── Phase 5：async readback ───────────────────────────────────────────────────
+
+bool FCaGpuSimulator::HasPendingAsync() const
+{
+    return AsyncReadbackInFlight.load(std::memory_order_relaxed) != nullptr;
+}
+
+bool FCaGpuSimulator::BeginAsync(TArray<uint32> PackedCells, int32 InW, int32 InH, int32 InD, uint32 RngSeed)
+{
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_BeginAsync);
+    if (!bAvailable) return false;
+
+    const uint32 PhysMask = 0x300u;
+    bool bHasPhysics = false;
+    for (uint32 Cell : PackedCells)
+        if ((Cell & PhysMask) != 0u) { bHasPhysics = true; break; }
+    if (!bHasPhysics) return false;
+
+    // 若上一幀的 readback 還沒被 TryCollectAsync 收取，丟棄舊的（1 幀舊的資料直接放棄）。
+    FRHIGPUBufferReadback* Old = AsyncReadbackInFlight.exchange(nullptr, std::memory_order_acquire);
+    if (Old)
+    {
+        ENQUEUE_RENDER_COMMAND(CaGpuDropOldReadback)([Old](FRHICommandListImmediate&) { delete Old; });
+        // 不 flush：fire and forget，drop command 會在新 BeginAsync command 之前執行（FIFO）
+    }
+
+    AsyncW       = InW;
+    AsyncH       = InH;
+    AsyncD       = InD;
+    AsyncCornerX = OriginX - InW / 2;
+    AsyncCornerY = OriginY - InH / 2;
+    AsyncCornerZ = OriginZ - InD / 2;
+
+    TRefCountPtr<FRDGPooledBuffer>*           PooledBufferPtr    = &PooledBuffer;
+    std::atomic<FRHIGPUBufferReadback*>*      AsyncReadbackPtr   = &AsyncReadbackInFlight;
+    const int32 NumCells   = PackedCells.Num();
+    const uint32 ByteCount = static_cast<uint32>(NumCells) * sizeof(uint32);
+    const int32 Groups     = ComputeMargolusGroups(FMath::Max3(InW, InH, InD));
+
+    ENQUEUE_RENDER_COMMAND(CaGpuBeginAsync)(
+        [PackedCells = MoveTemp(PackedCells), NumCells, ByteCount,
+         PooledBufferPtr, AsyncReadbackPtr, RngSeed, InW, InH, InD, Groups]
+        (FRHICommandListImmediate& RHICmdList)
+        {
+            // Graph 1：Upload（同 FCaGpuSimulator::Upload）
+            TRefCountPtr<FRDGPooledBuffer> LocalPooled;
+            {
+                FRDGBuilder GB(RHICmdList, RDG_EVENT_NAME("CaGpuAsync_Upload"));
+                FRDGBufferRef Buf = GB.CreateBuffer(
+                    FRDGBufferDesc::CreateStructuredDesc(sizeof(uint32), NumCells), TEXT("CaGpuAsyncBuf"));
+                GB.QueueBufferUpload(Buf, PackedCells.GetData(), ByteCount);
+                GB.QueueBufferExtraction(Buf, &LocalPooled);
+                GB.Execute();
+            }
+
+            // Graph 2：Simulate（Margolus Phase 0+1）+ BeginReadbackCopy
+            {
+                FRDGBuilder GB(RHICmdList, RDG_EVENT_NAME("CaGpuAsync_Sim"));
+                FRDGBufferRef Buf = GB.RegisterExternalBuffer(LocalPooled);
+
+                TShaderMapRef<FCaMargolusCS> CS(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+                for (int32 P = 0; P < 2; ++P)
+                {
+                    FCaMargolusCS::FParameters* Params = GB.AllocParameters<FCaMargolusCS::FParameters>();
+                    Params->Cells  = GB.CreateUAV(Buf);
+                    Params->W      = InW;
+                    Params->H      = InH;
+                    Params->D      = InD;
+                    Params->Phase  = P;
+                    Params->Rng    = RngSeed ^ static_cast<uint32>(P * 0xDEADBEEF);
+                    Params->ZFrom  = 0;
+                    Params->ZCount = InD;
+                    FComputeShaderUtils::AddPass(GB, RDG_EVENT_NAME("CaGpuDispatch"), CS, Params,
+                        FIntVector(Groups, Groups, Groups));
+                }
+                GB.QueueBufferExtraction(Buf, PooledBufferPtr);  // 供下一次 BeginAsync/Upload 重用
+
+                // Readback copy（AddEnqueueCopyPass 要求在 Execute() 前呼叫）
+                auto* Readback = new FRHIGPUBufferReadback(TEXT("CaGpuAsyncReadback"));
+                AddEnqueueCopyPass(GB, Readback, Buf, ByteCount);
+
+                GB.Execute();
+
+                // Execute() 後 GPU 命令已提交、readback fence 已建立，此時存指標才安全。
+                // memory_order_release 確保 game thread 下一幀 load(acquire) 能看到 Readback 全部初始化。
+                AsyncReadbackPtr->store(Readback, std::memory_order_release);
+            }
+        });
+    // ⚠️ 意圖上不呼叫 FlushRenderingCommands()——這是 Phase 5 的核心：GPU 工作與下一幀 game thread 並發執行
+    return true;
+}
+
+bool FCaGpuSimulator::TryCollectAsync(FWorldCellCb WorldCellCb)
+{
+    QUICK_SCOPE_CYCLE_COUNTER(STAT_CaGpu_TryCollect);
+
+    FRHIGPUBufferReadback* Readback = AsyncReadbackInFlight.load(std::memory_order_acquire);
+    if (!Readback) return false;
+
+    // IsReady() 可在 game thread 呼叫（只是 fence 查詢，不需要 render thread）。
+    // 一般情況下，1 幀後 GPU 已完成，這裡直接 true；極端情況（GPU 很忙）才 false。
+    if (!Readback->IsReady()) return false;
+
+    // 清除 atomic，讓 BeginAsync 下次不需要 drop
+    AsyncReadbackInFlight.store(nullptr, std::memory_order_release);
+
+    const int32 W         = AsyncW;
+    const int32 H         = AsyncH;
+    const uint32 ByteCount = static_cast<uint32>(AsyncW * AsyncH * AsyncD) * sizeof(uint32);
+    const int32 CX        = AsyncCornerX;
+    const int32 CY        = AsyncCornerY;
+    const int32 CZ        = AsyncCornerZ;
+    TArray<FAsyncCell>* CellsPtr = &AsyncCells;
+
+    // Lock()/Unlock() 要求 render thread；在 render command 裡讀資料，存進 AsyncCells（game thread 後處理）。
+    ENQUEUE_RENDER_COMMAND(CaGpuCollectAsync)(
+        [Readback, ByteCount, W, H, CX, CY, CZ, CellsPtr](FRHICommandListImmediate&)
+        {
+            const uint32* Data = static_cast<const uint32*>(Readback->Lock(ByteCount));
+            const int32 NumCells = static_cast<int32>(ByteCount / sizeof(uint32));
+            CellsPtr->Reset(NumCells / 8);  // 預分配：假設約 12.5% dirty
+
+            for (int32 i = 0; i < NumCells; ++i)
+            {
+                if (!CaCellPacking::IsDirty(Data[i])) continue;
+                const int32 z = i / (H * W);
+                const int32 r = i % (H * W);
+                const int32 y = r / W;
+                const int32 x = r % W;
+                CellsPtr->Add({ CX + x, CY + y, CZ + z, Data[i] });
+            }
+
+            Readback->Unlock();
+            delete Readback;
+        });
+
+    // 此 FlushRenderingCommands 只等 Lock/read/Unlock，GPU 工作已在上一幀完成，
+    // 所以這個 flush 極快（不再包含 GPU 等待時間）。
+    FlushRenderingCommands();
+
+    // AsyncCells 現在由 game thread 獨佔（render command 已結束）
+    for (const FAsyncCell& C : AsyncCells)
+        WorldCellCb(C.WX, C.WY, C.WZ, C.Packed);
+    AsyncCells.Reset();
+
+    return true;
+}
+
 void FCaGpuSimulator::Release()
 {
     if (PooledBuffer.IsValid())
@@ -204,5 +355,15 @@ void FCaGpuSimulator::Release()
         FlushRenderingCommands();
         PooledBuffer.SafeRelease();
     }
+
+    // Phase 5：清理飛行中的 async readback（若世界在 GPU 工作未完成前被銷毀）
+    FRHIGPUBufferReadback* Pending = AsyncReadbackInFlight.exchange(nullptr, std::memory_order_acquire);
+    if (Pending)
+    {
+        ENQUEUE_RENDER_COMMAND(CaGpuReleaseAsync)([Pending](FRHICommandListImmediate&) { delete Pending; });
+        FlushRenderingCommands();
+    }
+    AsyncCells.Empty();
+
     bAvailable = false;
 }
