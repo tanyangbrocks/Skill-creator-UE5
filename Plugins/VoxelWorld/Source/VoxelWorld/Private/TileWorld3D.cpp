@@ -30,12 +30,12 @@ void FTileWorld3D::ClearAllChunks()
 }
 
 // ============================================================
-// GPU CA（M-10 stub）
+// GPU CA（M-10 Phase 1-5 完成）
 // ============================================================
 
 void FTileWorld3D::InitGpu()
 {
-    GpuSim.Initialize();   // stub returns false; no-op until M-10
+    GpuSim.Initialize();
 }
 
 void FTileWorld3D::UpdateGpuOrigin(int32 wx, int32 wy, int32 wz)

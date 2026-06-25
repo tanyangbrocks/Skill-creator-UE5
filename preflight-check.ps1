@@ -88,6 +88,11 @@ $PlacedObjRegFile  = "$root\Plugins\VoxelWorld\Source\VoxelWorld\Public\PlacedOb
 $PCCppFile         = "$root\Source\SkillCreatorRuntime\Private\ASkillCreatorPlayerController.cpp"
 $PCHFile2          = "$root\Source\SkillCreatorRuntime\Public\ASkillCreatorPlayerController.h"
 $CharacterCppFile  = "$root\Source\SkillCreatorRuntime\Private\ASkillCreatorCharacter.cpp"
+$ABeastHFile       = "$root\Source\SkillCreatorRuntime\Public\ABeastCharacter.h"
+$ABeastCppFile     = "$root\Source\SkillCreatorRuntime\Private\ABeastCharacter.cpp"
+$CreatureTypesFile = "$root\Source\SkillCreatorCore\Public\CreatureTypes.h"
+$CaGpuSimHFile     = "$root\Plugins\VoxelWorld\Source\VoxelWorld\Public\CaGpuSimulator.h"
+$NpcAICtrlCppFile  = "$root\Source\SkillCreatorRuntime\Private\ANPCAIController.cpp"
 
 # ==================================================================
 # TIER 1 — 資料層 / VM 完整性（設計上要求逐一對應，差異即 bug）
@@ -149,7 +154,7 @@ if ($missReason.Count -gt 0 -and $missReason.Count -eq $allReason.Count) {
 } else { Pass "UDroppedItemManager 處理全部 $($allReason.Count) 個 DestroyReason" }
 
 Head "6. [Tier1] ESpawnCategory -> MobSpawnController 完整性"
-$allCat = Get-EnumValues $AEnemyHFile "ESpawnCategory"
+$allCat = Get-EnumValues $ABeastHFile "ESpawnCategory"
 $mobText = Read-UTF8 $MobSpawnCppFile
 $missCat = $allCat | Where-Object { $mobText -notmatch "ESpawnCategory::$_\b" }
 if ($missCat) { Warn "MobSpawnController 未處理: $($missCat -join ', ')（未處理的分類不會被生成/despawn，確認是否刻意）" }
@@ -182,17 +187,18 @@ if (Test-Path $EnemyMgrCppFile) {
     }
 } else { Warn "AEnemyManager.cpp 未找到 -- 跳過 7b" }
 
-# 7c（新發現，對應 Godot Check 16g：Heavy 敵人重力需多格寬度地板掃描）
-if (Test-Path $AEnemyCppFile) {
-    $t = Read-UTF8 $AEnemyCppFile
+# 7c（對應 Godot Check 16g：Heavy 敵人重力需多格寬度地板掃描）
+# AEnemy 已降為薄殼，ApplyGravity 移至 ABeastCharacter.cpp
+if (Test-Path $ABeastCppFile) {
+    $t = Read-UTF8 $ABeastCppFile
     $opts7c = [System.Text.RegularExpressions.RegexOptions]::Singleline
-    $m = [System.Text.RegularExpressions.Regex]::Match($t, 'void\s+AEnemy::ApplyGravity\(\)\s*\{(.+?)\n\}', $opts7c)
+    $m = [System.Text.RegularExpressions.Regex]::Match($t, 'void\s+ABeastCharacter::ApplyGravity\(\)\s*\{(.+?)\n\}', $opts7c)
     if ($m.Success -and $m.Groups[1].Value -match 'EEnemyType::Heavy') {
-        Pass "AEnemy.ApplyGravity 有針對 Heavy 的寬度地板掃描"
+        Pass "ABeastCharacter.ApplyGravity 有針對 Heavy 的寬度地板掃描"
     } else {
-        Fail "AEnemy.ApplyGravity 沒有 EEnemyType::Heavy 寬度地板掃描 -- Heavy 敵人站在窄邊緣可能懸空（對應 Godot Check 16g 同類錯誤）"
+        Fail "ABeastCharacter.ApplyGravity 沒有 EEnemyType::Heavy 寬度地板掃描 -- Heavy 敵人站在窄邊緣可能懸空（對應 Godot Check 16g 同類錯誤）"
     }
-} else { Warn "AEnemy.cpp 未找到 -- 跳過 7c" }
+} else { Warn "ABeastCharacter.cpp 未找到 -- 跳過 7c" }
 
 # 7d（新發現，對應 Godot Check 16f：投射物命中需處理 Heavy 2x2 碰撞箱）
 if (Test-Path $ProjectileCppFile) {
@@ -444,6 +450,92 @@ if ((Test-Path $PCCppFile) -and (Test-Path $CharacterCppFile)) {
     }
 } else { Warn "PlayerController 或 Character cpp 未找到 -- 跳過 13j" }
 
+Head "13k. [Tier1] ABeastCharacter 替換 AEnemy -- 完整性驗證"
+if (Test-Path $ABeastHFile) {
+    $t = Read-UTF8 $ABeastHFile
+    $hasGravity = $t -match 'ApplyGravity'
+    $hasSnapshot = $t -match 'TakeSnapshot'
+    $hasEnemyType = $t -match 'EEnemyType'
+    if ($hasGravity -and $hasSnapshot -and $hasEnemyType) {
+        Pass "ABeastCharacter.h 包含 ApplyGravity/TakeSnapshot/EEnemyType（AEnemy 功能完整移植）"
+    } else {
+        $missing = @()
+        if (!$hasGravity)   { $missing += 'ApplyGravity' }
+        if (!$hasSnapshot)  { $missing += 'TakeSnapshot' }
+        if (!$hasEnemyType) { $missing += 'EEnemyType' }
+        Fail "ABeastCharacter.h 缺少: $($missing -join ', ')（AEnemy 降殼後功能未完整移植）"
+    }
+} else { Warn "ABeastCharacter.h 未找到 -- 跳過 13k" }
+
+Head "13l. [Tier1] CreatureTypes -- ECreatureKind/EBeastKind/EHostility 完整性"
+if (Test-Path $CreatureTypesFile) {
+    $t = Read-UTF8 $CreatureTypesFile
+    $hasKind  = $t -match 'ECreatureKind'
+    $hasBeast = $t -match 'EBeastKind'
+    $hasHost  = $t -match 'EHostility'
+    if ($hasKind -and $hasBeast -and $hasHost) {
+        Pass "CreatureTypes.h 包含 ECreatureKind/EBeastKind/EHostility（生物分類系統完整）"
+    } else {
+        $missing = @()
+        if (!$hasKind)  { $missing += 'ECreatureKind' }
+        if (!$hasBeast) { $missing += 'EBeastKind' }
+        if (!$hasHost)  { $missing += 'EHostility' }
+        Fail "CreatureTypes.h 缺少: $($missing -join ', ')"
+    }
+} else { Warn "CreatureTypes.h 未找到 -- 跳過 13l" }
+
+Head "13m. [Tier1] M-10 CaGpuSimulator -- Phase 4+5 async API 完整性"
+if (Test-Path $CaGpuSimHFile) {
+    $t = Read-UTF8 $CaGpuSimHFile
+    $hasBegin   = $t -match 'BeginAsync'
+    $hasCollect = $t -match 'TryCollectAsync'
+    $hasPending = $t -match 'HasPendingAsync'
+    if ($hasBegin -and $hasCollect -and $hasPending) {
+        Pass "CaGpuSimulator.h 包含 Phase 5 async API（BeginAsync/TryCollectAsync/HasPendingAsync）"
+    } else {
+        $missing = @()
+        if (!$hasBegin)   { $missing += 'BeginAsync' }
+        if (!$hasCollect) { $missing += 'TryCollectAsync' }
+        if (!$hasPending) { $missing += 'HasPendingAsync' }
+        Fail "CaGpuSimulator.h 缺少 Phase 5 API: $($missing -join ', ')（M-10 Phase 5 可能未完整）"
+    }
+} else { Warn "CaGpuSimulator.h 未找到 -- 跳過 13m" }
+
+Head "13n. [Tier1] ANPCAIController -- Tick-based AI（無 BT asset 依賴）"
+if (Test-Path $NpcAICtrlCppFile) {
+    $t = Read-UTF8 $NpcAICtrlCppFile
+    $hasTick  = $t -match 'Tick\s*\('
+    $hasSteps = $t -match 'StepFlee|StepWander|StepFollow|StepCounterAttack'
+    if ($hasTick -and $hasSteps) {
+        Pass "ANPCAIController 使用 Tick-based AI（Tick + Step* 方法存在，無 BT asset 依賴）"
+    } else {
+        $missing = @()
+        if (!$hasTick)  { $missing += 'Tick()' }
+        if (!$hasSteps) { $missing += 'Step* 方法' }
+        Fail "ANPCAIController 缺少 Tick-based AI 要素: $($missing -join ', ')"
+    }
+} else { Warn "ANPCAIController.cpp 未找到 -- 跳過 13n" }
+
+Head "13o. [Tier1] Widget 生命週期守衛（NativeOnInitialized，非 NativeConstruct）"
+# 只抓「真正實作 NativeConstruct()」的行（函式定義），排除只提到 NativeConstruct 的注釋
+$widgetCppFiles = @(Get-ChildItem -Recurse -Include "*.cpp" "$root\Source", "$root\Plugins\SkillCreatorUI" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match 'Widget|HUD' })
+$badWidgets = @()
+foreach ($f in $widgetCppFiles) {
+    $t = Read-UTF8 $f.FullName
+    # 需同時滿足：① 有 void Xxx::NativeConstruct() 函式定義（非注釋）② 函式體內呼叫 BuildLayout()
+    $opts = [System.Text.RegularExpressions.RegexOptions]::Singleline
+    $m = [System.Text.RegularExpressions.Regex]::Match($t, 'void\s+\w+::NativeConstruct\(\)\s*\{([^}]+)\}', $opts)
+    if ($m.Success -and $m.Groups[1].Value -match 'BuildLayout\(\)') {
+        $badWidgets += $f.Name
+    }
+}
+if ($badWidgets) {
+    Fail "以下 Widget 在 NativeConstruct() 呼叫 BuildLayout()（已知 UMG bug：AddToViewport 第一次永遠空畫面，見 docs/開發血汗錄.md 第 1 案）: $($badWidgets -join ', ')"
+} else {
+    Pass "所有 Widget 無 NativeConstruct()->BuildLayout() 模式（均已改用 NativeOnInitialized）"
+}
+
 # ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
@@ -453,15 +545,16 @@ $missUiBT = $allBT | Where-Object { -not (Test-AnyFileContains $uiFiles "EBlockT
 if ($missUiBT) { Warn "積木編輯器 UI 層（Schema/Node）找不到對應: $($missUiBT -join ', ')（玩家可能無法在畫布上使用這些積木 -- 僅靜態檢查，無法確認實際是否顯示）" }
 else { Pass "積木編輯器 UI 層涵蓋全部 $($allBT.Count) 個 BlockType（演算法與 Godot 不同，僅驗證覆蓋契約）" }
 
-Head "15. [Tier2] 敵人 AI（FSM -> BehaviorTree，演算法刻意不同）"
-$allEnemyType = Get-EnumValues $AEnemyHFile "EEnemyType"
-$enemyFiles = Get-ChildItem -Recurse -Filter "*.cpp" "$root\Source\SkillCreatorRuntime" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+Head "15. [Tier2] 敵人 AI（FSM -> Tick-based，演算法刻意不同）"
+# AEnemy 已降為薄殼，EEnemyType 和邏輯移至 ABeastCharacter
+$allEnemyType = Get-EnumValues $ABeastHFile "EEnemyType"
+$enemyFiles = @(Get-ChildItem -Recurse -Filter "*.cpp" "$root\Source\SkillCreatorRuntime" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
 $missEnemyType = $allEnemyType | Where-Object { -not (Test-AnyFileContains $enemyFiles "EEnemyType::$_\b") }
 if ($missEnemyType) { Warn "找不到處理這些 EnemyType 的程式碼: $($missEnemyType -join ', ')" }
-else { Pass "全部 $($allEnemyType.Count) 個 EnemyType 在 Runtime 模組中有對應處理（僅驗證覆蓋契約）" }
+else { Pass "全部 $($allEnemyType.Count) 個 EnemyType 在 Runtime 模組中有對應處理（ABeastCharacter Tick-based AI）" }
 
 Head "16. [Tier3] 明確排除（不計分，僅列出原因避免誤會）"
-Skip "M-10 GPU CA -- 計畫中長期項目，尚未開始，原計畫已知（docs/plan-ue5-migration.md）"
+Skip "M-10 GPU CA PIE 視覺驗證（Phase 1-5 程式碼 2026-06-25 全部完成，Build 0 錯誤，純實機確認 CA 物理正確，靜態腳本無法驗證）"
 Skip "渲染演算法逐行比對（ArrayMesh vs RealtimeMeshComponent）-- 架構整個換掉，比對沒有意義，僅能實機驗收畫面"
 Skip "WBP_GameFlow 等 .uasset 內部設定 -- Editor 專屬二進位內容，純文字腳本無法讀取，需在 Editor 內手動確認"
 Skip "UI 是否『實際顯示在畫面上』-- 本腳本只能確認程式碼存在，無法確認 AddToViewport / 實機渲染結果"
