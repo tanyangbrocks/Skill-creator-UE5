@@ -265,6 +265,9 @@ public:
     // Attacker 為非 nullptr 時，彈反成功可凍結攻擊者（AEnemy 有 AuraComp）
     void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr, AActor* Attacker = nullptr);
     void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
+    // 元素傷害管線：不受物理/能量防禦影響，元素抗性按比例減傷
+    // bEnergyDefenseApplies：預設 false；未來「能量防禦影響元素」效果可傳 true
+    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
 
     // ── IElementalTarget ──────────────────────────────────────────
     virtual int32 GetEntityId()              const override { return -1; }

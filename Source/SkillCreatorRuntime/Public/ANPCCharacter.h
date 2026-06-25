@@ -111,6 +111,7 @@ public:
 
     // B-3 管線（命中/閃避/防禦/暴擊）；額外行為：傷害 > 0 → Disposition=Hostile
     void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
+    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
     void TakeDamageAmount(float Amount);
 
     virtual void Tick(float DeltaTime) override;

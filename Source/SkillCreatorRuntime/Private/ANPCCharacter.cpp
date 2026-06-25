@@ -102,6 +102,47 @@ void ANPCCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk
     TakeDamageAmount(Final);
 }
 
+void ANPCCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies, const FCharacterStats* Atk)
+{
+    if (Atk)
+    {
+        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
+        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
+        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
+        if (FMath::FRand() < EffDodge) return;
+    }
+
+    float Resistance = FMath::Clamp(Stats.GetElemResistance(Element), 0.f, 1.f);
+    float Step1 = ElemAtk * (1.f - Resistance);
+
+    float Step2 = Step1;
+    if (bEnergyDefenseApplies)
+    {
+        Step2 = FMath::Max(0.f, Step1 - Stats.EnergyDefense);
+        Step2 = FMath::Max(0.f, Step2 - Stats.EnergyDamageReduction);
+    }
+
+    float Final = FMath::Max(0.f, Step2);
+
+    if (Atk && Final > 0.f)
+    {
+        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
+        if (FMath::FRand() < EffCritRate)
+        {
+            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
+            Final *= EffCritMult;
+            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
+            if (FMath::FRand() < EffSuperRate)
+            {
+                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
+                Final *= EffSuperMult;
+            }
+        }
+    }
+
+    TakeDamageAmount(Final);
+}
+
 void ANPCCharacter::TakeDamageAmount(float Amount)
 {
     if (!IsAlive()) return;

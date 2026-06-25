@@ -129,6 +129,7 @@ public:
     // ── 傷害管線（B-3）──────────────────────────────────────────
     void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
     void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
+    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
 
     // ── 生命週期 ──────────────────────────────────────────────────
     void TakeDamageAmount(float Amount);
