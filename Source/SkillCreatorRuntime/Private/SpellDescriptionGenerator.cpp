@@ -122,7 +122,7 @@ FString FSpellDescriptionGenerator::GenerateStructured(const FSpellArray& Spell)
     Out += FString::Printf(TEXT("【%s】\n"), Spell.Name.IsEmpty() ? TEXT("（未命名）") : *Spell.Name);
     Out += FString::Printf(TEXT("施放: %s | 元素: %s | 延遲: %.1fs | 基礎消耗: %.0f MP\n"),
         *ContainerName((uint8)Spell.Container),
-        *ElementName((uint8)Spell.SpellElement),
+        *ElementName((uint8)Spell.PrimaryElement()),
         Spell.CastDelay,
         Spell.BaseMpCost);
 
@@ -157,8 +157,8 @@ FString FSpellDescriptionGenerator::GenerateProse(const FSpellArray& Spell)
 
     // 施法方式描述
     FString Desc = Name + TEXT("是一個") + ContainerName((uint8)Spell.Container) + TEXT("型技能");
-    if (Spell.SpellElement != ESkillElementType::None)
-        Desc += TEXT("，元素屬性為") + ElementName((uint8)Spell.SpellElement);
+    if (Spell.PrimaryElement() != ESkillElementType::None)
+        Desc += TEXT("，元素屬性為") + ElementName((uint8)Spell.PrimaryElement());
     if (Spell.CastDelay > 0.f)
         Desc += FString::Printf(TEXT("，施放延遲 %.1f 秒"), Spell.CastDelay);
     Desc += TEXT("。");

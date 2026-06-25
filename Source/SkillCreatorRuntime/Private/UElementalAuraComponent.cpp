@@ -97,6 +97,20 @@ void UElementalAuraComponent::ApplyInternal(ESkillElementType Element, float Dur
         return;
     }
 
+    // 與 NativeElement 配對（NativeElement 永久存在，不被消耗）
+    if (NativeElement != ESkillElementType::None)
+    {
+        const FReactionDef* Def = FElementalReactionTable::Lookup(Element, NativeElement);
+        if (Def)
+        {
+            UE_LOG(LogTemp, Log, TEXT("[Elemental] NativeElem %d + incoming %d => %s"),
+                   (int32)NativeElement, (int32)Element, *Def->Name);
+            if (Def->MakeStatusEffect)
+                AddEffect(Def->MakeStatusEffect(), Target);
+            return;  // incoming element 已被 NativeElement 消耗，不入 aura 池
+        }
+    }
+
     // 無反應：加入 Aura 清單，等待未來配對
     Auras.Add({ Element, Duration });
 }

@@ -178,7 +178,6 @@ struct FSpellArray
     UPROPERTY(EditAnywhere) float                  BaseMpCost     = 0.f;
     UPROPERTY(EditAnywhere) FString                NextInCombo;   // 空字串 = 連段終止
     UPROPERTY(EditAnywhere) int32                  SceneUseLimit  = 0; // 0 = 無限制
-    UPROPERTY(EditAnywhere) ESkillElementType      SpellElement   = ESkillElementType::None; // Contact/Projectile 命中元素
 
     // 容器效果（最深 SafetyGuard::MaxContainerDepth 層）
     // TUniquePtr 不能加 UPROPERTY → 用 TSharedPtr 讓 BP/序列化可見
@@ -229,8 +228,17 @@ struct FSpellArray
         return false;
     }
 
-    // 主要元素（SpellElement 即為主要元素；M-5+ 刻印元素系統完善後可從 GlobalEngravings 覆蓋）
-    ESkillElementType PrimaryElement() const { return SpellElement; }
+    // 主要元素：掃 GlobalEngravings 再掃各槽 LocalEngravings，取第一個 Element != None
+    // 對應 Godot SpellArray.cs:76-87 PrimaryElement 計算屬性；不再用獨立欄位
+    ESkillElementType PrimaryElement() const
+    {
+        for (const FEngraveData& E : GlobalEngravings)
+            if (E.Element != ESkillElementType::None) return E.Element;
+        for (const FSpellSlot& Slot : Slots)
+            for (const FEngraveData& E : Slot.LocalEngravings)
+                if (E.Element != ESkillElementType::None) return E.Element;
+        return ESkillElementType::None;
+    }
 
     // 積木樹的 JSON 持久化字串（FSpellSaveSystem 在存讀檔時於 Blocks ↔ BlocksJson 互轉）
     UPROPERTY() FString BlocksJson;

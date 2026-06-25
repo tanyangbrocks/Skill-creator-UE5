@@ -44,11 +44,14 @@ bool IsPowder(uint c) { return CellPhys(c) == 1u; }
 bool IsLiquid(uint c) { return CellPhys(c) == 2u; }
 bool IsMobile(uint c) { uint p = CellPhys(c); return p == 1u || p == 2u; }
 
-// mover 能否取代 target？
+// mover 能否取代 target？（對應 Godot TileWorld3D.cs:357-359）
 bool CanDisplace(uint mover, uint target)
 {
     if (IsEmpty(target)) return IsMobile(mover);
+    // Liquid 取代密度較小的 Liquid（Lava density4=4 沉入 Water density4=1）
     if (IsLiquid(mover) && IsLiquid(target)) return CellDens(mover) > CellDens(target);
+    // Powder 沉入 Liquid（Sand density4=9 沉入 Water density4=1）
+    if (IsPowder(mover) && IsLiquid(target)) return CellDens(mover) > CellDens(target);
     return false;
 }
 

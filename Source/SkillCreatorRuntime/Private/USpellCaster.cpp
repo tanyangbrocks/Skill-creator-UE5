@@ -1,6 +1,9 @@
 #include "USpellCaster.h"
 #include "ASkillCreatorCharacter.h"
 #include "AEnemy.h"
+#include "UEquipmentComponent.h"
+#include "ItemRegistry.h"
+#include "ItemData.h"
 #include "AEnemyManager.h"
 #include "ASpellProjectile.h"
 #include "AVoxelWorldActor.h"
@@ -202,7 +205,7 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
             Proj->Init(ProjStart, Fwd, CachedEnemyMgr, CachedVoxelWorld);
 
             float Dmg = Proj->BaseDamage;
-            const ESkillElementType Elem = Spell.SpellElement;
+            const ESkillElementType Elem = Spell.PrimaryElement();
             TWeakObjectPtr<USpellCaster> WeakThis(this);
             Proj->OnHitEnemy = [WeakThis, Dmg, Elem](AEnemy* Enemy, FGridPos HitPos)
             {
@@ -226,6 +229,28 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                     if (AVoxelWorldActor* VW = WeakThis->CachedVoxelWorld.Get())
                     if (FTileWorld3D* TW = VW->GetTileWorld())
                         TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Elem);
+                }
+                // 施法者接觸元素：NativeElement + 裝備武器 Element → 目標
+                if (WeakThis.IsValid() && Enemy->AuraComp)
+                {
+                    ASkillCreatorCharacter* Char = WeakThis->GetOwnerCharacter();
+                    if (Char)
+                    {
+                        if (Char->AuraComp && Char->AuraComp->NativeElement != ESkillElementType::None)
+                            Enemy->AuraComp->ApplyImmediate(Char->AuraComp->NativeElement,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                        if (Char->EquipmentComp)
+                        {
+                            EItemId WepId = Char->EquipmentComp->GetEquipped(FName("Weapon"));
+                            if (WepId != EItemId::None)
+                            {
+                                ESkillElementType WepElem = FItemRegistry::Get(WepId).Element;
+                                if (WepElem != ESkillElementType::None)
+                                    Enemy->AuraComp->ApplyImmediate(WepElem,
+                                        UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                            }
+                        }
+                    }
                 }
             };
         }
@@ -322,8 +347,9 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell, const TArray<FIns
     if (Target)
     {
         // 元素 Aura 施加（無冷卻命中）
-        if (Spell.SpellElement != ESkillElementType::None && Target->AuraComp)
-            Target->AuraComp->ApplyImmediate(Spell.SpellElement, UElementalAuraComponent::DefaultAuraDuration, Target);
+        const ESkillElementType ContactElem = Spell.PrimaryElement();
+        if (ContactElem != ESkillElementType::None && Target->AuraComp)
+            Target->AuraComp->ApplyImmediate(ContactElem, UElementalAuraComponent::DefaultAuraDuration, Target);
 
         // 傷害（基礎值；M-9 接 SpellRunner 後改由 VM 計算）
         constexpr float BaseDamage = 10.f;
@@ -339,11 +365,34 @@ void USpellCaster::ExecuteContactHit(const FSpellArray& Spell, const TArray<FIns
         }
 
         // SpawnEffect：命中 tile 觸發元素 CA 反應
-        if (Spell.SpellElement != ESkillElementType::None && CachedVoxelWorld)
+        if (ContactElem != ESkillElementType::None && CachedVoxelWorld)
         {
             if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
-                TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Spell.SpellElement);
+                TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, ContactElem);
         }
+
+        // 施法者接觸元素：NativeElement + 武器 Element → 目標（近戰雙向接觸）
+        if (Target->AuraComp)
+        {
+            if (Char->AuraComp && Char->AuraComp->NativeElement != ESkillElementType::None)
+                Target->AuraComp->ApplyImmediate(Char->AuraComp->NativeElement,
+                    UElementalAuraComponent::DefaultAuraDuration, Target);
+            if (Char->EquipmentComp)
+            {
+                EItemId WepId = Char->EquipmentComp->GetEquipped(FName("Weapon"));
+                if (WepId != EItemId::None)
+                {
+                    ESkillElementType WepElem = FItemRegistry::Get(WepId).Element;
+                    if (WepElem != ESkillElementType::None)
+                        Target->AuraComp->ApplyImmediate(WepElem,
+                            UElementalAuraComponent::DefaultAuraDuration, Target);
+                }
+            }
+        }
+        // 目標 NativeElement → 施法者（近戰接觸是雙向的）
+        if (Char->AuraComp && Target->AuraComp && Target->AuraComp->NativeElement != ESkillElementType::None)
+            Char->AuraComp->Apply(Target->AuraComp->NativeElement,
+                UElementalAuraComponent::DefaultAuraDuration, Char);
     }
     else
     {

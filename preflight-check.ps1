@@ -537,6 +537,79 @@ if ($badWidgets) {
 }
 
 # ==================================================================
+Head "13p. [Tier1] EContactEffect → ApplyEnvironmentalDamage 映射完整性（P-12 材質接觸效果）"
+$matRegHFile = "$root\Plugins\VoxelWorld\Source\VoxelWorld\Public\MaterialRegistry.h"
+$allContactEffect = Get-EnumValues $matRegHFile "EContactEffect"
+$charCppText = Read-UTF8 $CharacterCppFile
+$contactExclude = @('None')
+$missContact = $allContactEffect | Where-Object {
+    $_ -notin $contactExclude -and
+    $charCppText -notmatch "EContactEffect::$_\b"
+}
+if ($missContact) {
+    Fail "ApplyEnvironmentalDamage 缺少 EContactEffect 映射（P-12 接觸效果無法施加給玩家）: $($missContact -join ', ')"
+} else {
+    Pass "ApplyEnvironmentalDamage 映射全部 $($allContactEffect.Count - 1) 個 EContactEffect（Burning/Wet/Poison/Electric/Frozen/Radioactive）"
+}
+
+# ==================================================================
+Head "13q. [Tier1] FMaterialData Phase-1~4 物理欄位完整性（共 19 個新欄位）"
+$matRegHText = Read-UTF8 $matRegHFile
+$pFields = @(
+    'AutoignitionTemp', 'MeltToMaterial', 'FreezeToMaterial', 'ElectricalConductivity', 'LuminanceLevel',
+    'LiquidFlowSpeed', 'LiquidViscosity', 'GasUpwardSpeed', 'GasHorizontalSpeed', 'GasLifetime', 'BreakToMaterial',
+    'ContactEffect', 'SpeedFactor', 'Stickyness', 'Slippery', 'Restitution', 'JumpFactor', 'PlatformType', 'DangerFlags'
+)
+$missFields = $pFields | Where-Object { $matRegHText -notmatch "\b$_\b" }
+if ($missFields) {
+    Fail "FMaterialData 缺少 Phase-1~4 物理欄位: $($missFields -join ', ')"
+} else {
+    Pass "FMaterialData 包含全部$($pFields.Count) 個 Phase-1~4 物理欄位（P-1~P-19）"
+}
+
+# ==================================================================
+Head "13r. [Tier1] ASkillCreatorCharacter Phase-4 材質行為接入點（P-13/P-14/P-15/P-16/P-17）"
+$hasSpeedFactor   = $charCppText -match 'SpeedFactor'
+$hasStickyness    = $charCppText -match 'Stickyness'
+$hasSlippery      = $charCppText -match 'Slippery'
+$hasRestitution   = $charCppText -match 'Restitution'
+$hasJumpFactor    = $charCppText -match 'JumpFactor'
+$missing13r = @()
+if (!$hasSpeedFactor) { $missing13r += 'SpeedFactor(P-13)' }
+if (!$hasStickyness)  { $missing13r += 'Stickyness(P-14)' }
+if (!$hasSlippery)    { $missing13r += 'Slippery(P-15)' }
+if (!$hasRestitution) { $missing13r += 'Restitution(P-16)' }
+if (!$hasJumpFactor)  { $missing13r += 'JumpFactor(P-17)' }
+if ($missing13r) {
+    Fail "ASkillCreatorCharacter 缺少材質行為接入點: $($missing13r -join ', ')"
+} else {
+    Pass "ASkillCreatorCharacter 含全部 Phase-4 材質行為接入點（SpeedFactor/Stickyness/Slippery/Restitution/JumpFactor）"
+}
+
+# ==================================================================
+Head "13s. [Tier1] ANPCAIController::TryStep DangerFlags 守衛（P-19 NPC 避開危險地板）"
+$npcAiText = Read-UTF8 $NpcAICtrlCppFile
+if ($npcAiText -match 'DangerFlags') {
+    Pass "ANPCAIController::TryStep 含 DangerFlags 守衛（NPC 不走危險地板）"
+} else {
+    Fail "ANPCAIController::TryStep 缺少 DangerFlags 守衛（P-19 — NPC 會踩火/毒/輻射地板）"
+}
+
+# ==================================================================
+Head "13t. [Tier1] SpellArray::PrimaryElement() 計算屬性（SpellElement 欄位已移除）"
+$spellArrayHFile = "$root\Plugins\AbilitySystem\Source\AbilitySystem\Public\SpellArray.h"
+$spellArrayText  = Read-UTF8 $spellArrayHFile
+$hasPrimaryElem  = $spellArrayText -match 'PrimaryElement\(\)'
+$hasOldField     = $spellArrayText -match '\bESkillElementType\s+SpellElement\b'
+if ($hasPrimaryElem -and -not $hasOldField) {
+    Pass "SpellArray 有 PrimaryElement() 計算屬性，舊 SpellElement 欄位已移除"
+} elseif (-not $hasPrimaryElem) {
+    Fail "SpellArray 缺少 PrimaryElement() 方法（Godot SpellArray.cs:76-87 遷移缺口）"
+} else {
+    Fail "SpellArray 同時有 PrimaryElement() 和舊 SpellElement 欄位（殘留欄位未清除）"
+}
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"

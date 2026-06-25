@@ -41,6 +41,12 @@ public:
     float DefensePenalty       = 0.f;  // 防禦力懲罰（0–1）
     float AuraTemperatureShift = 0.f;  // 環境溫度偏移（°C）
 
+    // ── 固有元素（生物種類 / 裝備 / 天生屬性）────────────────────────
+    // 永久存在，不隨反應被消耗；incoming element 仍會與它配對觸發反應，
+    // 但 NativeElement 本身留存，可對下一個 incoming 再次觸發。
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Elemental")
+    ESkillElementType NativeElement = ESkillElementType::None;
+
     // ── 主要 API ──────────────────────────────────────────────────────
     // 帶冷卻（環境接觸：踩材質格 / 停留區域）；同元素 1 秒內只觸發一次
     bool Apply(ESkillElementType Element, float Duration, IElementalTarget* Target);

@@ -738,11 +738,12 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
         ESkillElementType ContactElem = ESkillElementType::None;
         switch (CurData.ContactEffect)
         {
-            case EContactEffect::Burning:  ContactElem = ESkillElementType::Fire;    break;
-            case EContactEffect::Wet:      ContactElem = ESkillElementType::Water;   break;
-            case EContactEffect::Poison:   ContactElem = ESkillElementType::Poison;  break;
-            case EContactEffect::Electric: ContactElem = ESkillElementType::Thunder; break;
-            case EContactEffect::Frozen:   ContactElem = ESkillElementType::Ice;     break;
+            case EContactEffect::Burning:     ContactElem = ESkillElementType::Fire;    break;
+            case EContactEffect::Wet:         ContactElem = ESkillElementType::Water;   break;
+            case EContactEffect::Poison:      ContactElem = ESkillElementType::Poison;  break;
+            case EContactEffect::Electric:    ContactElem = ESkillElementType::Thunder; break;
+            case EContactEffect::Frozen:      ContactElem = ESkillElementType::Ice;     break;
+            case EContactEffect::Radioactive: ContactElem = ESkillElementType::Poison;  break;
             default: break;
         }
         if (ContactElem != ESkillElementType::None)
