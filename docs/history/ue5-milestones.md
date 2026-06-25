@@ -1,6 +1,11 @@
 ﻿# UE5 已完成里程碑（歸檔）
 
-> 最後歸檔：2026-06-25（第七次，玩家面板 Stage 1~3 後超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+> 最後歸檔：2026-06-25（第八次，debug-checklist + NPC Disposition 快照修復後超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+
+| W-A~W-G More World Setting（docs/plan-more-world-setting.md） | `Source/SkillCreatorCore/Public/MaterialType.h`（Stone_Cobble/Dirt_Dry/FallenLeaf）`ItemId.h`（OakLog/FallenLeaf/OakSapling/OakFruit/Weed）`WorldHierarchy.h`（新增）`ICollectible.h`（新增）`AWeedEntity.h/.cpp`（新增）`MaterialRegistry.cpp`（GetDefaultDrops 更新）`MapGenerator3D.cpp`（PlantTreesForChunk）`AVoxelWorldActor.h/.cpp`（GrassRegrowthSystem）`ASkillCreatorCharacter.h/.cpp`（W-D 採集 / W-G TickWeedGrowth） | W-A~W-G 7 項 Build 0 錯誤 0 警告。W-A 材質子類型；W-B 樹木生成；W-C 樹崩塌；W-D ICollectible 採集；W-E 草地再生（180s）；W-F 世界層級分類 enum；W-G AWeedEntity 隨機蔓延。 |
+| M-NPC-4 Prompt 組裝＋回應解析 + M-NPC-6 行動系統（plan-npc-brain.md） | `NPCActionTypes.h`（新增）`FPromptBuilder.h/.cpp`（新增）`FNPCResponseParser.h/.cpp`（新增）`ANPCCharacter.h/.cpp`（TriggerDialogue/DispatchBrainAction）`UBTTask_NPCFlee/Follow.h/.cpp`（新增） | FPromptBuilder 組裝 system+user 兩層訊息；FNPCResponseParser strip think-tag + JSON 解析四欄；DispatchBrainAction Attack→Hostile/Flee/Follow/stub；UBTTask_NPCFlee/Follow tile-step。Build 0 錯誤 0 警告。 |
+| W-10 角色創建系統（實機 PIE 確認） | — | 使用者 2026-06-25 實機 PIE 測試通過，11 步創角流程確認可用。 |
+| D-3 爆炸聚合事件 + V-0~V-4 體素化管線（plan-voxelization.md） | `AVoxelWorldActor.h/.cpp`（OnExplosionComplete/OnVoxelDestructionComplete delegate + TriggerVoxelDestruction）`UDroppedItemManager.h/.cpp`（HandleExplodeComplete/HandleVoxelDestruction）`VoxelAsset.h/.cpp`（FVoxelCell/UVoxelAsset/FVoxelAssetEntry）`VoxParser.h/.cpp`（.vox 150 格式解析器）`FVoxelInjector.h/.cpp`（tile 注入）`AVoxelizableActor.h/.cpp`（EVoxelizationMode 基底）`ADestructibleMeshActor.h/.cpp`（Route B Actor） | D-3 delegate 廣播鏈全通；V-0~V-4 體素化管線完整建立。Build 0 錯誤（RMC 4 個 C4996 為既有第三方警告）。 |
 
 | 功能 | 關鍵檔案 | 摘要 |
 |------|---------|------|

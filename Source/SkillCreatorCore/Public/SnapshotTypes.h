@@ -57,6 +57,10 @@ struct FEntitySnapshot
 
     bool            bHasCharStats = false;
     FCharacterStats CharStats;
+
+    // 供 ANPCCharacter 存放 ENPCDisposition（uint8 cast）；SkillCreatorCore 不引入 NPC 型別
+    bool  bHasDisposition  = false;
+    uint8 DispositionByte  = 0;
 };
 
 // ── Tile 世界快照（對應 Godot S-13 TileWorldSnapshot）───────────────────────

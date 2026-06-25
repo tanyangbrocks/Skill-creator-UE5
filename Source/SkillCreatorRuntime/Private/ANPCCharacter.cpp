@@ -133,11 +133,13 @@ void ANPCCharacter::Tick(float DeltaTime)
 FEntitySnapshot ANPCCharacter::TakeSnapshot() const
 {
     FEntitySnapshot Snap;
-    Snap.EntityId  = UniqueId;
-    Snap.Position  = GridPosition;
-    Snap.Hp        = Hp;
-    Snap.Mp        = 0.f;
-    Snap.bWasAlive = IsAlive();
+    Snap.EntityId       = UniqueId;
+    Snap.Position       = GridPosition;
+    Snap.Hp             = Hp;
+    Snap.Mp             = 0.f;
+    Snap.bWasAlive      = IsAlive();
+    Snap.bHasDisposition = true;
+    Snap.DispositionByte = static_cast<uint8>(Disposition);
     return Snap;
 }
 
@@ -242,6 +244,8 @@ void ANPCCharacter::RestoreFromSnapshot(const FEntitySnapshot& Snap)
 {
     GridPosition = Snap.Position;
     Hp           = Snap.Hp;
+    if (Snap.bHasDisposition)
+        Disposition = static_cast<ENPCDisposition>(Snap.DispositionByte);
     SetActorLocation(WorldScale::TileToWorld(GridPosition,
         CachedVoxelWorld ? CachedVoxelWorld->GetTileWorld()->Height : WorldScale::DefaultWorldHeight));
 }
