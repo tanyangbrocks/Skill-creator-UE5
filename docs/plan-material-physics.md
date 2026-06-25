@@ -399,12 +399,12 @@ uint8 DangerFlags = 0;
 12. [x] P-10 GasLifetime：`SetTile()` 在 InitState=0 且 Gas.GasLifetime>0 時自動設 CA_State
 13. [x] P-11 BreakToMaterial：`DestroyTile()` 破壞後轉換為 BreakToMaterial（非 Air 時）
 
-### Phase 4 — 行為互動（P-12 ~ P-19）
-14. ContactStatusEffect 接入 `TileWorld3D` 角色站立格偵測
-15. SpeedFactor / Stickyness / Slippery 接入 `ASkillCreatorCharacter` 移速修正
-16. Restitution 接入 `ASkillCreatorCharacter` 落地事件（讀腳下材質 → 計算反彈速度）
-17. JumpFactor 接入 `ASkillCreatorCharacter::Jump()`（讀腳下材質 → 乘以初速度）
-18. DangerFlags 接入 `ANPCAIController` 路徑規避
+### Phase 4 ✅ — 行為互動（P-12 ~ P-19）
+14. [x] P-12 ContactEffect：`ApplyEnvironmentalDamage()` 映射 EContactEffect→ESkillElementType，呼叫 AuraComp->Apply()（1 秒冷卻避免每幀疊加）
+15. [x] P-13/P-14/P-15 SpeedFactor/Stickyness/Slippery：`ApplyEnvironmentalDamage()` 每幀依移動狀態 BaseSpeed × SpeedFactor(腳下) × (1−Stickyness)(身體格) 更新 MaxWalkSpeed；GroundFriction = 8×(1−Slippery)（非飛行時生效）
+16. [x] P-16 Restitution：`Landed()` 在 Super 前讀取 Velocity.Z，落地後依腳下材質 Restitution LaunchCharacter 向上反彈
+17. [x] P-17 JumpFactor：`OnJumpStarted()` 臨時縮放 JumpZVelocity×JumpFactor，Jump() 後立刻還原（不影響空中物理）
+18. [x] P-19 DangerFlags：`ANPCAIController::TryStep()` 攔截 DangerFlags!=0 的目標格地板，NPC 直接跳過不踏入危險格（P-18 PlatformType 為資料備用，暫無邏輯需求）
 
 ---
 

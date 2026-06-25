@@ -721,16 +721,52 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
     if (!TW) return;
 
     const FGridPos Pos = WorldScale::WorldToTile(GetActorLocation(), TW->Height);
-    EMaterialType Tile = TW->GetTile(Pos.X, Pos.Y, Pos.Z);
+    const EMaterialType CurTileMat  = TW->GetTile(Pos.X, Pos.Y, Pos.Z);     // 身體所在格
+    const EMaterialType FloorMat    = TW->GetTile(Pos.X, Pos.Y + 1, Pos.Z); // 腳下格（UE5 Y-down）
+    const FMaterialData& CurData    = FMaterialRegistry::Get(CurTileMat);
+    const FMaterialData& FloorData  = FMaterialRegistry::Get(FloorMat);
 
+    // 原有 DPS（Fire/Lava 接觸傷害）
     float Dps = 0.f;
-    if (Tile == EMaterialType::Fire)
-        Dps = AEnemyManager::FireDps;
-    else if (Tile == EMaterialType::Lava)
-        Dps = AEnemyManager::LavaDps;
+    if (CurTileMat == EMaterialType::Fire)  Dps = AEnemyManager::FireDps;
+    else if (CurTileMat == EMaterialType::Lava) Dps = AEnemyManager::LavaDps;
+    if (Dps > 0.f) TakeDirectDamage(Dps * DeltaTime);
 
-    if (Dps > 0.f)
-        TakeDirectDamage(Dps * DeltaTime);
+    // P-12: ContactEffect — 材質接觸元素效果（帶 1 秒冷卻，避免每幀重疊施加）
+    if (AuraComp && CurData.ContactEffect != EContactEffect::None)
+    {
+        ESkillElementType ContactElem = ESkillElementType::None;
+        switch (CurData.ContactEffect)
+        {
+            case EContactEffect::Burning:  ContactElem = ESkillElementType::Fire;    break;
+            case EContactEffect::Wet:      ContactElem = ESkillElementType::Water;   break;
+            case EContactEffect::Poison:   ContactElem = ESkillElementType::Poison;  break;
+            case EContactEffect::Electric: ContactElem = ESkillElementType::Thunder; break;
+            case EContactEffect::Frozen:   ContactElem = ESkillElementType::Ice;     break;
+            default: break;
+        }
+        if (ContactElem != ESkillElementType::None)
+            AuraComp->Apply(ContactElem, 3.f, this);
+    }
+
+    // P-13/P-14/P-15: 僅在非飛行狀態下修改地面移速與摩擦
+    if (!IsFlying())
+    {
+        // P-13: SpeedFactor（腳下材質）× P-14: (1−Stickyness)（身體所在液體阻尼）
+        const float SpeedMult = FloorData.SpeedFactor * (1.f - CurData.Stickyness);
+        float BaseSpeed = WorldScale::WalkSpeedCm;
+        switch (MovementState)
+        {
+            case EPlayerMovementState::Sprinting:      BaseSpeed = WorldScale::WalkSpeedCm * 2.f;  break;
+            case EPlayerMovementState::SuperSprinting: BaseSpeed = WorldScale::WalkSpeedCm * 4.f;  break;
+            case EPlayerMovementState::Rolling:        BaseSpeed = WorldScale::WalkSpeedCm * 1.5f; break;
+            case EPlayerMovementState::Sliding:        BaseSpeed = WorldScale::WalkSpeedCm * 2.f;  break;
+            default: break;
+        }
+        GetCharacterMovement()->MaxWalkSpeed = FMath::Max(0.f, BaseSpeed * SpeedMult);
+        // P-15: Slippery（腳下材質）→ 地面摩擦係數（8.0 = 預設急停；0 = 完全無摩擦）
+        GetCharacterMovement()->GroundFriction = 8.f * (1.f - FloorData.Slippery);
+    }
 }
 
 FManaSlot* ASkillCreatorCharacter::GetManaSlot(FName Key)
@@ -1032,6 +1068,18 @@ void ASkillCreatorCharacter::CycleCameraMode()
 void ASkillCreatorCharacter::OnJumpStarted()
 {
     JumpPressedTime = GetWorld()->GetTimeSeconds();
+
+    // P-17: JumpFactor — 讀腳下材質的跳躍倍數（只在剛起跳時生效，空中二段跳不再重算）
+    float TileJumpFactor = 1.0f;
+    if (!GetCharacterMovement()->IsFalling() && CachedVoxelWorld)
+    {
+        if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+        {
+            const FGridPos Pos = WorldScale::WorldToTile(GetActorLocation(), TW->Height);
+            TileJumpFactor = FMaterialRegistry::Get(TW->GetTile(Pos.X, Pos.Y + 1, Pos.Z)).JumpFactor;
+        }
+    }
+
     if (GetCharacterMovement()->IsFalling() && JumpCount < MaxJumpCount)
     {
         // 二段跳：給予額外向上衝量（0.9x JumpZVelocity）
@@ -1041,7 +1089,11 @@ void ASkillCreatorCharacter::OnJumpStarted()
     else if (!GetCharacterMovement()->IsFalling())
     {
         ++JumpCount;
+        // 臨時縮放 JumpZVelocity，Jump() 讀取後立刻還原（不影響後續空中物理）
+        const float OrigZ = GetCharacterMovement()->JumpZVelocity;
+        GetCharacterMovement()->JumpZVelocity = OrigZ * TileJumpFactor;
         Jump();
+        GetCharacterMovement()->JumpZVelocity = OrigZ;
     }
 }
 
@@ -1058,6 +1110,9 @@ void ASkillCreatorCharacter::OnJumpReleased()
 
 void ASkillCreatorCharacter::Landed(const FHitResult& Hit)
 {
+    // P-16: Restitution — 在 Super 之前讀落下速度（Super 之後移動元件才清零 Z 速）
+    const float FallSpeedZ = FMath::Abs(GetCharacterMovement()->Velocity.Z);
+
     Super::Landed(Hit);
     JumpCount = 0;
     if (MovementState == EPlayerMovementState::Flying) return; // 飛行中強制落地不改狀態
@@ -1071,6 +1126,18 @@ void ASkillCreatorCharacter::Landed(const FHitResult& Hit)
     {
         MovementState = EPlayerMovementState::Grounded;
         ApplyMovementState();
+    }
+
+    // P-16: Restitution — 腳下材質反彈（FallSpeedZ 在 Super 之前已讀取）
+    if (FallSpeedZ > 1.f && CachedVoxelWorld)
+    {
+        if (FTileWorld3D* TW = CachedVoxelWorld->GetTileWorld())
+        {
+            const FGridPos Pos = WorldScale::WorldToTile(GetActorLocation(), TW->Height);
+            const float Restitution = FMaterialRegistry::Get(TW->GetTile(Pos.X, Pos.Y + 1, Pos.Z)).Restitution;
+            if (Restitution > 0.f)
+                LaunchCharacter(FVector(0.f, 0.f, FallSpeedZ * Restitution), false, true);
+        }
     }
 }
 

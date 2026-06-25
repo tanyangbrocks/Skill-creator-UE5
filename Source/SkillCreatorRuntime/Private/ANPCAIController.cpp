@@ -48,6 +48,8 @@ bool ANPCAIController::TryStep(ANPCCharacter* NPC, FTileWorld3D* TW, int32 Dx, i
     if (Dx == 0 && Dz == 0) return false;
     const FGridPos Next(NPC->GridPosition.X + Dx, NPC->GridPosition.Y, NPC->GridPosition.Z + Dz);
     if (TW->GetTile(Next.X, Next.Y, Next.Z) != EMaterialType::Air) return false;
+    // P-19: DangerFlags — 避免踩上危險地板（bit0=Fire，bit1=Water，bit2=Poison，bit3=Radioactive）
+    if (FMaterialRegistry::Get(TW->GetTile(Next.X, Next.Y + 1, Next.Z)).DangerFlags != 0) return false;
     NPC->GridPosition = Next;
     NPC->SetActorLocation(WorldScale::TileToWorld(Next, NPC->CachedVoxelWorld->WorldHeight));
     return true;
