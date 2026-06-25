@@ -15,37 +15,74 @@ enum class EPhysicsCategory : uint8
     Gas     = 4,  // Fire/Steam — 上浮 + 倒計時消散
 };
 
+// 接觸狀態效果（P-12；uint8 enum 避免 FName 靜態初始化問題）
+// 站在 / 浸入材質格時施加給角色的即時效果
+enum class EContactEffect : uint8
+{
+    None        = 0,
+    Burning     = 1,  // 持續火焰傷害
+    Wet         = 2,  // 濕潤（防火）
+    Poison      = 3,  // 中毒
+    Electric    = 4,  // 感電
+    Frozen      = 5,  // 冰凍
+    Radioactive = 6,  // 輻射
+};
+
 struct FMaterialData
 {
     // ── CA 物理 ────────────────────────────────────────────────────────
     EPhysicsCategory  Physics       = EPhysicsCategory::Static;
-    float             Density       = 0.f;    // 液體密度（高密度可置換低密度）
+    // 液體/粉末 CA 排擠密度（高密度可置換低密度；Sand=6.0f 為 CA 比例尺，非現實密度）
+    // Static/Gas 材質使用現實相對密度（水=1.0），僅用於物理計算（衝擊力/浮沉），不影響 CA
+    float             Density       = 0.f;
     bool              bFlammable    = false;  // 可被引燃（Static 燃燒用）
     uint8             BurnMin       = 0;      // CA_State 燃燒倒計時下限
     uint8             BurnMax       = 0;      // CA_State 燃燒倒計時上限
     ESkillElementType NativeElement = ESkillElementType::None; // CA 元素反應用
 
     // ── 採礦 / 遊戲機制（對應 Godot MaterialData.cs）──────────────────
-    bool  bIsMineable       = false; // 可被採礦工具摧毀
-    float Hardness          = 0.f;   // 硬度（0-5；影響採礦速度）
-    int32 RequiredToolTier  = 0;     // 最低所需工具等級（0=徒手，1=基礎，2=鐵，3=高階）
-    float BlastResistance   = 0.f;   // 爆炸傷害抵抗（每點減少等比傷害）
-    float MagicResistance   = 0.f;   // 魔法傷害抵抗係數（0-1；1=完全免疫）
-    uint8 Opacity           = 255;   // 透明度（255=完全不透明；0=完全透明）
-    EItemId FragmentItem    = EItemId::None; // 採礦/爆炸碎裂後的主要掉落物 ID
+    bool  bIsMineable       = false;
+    float Hardness          = 0.f;   // 0-5；影響採礦速度
+    int32 RequiredToolTier  = 0;     // 0=徒手，1=基礎，2=鐵，3=高階
+    float BlastResistance   = 0.f;   // 爆炸傷害抵抗
+    float MagicResistance   = 0.f;   // 魔法傷害抵抗（0-1）
+    uint8 Opacity           = 255;   // 255=完全不透明；0=透明
+    EItemId FragmentItem    = EItemId::None;
 
-    // H-6：是否需要半透明渲染（對應 Godot MaterialData.cs:51 IsTransparent）。
-    // 刻意放在欄位表最後一個，現有 GMatData[] 的位置式初始化列表（13 個值）才不會
-    // 因為插入新欄位而把後面的值全部錯位一格。
+    // H-6：半透明渲染旗標
     bool  bIsTransparent    = false;
 
-    // 2026-06-23 物品系統擴充：材質的物理分類，跟 ItemData.h 的 EToolCategory 比對才給
-    // MiningSpeedMult 加成（docs/plan-item-crafting-system.md §四）。
+    // 2026-06-23 物品系統擴充
     EMaterialCategory Category = EMaterialCategory::None;
 
-    // 碎片系統脆度乘數（docs/plan-debris-fragment.md §四）。
-    // 1.0 = 標準；> 1 = 易碎（水晶、石）；< 1 = 韌性（木、土、沙）。
+    // 碎片系統脆度（1.0=標準；>1=易碎；<1=韌性）
     float Brittleness = 1.0f;
+
+    // ── Plan-MP 新增屬性（docs/plan-material-physics.md）─────────────
+    // 🔴 高優先（P-1 ~ P-5）
+    float          AutoignitionTemp      = -1.f;               // P-1: 自燃溫度(°C)；-1=不自燃
+    EMaterialType  MeltToMaterial        = EMaterialType::Air; // P-2: 加熱轉換；Air=無
+    EMaterialType  FreezeToMaterial      = EMaterialType::Air; // P-3: 冷凍轉換；Air=無
+    float          ElectricalConductivity = 0.f;               // P-4: 導電度(0-1)
+    uint8          LuminanceLevel        = 0;                  // P-5: 自發光等級(0-15)
+
+    // 🟡 中優先（P-6 ~ P-11）
+    float          LiquidFlowSpeed       = 1.0f;               // P-6: 液體流速(0-1)；僅Liquid有效
+    float          LiquidViscosity       = 0.f;                // P-7: 液體黏度(0-1)
+    float          GasUpwardSpeed        = 1.0f;               // P-8: 氣體上浮係數(0-2)；僅Gas有效
+    float          GasHorizontalSpeed    = 1.0f;               // P-9: 氣體橫向擴散係數(0-2)
+    uint16         GasLifetime           = 0;                  // P-10: 氣體壽命(tick)；0=靠BurnMax
+    EMaterialType  BreakToMaterial       = EMaterialType::Air; // P-11: 破壞留存材質；Air=清空
+
+    // 🟢 低優先（P-12 ~ P-19）
+    EContactEffect ContactEffect         = EContactEffect::None; // P-12: 接觸狀態效果
+    float          SpeedFactor           = 1.0f;               // P-13: 站立移速乘數(1=正常)
+    float          Stickyness            = 0.f;                // P-14: 浸入液體阻尼(0-1)
+    float          Slippery              = 0.f;                // P-15: 表面滑度(0=正常；1=完全滑)
+    float          Restitution           = 0.f;                // P-16: 落地彈性係數(0-1)
+    float          JumpFactor            = 1.0f;               // P-17: 跳躍高度乘數(1=正常)
+    uint8          PlatformType          = 0;                  // P-18: 0=實心；1=可穿越；2=單向
+    uint8          DangerFlags           = 0;                  // P-19: bit0=火 bit1=水 bit2=毒 bit3=輻射
 };
 
 class VOXELWORLD_API FMaterialRegistry

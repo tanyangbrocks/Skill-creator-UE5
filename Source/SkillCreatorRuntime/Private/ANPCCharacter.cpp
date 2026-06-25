@@ -1,4 +1,5 @@
 #include "ANPCCharacter.h"
+#include "UElementalAuraComponent.h"
 #include "AVoxelWorldActor.h"
 #include "AEnemyManager.h"
 #include "TileWorld3D.h"
@@ -30,6 +31,7 @@ ANPCCharacter::ANPCCharacter()
 
     MemoryComp     = CreateDefaultSubobject<UNPCMemoryComponent>(TEXT("MemoryComp"));
     PerceptionComp = CreateDefaultSubobject<UNPCPerceptionComponent>(TEXT("PerceptionComp"));
+    AuraComp       = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
 
     // BP_NPCAIController.uasset 尚未建立（需在 Editor 手動建立後賦值），
     // Cook 時 ConstructorHelpers 找不到資產會觸發 CDO Error 使打包失敗。

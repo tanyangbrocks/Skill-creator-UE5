@@ -1,54 +1,119 @@
 #include "MaterialRegistry.h"
 
-using E = ESkillElementType;
-using P = EPhysicsCategory;
-
-using I = EItemId;
+using E  = ESkillElementType;
+using P  = EPhysicsCategory;
+using I  = EItemId;
+using M  = EMaterialType;
+using EC = EContactEffect;
 
 // 材質資料表（與 EMaterialType 一一對應，依 ID 順序）
-// 欄位順序：Physics, Density, bFlammable, BurnMin, BurnMax, NativeElement,
-//           bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity,
-//           FragmentItem, bIsTransparent, Category, Brittleness（省略=1.0）
+// 欄位順序（前 16）：Physics, Density, bFlammable, BurnMin, BurnMax, NativeElement,
+//   bIsMineable, Hardness, RequiredToolTier, BlastResistance, MagicResistance, Opacity,
+//   FragmentItem, bIsTransparent, Category, Brittleness
+// 欄位順序（Plan-MP 新增 17-35）：
+//   AutoignitionTemp, MeltToMaterial, FreezeToMaterial, ElectricalConductivity, LuminanceLevel,
+//   LiquidFlowSpeed, LiquidViscosity, GasUpwardSpeed, GasHorizontalSpeed, GasLifetime,
+//   BreakToMaterial, ContactEffect, SpeedFactor, Stickyness, Slippery,
+//   Restitution, JumpFactor, PlatformType, DangerFlags
+// 省略尾端欄位 = 使用 struct 預設值
+// Density 說明：Sand=6.0f 為 CA 排擠比例尺（非現實密度）；其餘材質使用現實相對密度（水=1.0）
 static const FMaterialData GMatData[] =
 {
-    // ID  0 — Air
-    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  0,   I::None           },
-    // ID  1 — Stone_Cobble（圓石，石頭當前唯一子類型）
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  3.f, 1, 2.f,  0.5f, 255, I::FragmentStone, false, EMaterialCategory::Stone, 1.2f },
-    // ID  2 — Dirt_Dry（乾泥，泥土當前唯一子類型）
-    { P::Static, 0.f,  false, 0,   0,   E::Earth, true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
+    // ID  0 — Air（全預設）
+    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f,  0, 0.f,  0.f,  0,   I::None },
+
+    // ID  1 — Stone_Cobble（圓石）
+    // Density 2.5（現實花崗岩）；ElecCond 0.05（微導電）；Restitution 0.02
+    { P::Static, 2.5f, false, 0,   0,   E::Earth, true,  3.f,  1, 2.f,  0.5f, 255, I::FragmentStone, false, EMaterialCategory::Stone, 1.2f,
+      -1.f, M::Air, M::Air, 0.05f },
+
+    // ID  2 — Dirt_Dry（乾泥）
+    // Density 1.3；Restitution 0.02（些微緩衝）
+    { P::Static, 1.3f, false, 0,   0,   E::Earth, true,  1.f,  0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f,
+      -1.f, M::Air, M::Air, 0.f, 0, 1.0f, 0.f, 1.0f, 1.0f, 0, M::Air, EC::None, 1.0f, 0.f, 0.f, 0.02f },
+
     // ID  3 — Grass
-    { P::Static, 0.f,  false, 0,   0,   E::Wood,  true,  1.f, 0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f },
-    // ID  4 — Sand
-    { P::Powder, 0.f,  false, 0,   0,   E::Earth, true,  0.5f,0, 0.2f, 0.f,  255, I::FragmentSand,  false, EMaterialCategory::Soil,  0.4f },
-    // ID  5 — Water（H-6：Opacity 200→140≈0.55×255 + bIsTransparent=true；Godot MaterialRegistry.cs:16-17）
-    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.2f, 140, I::None,          true },
-    // ID  6 — Lava（H-6：Godot 未標 IsTransparent，220→255 完全不透明；Godot MaterialRegistry.cs:18-19）
-    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 255, I::None           },
-    // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹；原 UE5=1）
-    { P::Static, 0.f,  true,  80,  200, E::Wood,  true,  1.5f,0, 0.5f, 0.f,  255, I::FragmentWood,  false, EMaterialCategory::Wood,  0.7f },
+    // Density 1.0；AutoIgn 180°C；Restitution 0.05（草皮緩衝）
+    { P::Static, 1.0f, false, 0,   0,   E::Wood,  true,  1.f,  0, 0.5f, 0.f,  255, I::FragmentDirt,  false, EMaterialCategory::Soil,  0.5f,
+      180.f, M::Air, M::Air, 0.f, 0, 1.0f, 0.f, 1.0f, 1.0f, 0, M::Air, EC::None, 1.0f, 0.f, 0.f, 0.05f },
+
+    // ID  4 — Sand（Godot MaterialRegistry.cs:31 Density=6.0f > Water → 沙沉入水成立；保持 CA 比例尺）
+    { P::Powder, 6.0f, false, 0,   0,   E::Earth, true,  0.5f, 0, 0.2f, 0.f,  255, I::FragmentSand,  false, EMaterialCategory::Soil,  0.4f },
+
+    // ID  5 — Water（H-6：Opacity 140 + bIsTransparent；Godot MaterialRegistry.cs:16-17）
+    // ElecCond 0.8；FreezeToMaterial=Air（Ice 材質待新增）；Stickyness 0.3
+    { P::Liquid, 1.0f, false, 0,   0,   E::Water, false, 0.f,  0, 0.f,  0.2f, 140, I::None,          true,  EMaterialCategory::None,  1.0f,
+      -1.f, M::Air, M::Air, 0.8f, 0, 1.0f, 0.f, 1.0f, 1.0f, 0, M::Air, EC::None, 1.0f, 0.3f },
+
+    // ID  6 — Lava（H-6：Godot 未標 IsTransparent，完全不透明；Godot MaterialRegistry.cs:18-19）
+    // FreezeToMaterial=Stone_Cobble；LuminanceLevel=15；LiquidFlowSpeed=0.2；LiquidViscosity=0.9
+    // ContactEffect=Burning；Stickyness=0.95；DangerFlags=bit0(Fire)
+    { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f,  0, 0.f,  0.5f, 255, I::None,          false, EMaterialCategory::None,  1.0f,
+      -1.f, M::Air, M::Stone_Cobble, 0.f, 15,
+      0.2f, 0.9f, 1.0f, 1.0f, 0, M::Air,
+      EC::Burning, 1.0f, 0.95f, 0.f, 0.f, 1.0f, 0, 0b0001 },
+
+    // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹）
+    // Density 0.6（松木）；AutoIgn 250°C；ElecCond 0.01
+    { P::Static, 0.6f, true,  80,  200, E::Wood,  true,  1.5f, 0, 0.5f, 0.f,  255, I::FragmentWood,  false, EMaterialCategory::Wood,  0.7f,
+      250.f, M::Air, M::Air, 0.01f },
+
     // ID  8 — Leaves
-    { P::Static, 0.f,  true,  20,  60,  E::Wood,  true,  0.5f,0, 0.2f, 0.f,  180, I::FragmentWood,  false, EMaterialCategory::Wood,  0.6f },
+    // Density 0.3；AutoIgn 180°C
+    { P::Static, 0.3f, true,  20,  60,  E::Wood,  true,  0.5f, 0, 0.2f, 0.f,  180, I::FragmentWood,  false, EMaterialCategory::Wood,  0.6f,
+      180.f },
+
     // ID  9 — Ore_Iron
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  4.f, 2, 3.f,  1.f,  255, I::OreIronRaw,    false, EMaterialCategory::Ore,   1.1f },
+    // Density 7.9（純鐵）；ElecCond 1.0
+    { P::Static, 7.9f, false, 0,   0,   E::Metal, true,  4.f,  2, 3.f,  1.f,  255, I::OreIronRaw,    false, EMaterialCategory::Ore,   1.1f,
+      -1.f, M::Air, M::Air, 1.0f },
+
     // ID 10 — Ore_Gold
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,2, 2.5f, 0.5f, 255, I::OreGoldRaw,    false, EMaterialCategory::Ore,   1.1f },
-    // ID 11 — Fire（H-6：Opacity 150→166≈0.65×255 + bIsTransparent=true；Godot MaterialRegistry.cs:20-21）
-    { P::Gas,    0.f,  false, 0,   0,   E::Fire,  false, 0.f, 0, 0.f,  0.5f, 166, I::None,          true },
-    // ID 12 — Steam（H-6：Opacity 100→89≈0.35×255 + bIsTransparent=true；Godot MaterialRegistry.cs:22-23）
-    { P::Gas,    0.f,  false, 0,   0,   E::Water, false, 0.f, 0, 0.f,  0.f,  89,  I::None,          true },
+    // Density 19.3（純金）；ElecCond 0.8
+    { P::Static, 19.3f,false, 0,   0,   E::Metal, true,  3.5f, 2, 2.5f, 0.5f, 255, I::OreGoldRaw,    false, EMaterialCategory::Ore,   1.1f,
+      -1.f, M::Air, M::Air, 0.8f },
+
+    // ID 11 — Fire（H-6：Opacity 166 + bIsTransparent；Godot MaterialRegistry.cs:20-21）
+    // Density 0.001（近似無質量）；LuminanceLevel=13；GasUpward=1.5；GasHorizontal=0.8；DangerFlags=bit0
+    { P::Gas,  0.001f, false, 0,   0,   E::Fire,  false, 0.f,  0, 0.f,  0.5f, 166, I::None,          true,  EMaterialCategory::None,  1.0f,
+      -1.f, M::Air, M::Air, 0.f, 13,
+      1.0f, 0.f, 1.5f, 0.8f, 0, M::Air,
+      EC::None, 1.0f, 0.f, 0.f, 0.f, 1.0f, 0, 0b0001 },
+
+    // ID 12 — Steam（H-6：Opacity 89 + bIsTransparent；Godot MaterialRegistry.cs:22-23）
+    // Density 0.0006（水蒸氣）；GasUpward=2.0；GasHorizontal=0.6；GasLifetime=240 tick
+    { P::Gas, 0.0006f, false, 0,   0,   E::Water, false, 0.f,  0, 0.f,  0.f,   89, I::None,          true,  EMaterialCategory::None,  1.0f,
+      -1.f, M::Air, M::Air, 0.f, 0,
+      1.0f, 0.f, 2.0f, 0.6f, 240 },
+
     // ID 13 — Ash
-    { P::Static, 0.f,  false, 0,   0,   E::None,  true,  0.3f,0, 0.1f, 0.f,  255, I::FragmentAsh,   false, EMaterialCategory::None,  0.3f },
-    // ID 14 — Ore_Coal（H-5：Godot Coal=20幀≈Stone(40幀)×0.5，UE5 Hardness 也改 1.5f；原 3.f=Stone 相同）
-    { P::Static, 0.f,  true,  180, 240, E::Earth, true,  1.5f,1, 2.f,  0.5f, 255, I::OreCoal,       false, EMaterialCategory::Ore,   1.0f },
+    // Density 0.3（木灰）；無新欄位非預設值
+    { P::Static, 0.3f, false, 0,   0,   E::None,  true,  0.3f, 0, 0.1f, 0.f,  255, I::FragmentAsh,   false, EMaterialCategory::None,  0.3f },
+
+    // ID 14 — Ore_Coal（H-5：Hardness 1.5f）
+    // Density 1.4；AutoIgn 400°C
+    { P::Static, 1.4f, true,  180, 240, E::Earth, true,  1.5f, 1, 2.f,  0.5f, 255, I::OreCoal,       false, EMaterialCategory::Ore,   1.0f,
+      400.f },
+
     // ID 15 — Ore_Copper
-    { P::Static, 0.f,  false, 0,   0,   E::Metal, true,  3.5f,1, 2.5f, 0.5f, 255, I::OreCopperRaw,  false, EMaterialCategory::Ore,   1.1f },
-    // ID 16 — Ore_MagicCrystal（H-5：Godot RequiredToolTier=2；原 UE5=3）
-    { P::Static, 0.f,  false, 0,   0,   E::Light, true,  4.5f,2, 2.f,  3.f,  210, I::OreMagicCrystal,false,EMaterialCategory::Ore,  1.5f },
-    // ID 17 — Fixture（不可塑形可放置物腳下占位 tile：不可採、無物理模擬，純粹占用標記）
-    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f, 0, 0.f,  0.f,  255, I::None           },
-    // ID 18 — FallenLeaf（落葉 tile：可塑形可放置，可燃，硬度極低）
-    { P::Static, 0.f,  true,  10,  30,  E::Wood,  true,  0.2f,0, 0.1f, 0.f,  210, I::FallenLeaf,    false, EMaterialCategory::Wood,  0.6f },
+    // Density 8.9（純銅）；ElecCond 1.0
+    { P::Static, 8.9f, false, 0,   0,   E::Metal, true,  3.5f, 1, 2.5f, 0.5f, 255, I::OreCopperRaw,  false, EMaterialCategory::Ore,   1.1f,
+      -1.f, M::Air, M::Air, 1.0f },
+
+    // ID 16 — Ore_MagicCrystal（H-5：RequiredToolTier=2）
+    // Density 2.8；LuminanceLevel=8；Restitution=0.3（彈跳感）
+    { P::Static, 2.8f, false, 0,   0,   E::Light, true,  4.5f, 2, 2.f,  3.f,  210, I::OreMagicCrystal,false,EMaterialCategory::Ore,  1.5f,
+      -1.f, M::Air, M::Air, 0.f, 8,
+      1.0f, 0.f, 1.0f, 1.0f, 0, M::Air,
+      EC::None, 1.0f, 0.f, 0.f, 0.3f },
+
+    // ID 17 — Fixture（不可塑形可放置物腳下占位 tile）
+    { P::Empty,  0.f,  false, 0,   0,   E::None,  false, 0.f,  0, 0.f,  0.f,  255, I::None },
+
+    // ID 18 — FallenLeaf（落葉 tile）
+    // Density 0.2；AutoIgn 180°C
+    { P::Static, 0.2f, true,  10,  30,  E::Wood,  true,  0.2f, 0, 0.1f, 0.f,  210, I::FallenLeaf,    false, EMaterialCategory::Wood,  0.6f,
+      180.f },
 };
 
 static constexpr uint8 GMatDataCount = (uint8)(sizeof(GMatData) / sizeof(GMatData[0]));

@@ -4,6 +4,7 @@
 #include "ItemId.h"
 #include "EquipmentSlot.h"
 #include "MaterialType.h"
+#include "ElementType.h"
 #include "ItemData.generated.h"
 
 // 工具類別（對應 docs/plan-item-crafting-system.md §四：木鏟/木斧/木鎬只對對應材質類別加速）
@@ -49,6 +50,13 @@ struct SKILLCREATORCORE_API FItemData
 
     // 工具類別化：只有類別匹配時 MiningSpeedMult 才加成，類別不匹配仍可挖但無加速
     UPROPERTY(EditAnywhere, BlueprintReadWrite) EToolCategory ToolCategory = EToolCategory::None;
+
+    // 物品固有元素：使用/投擲→施加到目標；裝備武器→每次攻擊命中施加到對象；
+    // 裝備防具/飾品→每次受擊時施加到攻擊者（接觸反應）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) ESkillElementType Element = ESkillElementType::None;
+
+    // 物品質量（kg 等比單位）：投擲衝擊力 / 浮沉 / 爆炸飛散（plan-gravity-system.md §二）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) float Mass = 0.1f;
 
     // 可放置物的「放成 Actor」分支（寶箱/工作臺等不可塑形可放置物用，跟 PlaceAs(tile) 二選一）。
     // 用泛型 AActor 而不是 APlacedFixtureActor，避免 SkillCreatorCore（低層模組）反過來依賴

@@ -225,6 +225,11 @@ struct FCharacterStats
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ability")
     int32 LawAbilityPoints      = 0;   // 法則效果能力點
 
+    // ── 物理 ─────────────────────────────────────────────────────
+    // 質量（kg 等比單位）：墜落傷害 / 爆炸飛散 / 液體浮沉（plan-gravity-system.md §二）
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Physical")
+    float Mass = 70.f;
+
     // ── 其它 ─────────────────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Other")
     float BloodlineStrength = 1.f;
