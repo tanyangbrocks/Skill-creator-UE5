@@ -230,66 +230,11 @@ void ASkillCreatorPlayerController::OnHotbar0() { SetActiveHotbarIndex(9); }
 
 void ASkillCreatorPlayerController::OnOpenEditor()
 {
-    // 對應 Godot Main.cs:1772-1791 ToggleEditor()：E 鍵切換的是「圓球列表」首頁
-    // （_spellList.Visible = !_editorOpen），不是直接開積木編輯器本體（_editor 只在
-    // 列表裡點擊某個圓球後才顯示，見 Main.cs:1794-1829 OnListActiveSpellClicked 等）。
-    // 2026-06-22 修復：之前這裡直接呼叫 ToggleBlockEditorOverlay()，等同把 Godot 兩層
-    // 畫面（列表首頁 → 點擊進入編輯器）疊成一層，玩家按 E 會直接跳進積木編輯器本體，
-    // 跳過原本「先看到整組技能、決定要編輯哪一格或切換哪個技能組」的首頁。
-    if (bBlockEditorOpen)
-    {
-        // 已經在編輯器本體裡：E 鍵走「← 返回」同一條未儲存確認流程關閉整個編輯流程
-        // （對應 Godot _backBtn.Pressed 在 _navStack 空的狀況下呼叫 TryExitEditor()）。
-        if (BlockEditorWidget) BlockEditorWidget->RequestClose();
-        return;
-    }
-
-    ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>();
-    if (!HUD || !HUD->SpellListPanel) return;
-
-    // 只需要綁一次：圓球列表裡點擊任一槽位 → 隱藏列表、開啟積木編輯器編輯該槽位
-    // （對應 Godot Main.cs:436 _spellList.ActiveSpellClicked += OnListActiveSpellClicked）
-    if (!bSpellListSlotClickBound)
-    {
-        HUD->SpellListPanel->OnSlotClicked.BindUObject(this, &ASkillCreatorPlayerController::OnSpellListSlotClicked);
-        // 對應 Godot Main.cs:1801-1820 OnListAddSpellClicked：點「+」→ 找第一個空槽位開積木編輯器
-        HUD->SpellListPanel->OnAddSpellRequested.BindLambda([this]()
-        {
-            ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-            if (!Char || !Char->SpellCasterComp) return;
-            const FSpellLoadout& Loadout = Char->SpellCasterComp->SpellGroups.GetActiveLoadout();
-            int32 EmptySlot = -1;
-            for (int32 i = 0; i < FSpellLoadout::MaxSlots; ++i)
-            {
-                if (!Loadout.Slots.IsValidIndex(i) || !Loadout.Slots[i].IsValid())
-                { EmptySlot = i; break; }
-            }
-            if (EmptySlot < 0) return;
-            if (ASkillCreatorHUD* H = GetHUD<ASkillCreatorHUD>())
-                if (H->SpellListPanel)
-                    H->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
-            OpenBlockEditorForSlot(EmptySlot);
-        });
-        bSpellListSlotClickBound = true;
-    }
-
-    const bool bListVisible = HUD->SpellListPanel->GetVisibility() == ESlateVisibility::Visible;
-    if (!bListVisible)
-    {
-        HUD->SpellListPanel->RefreshSpellList(); // 對應 Godot Main.cs:1777 _spellList.Refresh()
-        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Visible);
-        SetShowMouseCursor(true);
-        // 使用 GameAndUI 而非 UIOnly：UIOnly 會封鎖所有 InputComponent->BindKey 事件，
-        // 導致再按 E 無法觸發 OnOpenEditor() 來關閉面板。GameAndUI 保留遊戲輸入同時
-        // 允許滑鼠事件傳給 UMG，讓 E 鍵和圓球點擊都能正常運作。
-        SetInputMode(FInputModeGameAndUI());
-    }
-    else
-    {
-        HUD->SpellListPanel->SetVisibility(ESlateVisibility::Collapsed);
-        SetShowMouseCursor(bCursorMode);  // 面板關閉後恢復 Shift 游標模式的狀態
-        SetInputMode(FInputModeGameAndUI());
-    }
+    // E 鍵已改綁 OnToggleLockTarget（S-3 鎖敵）；此函式為死碼保留，不再呼叫。
+    // SpellList 現在是 PlayerPanel（G 鍵）的 SpellEditor Tab，
+    // 由 OnOpenPlayerPanel() 的 OnSlotClicked delegate 處理開啟積木編輯器。
+    if (bBlockEditorOpen && BlockEditorWidget)
+        BlockEditorWidget->RequestClose();
 }
 
 // 對應 Godot Main.cs:1794-1799 OnListActiveSpellClicked：圓球列表裡點擊主動技能槽位

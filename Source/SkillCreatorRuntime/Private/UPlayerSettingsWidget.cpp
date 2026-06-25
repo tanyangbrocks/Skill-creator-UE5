@@ -47,8 +47,23 @@ void UPlayerSettingsWidget::NativeOnInitialized()
     if (PerfectCheck)
         PerfectCheck->OnCheckStateChanged.AddDynamic(this, &UPlayerSettingsWidget::OnPerfectToggled);
 
-    // ── 鍵位設定（Stage 4 嵌入 UInputSettingsWidget）─────────────
-    AddLabel(TEXT("◎ 鍵位設定（Stage 4 實作）"));
+    // ── 鍵位設定（嵌入 UInputSettingsWidget）────────────────────────
+    AddLabel(TEXT("◎ 鍵位設定"));
+
+    APlayerController* PC = GetOwningPlayer();
+    if (PC)
+    {
+        KeybindSection = CreateWidget<UInputSettingsWidget>(PC, UInputSettingsWidget::StaticClass());
+        if (KeybindSection)
+        {
+            UVerticalBoxSlot* KS = Cast<UVerticalBoxSlot>(Root->AddChild(KeybindSection));
+            if (KS)
+            {
+                KS->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+                KS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+            }
+        }
+    }
 }
 
 void UPlayerSettingsWidget::SyncState(bool bHold, bool bPerfect)

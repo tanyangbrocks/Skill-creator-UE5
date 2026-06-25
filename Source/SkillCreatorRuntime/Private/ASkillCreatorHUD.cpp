@@ -7,14 +7,10 @@
 #include "UEquipmentComponent.h"
 #include "UPlayerPanelWidget.h"
 #include "UPlayerSettingsWidget.h"
-#include "USettingsWidget.h"
 #include "UShapeMenuWidget.h"
 #include "USpellGroupWidget.h"
-#include "UStatsWidget.h"
 #include "UInventoryWidget.h"
 #include "UEquipmentWidget.h"
-#include "UInputSettingsWidget.h"
-#include "USpellListWidget.h"
 #include "UDebugPaintWidget.h"
 #include "UChestWidget.h"
 #include "UCraftingPanelWidget.h"
@@ -111,21 +107,11 @@ void ASkillCreatorHUD::ToggleInventoryAndEquipment()
     }
 }
 
-void ASkillCreatorHUD::ToggleSettings()
-{
-    if (SettingsPanel)
-        SettingsPanel->SyncState(bHoldToPlace, bPerfectRemove);
-    TogglePanel(SettingsPanel);
-}
-
 void ASkillCreatorHUD::ToggleShapeMenu()       { TogglePanel(ShapeMenuPanel);      }
 void ASkillCreatorHUD::ToggleSpellGroup()      { TogglePanel(SpellGroupPanel);     }
-void ASkillCreatorHUD::ToggleStats()           { TogglePanel(StatsPanel);          }
 void ASkillCreatorHUD::ToggleInventory()       { TogglePanel(InventoryPanel);      }
 void ASkillCreatorHUD::ToggleEquipment()       { TogglePanel(EquipmentPanel);      }
-void ASkillCreatorHUD::ToggleInputSettings()   { TogglePanel(InputSettingsPanel);  }
-void ASkillCreatorHUD::ToggleSpellList()       { TogglePanel(SpellListPanel);      }
-void ASkillCreatorHUD::ToggleDebugPaint()       { TogglePanel(DebugPaintPanel);     }
+void ASkillCreatorHUD::ToggleDebugPaint()      { TogglePanel(DebugPaintPanel);     }
 
 void ASkillCreatorHUD::OpenChest(AChestActor* Chest)
 {
@@ -206,18 +192,6 @@ void ASkillCreatorHUD::BeginPlay()
         }
     }
 
-    // Settings（保留供 internal 用途；鍵位不再直接綁 B 鍵）
-    SettingsPanel = CreatePanel<USettingsWidget>();
-    if (SettingsPanel)
-    {
-        SettingsPanel->OnHoldToPlaceChanged.BindLambda(
-            [this](bool b){ bHoldToPlace = b; });
-        SettingsPanel->OnPerfectRemoveChanged.BindLambda(
-            [this](bool b){ bPerfectRemove = b; });
-        SettingsPanel->OnCloseRequested.BindLambda(
-            [this](){ if (SettingsPanel) SettingsPanel->SetVisibility(ESlateVisibility::Collapsed); });
-    }
-
     // ShapeMenu
     ShapeMenuPanel = CreatePanel<UShapeMenuWidget>();
     if (ShapeMenuPanel)
@@ -261,9 +235,6 @@ void ASkillCreatorHUD::BeginPlay()
         SpellGroupPanel->OnCloseRequested.BindLambda(
             [this](){ if (SpellGroupPanel) SpellGroupPanel->SetVisibility(ESlateVisibility::Collapsed); });
     }
-
-    // Stats
-    StatsPanel = CreatePanel<UStatsWidget>();
 
     // Inventory
     InventoryPanel = CreatePanel<UInventoryWidget>();
@@ -311,12 +282,6 @@ void ASkillCreatorHUD::BeginPlay()
                 }
             });
     }
-
-    // InputSettings（按鍵重綁面板）
-    InputSettingsPanel = CreatePanel<UInputSettingsWidget>();
-
-    // SpellList（法術清單面板）
-    SpellListPanel = CreatePanel<USpellListWidget>();
 
     // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六；非常駐 Toggle，由 OpenChest() 帶資料開啟）
     ChestPanel = CreatePanel<UChestWidget>();
@@ -415,14 +380,6 @@ void ASkillCreatorHUD::DrawHUD()
             Char->CurrentMp, Char->Stats.MaxMpBase,
             Char->Level, Char->GetTierName(Char->Level),
             Char->EquipmentComp);
-    // 保留舊 StatsPanel 路徑直到 Stage 3 清理
-    if (StatsPanel && StatsPanel->GetVisibility() == ESlateVisibility::Visible)
-        StatsPanel->Refresh(Char->Stats,
-            Char->CurrentHp, Char->Stats.MaxHpBase,
-            Char->CurrentMp, Char->Stats.MaxMpBase,
-            Char->Level, Char->GetTierName(Char->Level),
-            Char->EquipmentComp);
-
     if (InventoryPanel && InventoryPanel->GetVisibility() == ESlateVisibility::Visible)
         InventoryPanel->Refresh(Char->InventoryComp);
 

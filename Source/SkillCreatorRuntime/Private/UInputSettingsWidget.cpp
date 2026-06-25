@@ -8,16 +8,98 @@
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/FileManager.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
+#include "Framework/Application/SlateApplication.h"
 
 const TCHAR* UInputSettingsWidget::ConfigSection = TEXT("PlayerInputBindings");
 
-// ─── 私有工具 ────────────────────────────────────────────────────────────────
+// ── UKeyRebindProxy ───────────────────────────────────────────────────────────
+
+void UKeyRebindProxy::OnClick()
+{
+    if (Owner.IsValid() && Border.IsValid())
+        Owner->BeginRebind(RebindId, ActionName, OrigKey, Border.Get());
+}
+
+// ── 顯示名稱對應表 ─────────────────────────────────────────────────────────────
+
+FString UInputSettingsWidget::GetDisplayName(const FString& ActionName, const FKey& Key)
+{
+    // IA_Move 依照預設鍵位決定方向（預設 W/S/A/D 不變時成立）
+    if (ActionName == TEXT("IA_Move"))
+    {
+        if (Key == EKeys::W) return TEXT("向前移動");
+        if (Key == EKeys::S) return TEXT("向後移動");
+        if (Key == EKeys::A) return TEXT("向左移動");
+        if (Key == EKeys::D) return TEXT("向右移動");
+        return TEXT("移動");
+    }
+    static const TMap<FString, FString> kNames = {
+        { TEXT("IA_Look"),        TEXT("視角（滑鼠）") },
+        { TEXT("Jump"),           TEXT("跳躍") },
+        { TEXT("Mine"),           TEXT("採掘") },
+        { TEXT("PrimaryTap"),     TEXT("主動互動") },
+        { TEXT("Place"),          TEXT("放置") },
+        { TEXT("SpellU"),         TEXT("施法 U") },
+        { TEXT("SpellI"),         TEXT("施法 I") },
+        { TEXT("SpellO"),         TEXT("施法 O") },
+        { TEXT("SpellP"),         TEXT("施法 P") },
+        { TEXT("ToggleCamera"),   TEXT("切換視角") },
+        { TEXT("DebugTrace"),     TEXT("[偵錯] 追蹤") },
+        { TEXT("SnapshotTake"),   TEXT("[偵錯] 快照") },
+        { TEXT("SnapshotApply"),  TEXT("[偵錯] 套用快照") },
+        { TEXT("DbgPaint"),       TEXT("[偵錯] 筆刷") },
+        { TEXT("DbgCoord"),       TEXT("[偵錯] 座標") },
+        { TEXT("DbgSurvival"),    TEXT("[偵錯] 生存資訊") },
+    };
+    if (const FString* V = kNames.Find(ActionName)) return *V;
+    return ActionName;
+}
+
+bool UInputSettingsWidget::IsRemappable(const FString& ActionName, const FKey& Key)
+{
+    // 滑鼠軸向無意義重綁
+    if (Key == EKeys::MouseX || Key == EKeys::MouseY) return false;
+    // 視角動作非重綁對象
+    if (ActionName == TEXT("IA_Look")) return false;
+    return true;
+}
+
+// ── 工具 ─────────────────────────────────────────────────────────────────────
+
+FString UInputSettingsWidget::MakeRebindId(const FString& ActionName, const FKey& Key)
+{
+    return ActionName + TEXT("|") + Key.ToString();
+}
+
+FString UInputSettingsWidget::KeysToConfigStr(const TArray<FKey>& Keys)
+{
+    TArray<FString> Parts;
+    for (const FKey& K : Keys) Parts.Add(K.ToString());
+    return FString::Join(Parts, TEXT(","));
+}
+
+TArray<FKey> UInputSettingsWidget::ConfigStrToKeys(const FString& S)
+{
+    TArray<FKey> Out;
+    TArray<FString> Parts;
+    S.ParseIntoArray(Parts, TEXT(","), true);
+    for (const FString& P : Parts)
+    {
+        FKey K(FName(*P.TrimStartAndEnd()));
+        if (K.IsValid()) Out.Add(K);
+    }
+    return Out;
+}
 
 FString UInputSettingsWidget::ConfigFilePath()
 {
@@ -61,18 +143,79 @@ void UInputSettingsWidget::RefreshSubsystem() const
     Sub->AddMappingContext(IMC, 0);
 }
 
-// ─── Widget 樹建構 ────────────────────────────────────────────────────────────
+bool UInputSettingsWidget::RemapActionInIMC(const FString& ActionName,
+                                            const FKey& OldKey, const FKey& NewKey)
+{
+    UInputMappingContext* IMC = GetDefaultIMC();
+    if (!IMC) return false;
+    UInputAction* Action = FindActionByName(ActionName);
+    if (!Action) return false;
+    IMC->UnmapKey(Action, OldKey);
+    IMC->MapKey(Action, NewKey);
+    RefreshSubsystem();
+    return true;
+}
+
+// ── GetCurrentBindings ────────────────────────────────────────────────────────
+
+TArray<FKeyBindingEntry> UInputSettingsWidget::GetCurrentBindings() const
+{
+    TArray<FKeyBindingEntry> Result;
+    UInputMappingContext* IMC = GetDefaultIMC();
+    if (!IMC) return Result;
+
+    const FString CfgPath = ConfigFilePath();
+    const bool bHasCfg = FPaths::FileExists(CfgPath);
+
+    for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
+    {
+        if (!M.Action) continue;
+        FKeyBindingEntry Entry;
+        Entry.ActionName = M.Action->GetName();
+        Entry.bIsRemappable = IsRemappable(Entry.ActionName, M.Key);
+
+        // 主鍵來自 IMC；Config 可能記錄了完整組合鍵清單
+        if (bHasCfg)
+        {
+            FString ComboStr;
+            const FString CfgKey = MakeRebindId(Entry.ActionName, M.Key);
+            // 先用 RebindId 找（對應「重綁後儲存」的 key）
+            if (!GConfig->GetString(ConfigSection, *CfgKey, ComboStr, CfgPath))
+                // 相容舊格式（只存 ActionName）
+                GConfig->GetString(ConfigSection, *Entry.ActionName, ComboStr, CfgPath);
+
+            TArray<FKey> Loaded = ConfigStrToKeys(ComboStr);
+            if (Loaded.Num() > 0)
+                Entry.BoundKeys = Loaded;
+        }
+
+        // 若 Config 未提供，BoundKeys 只放 IMC 主鍵
+        if (Entry.BoundKeys.IsEmpty())
+            Entry.BoundKeys.Add(M.Key);
+
+        // 確保 BoundKeys[0] 與 IMC 主鍵一致（Config 值可能過時）
+        if (Entry.BoundKeys[0] != M.Key)
+        {
+            Entry.BoundKeys.Empty();
+            Entry.BoundKeys.Add(M.Key);
+        }
+
+        if (const FKey* Orig = OriginalKeys.Find(FName(*Entry.ActionName)))
+            Entry.bIsCustomized = (M.Key != *Orig);
+
+        Result.Add(Entry);
+    }
+    return Result;
+}
+
+// ── Widget 建構 ───────────────────────────────────────────────────────────────
 
 void UInputSettingsWidget::BuildLayout()
 {
     UVerticalBox* Root = WidgetTree->ConstructWidget<UVerticalBox>();
     WidgetTree->RootWidget = Root;
 
-    UTextBlock* Title = WidgetTree->ConstructWidget<UTextBlock>();
-    Title->SetText(FText::FromString(TEXT("─── 按鍵設定 ───")));
-    Root->AddChildToVerticalBox(Title);
-
-    // 鍵位清單（可捲動）
+    // 捲動鍵位清單
     UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>();
     if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(Scroll))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -80,43 +223,138 @@ void UInputSettingsWidget::BuildLayout()
     BindingListContainer = WidgetTree->ConstructWidget<UVerticalBox>();
     Scroll->AddChild(BindingListContainer);
 
-    // 提示文字
-    UTextBlock* Hint = WidgetTree->ConstructWidget<UTextBlock>();
-    Hint->SetText(FText::FromString(TEXT("（鍵位重綁請呼叫 RemapAction(ActionName, NewKey)）")));
-    Root->AddChildToVerticalBox(Hint);
-
     // 操作按鈕列
     UHorizontalBox* BtnRow = WidgetTree->ConstructWidget<UHorizontalBox>();
     Root->AddChildToVerticalBox(BtnRow);
 
-    UButton* SaveBtn = WidgetTree->ConstructWidget<UButton>();
-    UTextBlock* SaveTxt = WidgetTree->ConstructWidget<UTextBlock>();
-    SaveTxt->SetText(FText::FromString(TEXT("儲存")));
-    SaveBtn->AddChild(SaveTxt);
-    SaveBtn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnSaveClicked);
-    BtnRow->AddChildToHorizontalBox(SaveBtn);
+    auto MakeBtn = [&](const FString& Label, void (UInputSettingsWidget::*Fn)())
+    {
+        UButton* Btn = WidgetTree->ConstructWidget<UButton>();
+        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+        Txt->SetText(FText::FromString(Label));
+        Txt->SetColorAndOpacity(FSlateColor(FLinearColor(0.1f, 0.1f, 0.2f)));
+        Btn->AddChild(Txt);
+        Btn->OnClicked.AddDynamic(this, Fn);
+        if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(BtnRow->AddChild(Btn)))
+            HS->SetPadding(FMargin(4.f, 8.f));
+        return Btn;
+    };
+    MakeBtn(TEXT("儲存"), &UInputSettingsWidget::OnSaveClicked);
+    MakeBtn(TEXT("恢復預設"), &UInputSettingsWidget::OnResetClicked);
 
-    UButton* ResetBtn = WidgetTree->ConstructWidget<UButton>();
-    UTextBlock* ResetTxt = WidgetTree->ConstructWidget<UTextBlock>();
-    ResetTxt->SetText(FText::FromString(TEXT("恢復預設")));
-    ResetBtn->AddChild(ResetTxt);
-    ResetBtn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnResetClicked);
-    BtnRow->AddChildToHorizontalBox(ResetBtn);
-
-    // 狀態文字
     StatusText = WidgetTree->ConstructWidget<UTextBlock>();
     StatusText->SetText(FText::GetEmpty());
+    StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.2f, 0.6f, 0.2f)));
     Root->AddChildToVerticalBox(StatusText);
 }
 
-// ─── 初始化 ──────────────────────────────────────────────────────────────────
+void UInputSettingsWidget::RebuildRows(const TArray<FKeyBindingEntry>& Entries)
+{
+    if (!BindingListContainer) return;
+    BindingListContainer->ClearChildren();
+    ActionBorders.Empty();
+    RowProxies.Empty();
+
+    const FLinearColor kRowBg    = FLinearColor(0.94f, 0.96f, 0.99f);
+    const FLinearColor kRowBgAlt = FLinearColor(0.89f, 0.92f, 0.97f);
+    const FLinearColor kKeyBg    = FLinearColor(0.80f, 0.85f, 0.95f);
+    const FLinearColor kText     = FLinearColor(0.1f,  0.1f,  0.2f);
+    const FLinearColor kGray     = FLinearColor(0.5f,  0.5f,  0.5f);
+
+    for (int32 i = 0; i < Entries.Num(); ++i)
+    {
+        const FKeyBindingEntry& E = Entries[i];
+
+        // 行 border
+        UBorder* RowBorder = WidgetTree->ConstructWidget<UBorder>();
+        FSlateBrush RowBrush;
+        RowBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+        RowBrush.TintColor = FSlateColor(i % 2 == 0 ? kRowBg : kRowBgAlt);
+        RowBorder->SetBrush(RowBrush);
+        if (UVerticalBoxSlot* VS = Cast<UVerticalBoxSlot>(
+                BindingListContainer->AddChild(RowBorder)))
+            VS->SetPadding(FMargin(0.f, 1.f));
+
+        UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+        if (UBorderSlot* BS = Cast<UBorderSlot>(RowBorder->AddChild(Row)))
+            BS->SetPadding(FMargin(8.f, 6.f));
+
+        // 左：動作名稱
+        USizeBox* NameBox = WidgetTree->ConstructWidget<USizeBox>();
+        NameBox->SetWidthOverride(200.f);
+        UTextBlock* NameTxt = WidgetTree->ConstructWidget<UTextBlock>();
+        const FString DisplayStr = GetDisplayName(E.ActionName, E.BoundKeys.IsEmpty() ? EKeys::Invalid : E.BoundKeys[0]);
+        NameTxt->SetText(FText::FromString(
+            E.bIsCustomized ? FString(TEXT("* ")) + DisplayStr : DisplayStr));
+        NameTxt->SetColorAndOpacity(FSlateColor(kText));
+        NameBox->AddChild(NameTxt);
+        Row->AddChildToHorizontalBox(NameBox);
+
+        // 右：鍵位顯示格（可點擊→重綁）
+        UBorder* KeyBorder = WidgetTree->ConstructWidget<UBorder>();
+        FSlateBrush KeyBrush;
+        KeyBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+        KeyBrush.TintColor = FSlateColor(kKeyBg);
+        KeyBorder->SetBrush(KeyBrush);
+
+        // 顯示組合鍵文字（如 "W" 或 "U + LeftCtrl"）
+        FString KeyStr;
+        for (int32 k = 0; k < E.BoundKeys.Num(); ++k)
+        {
+            if (k > 0) KeyStr += TEXT(" + ");
+            KeyStr += E.BoundKeys[k].ToString();
+        }
+        UTextBlock* KeyTxt = WidgetTree->ConstructWidget<UTextBlock>();
+        KeyTxt->SetText(FText::FromString(KeyStr));
+        KeyTxt->SetColorAndOpacity(FSlateColor(E.bIsRemappable ? kText : kGray));
+        if (UBorderSlot* KBS = Cast<UBorderSlot>(KeyBorder->AddChild(KeyTxt)))
+            KBS->SetPadding(FMargin(10.f, 4.f));
+
+        if (E.bIsRemappable)
+        {
+            // 可重綁：用 UButton 包住 KeyBorder
+            UButton* KeyBtn = WidgetTree->ConstructWidget<UButton>();
+            FSlateBrush BtnBrush;
+            BtnBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
+            FButtonStyle BtnStyle;
+            BtnStyle.Normal = BtnStyle.Hovered = BtnStyle.Pressed = BtnBrush;
+            KeyBtn->SetStyle(BtnStyle);
+            KeyBtn->AddChild(KeyBorder);
+            if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(
+                    Row->AddChildToHorizontalBox(KeyBtn)))
+                HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
+            // Dynamic delegate 不支援 AddLambda，使用 Proxy UObject 轉發
+            const FString RebindId = MakeRebindId(E.ActionName,
+                E.BoundKeys.IsEmpty() ? EKeys::Invalid : E.BoundKeys[0]);
+            UKeyRebindProxy* Proxy = NewObject<UKeyRebindProxy>(this);
+            Proxy->RebindId   = RebindId;
+            Proxy->ActionName = E.ActionName;
+            Proxy->OrigKey    = E.BoundKeys.IsEmpty() ? EKeys::Invalid : E.BoundKeys[0];
+            Proxy->Owner      = this;
+            Proxy->Border     = KeyBorder;
+            RowProxies.Add(Proxy);
+            KeyBtn->OnClicked.AddDynamic(Proxy, &UKeyRebindProxy::OnClick);
+
+            ActionBorders.Add(RebindId, KeyBorder);
+        }
+        else
+        {
+            if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(
+                    Row->AddChildToHorizontalBox(KeyBorder)))
+                HS->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        }
+    }
+}
+
+// ── 初始化 ────────────────────────────────────────────────────────────────────
 
 void UInputSettingsWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
     BuildLayout();
 
-    // 拍攝原始鍵位快照（每個動作取第一個 mapping 的 key）
+    // 原始鍵位快照（Load 前，每個 action 取第一個 mapping 的 key）
     OriginalKeys.Empty();
     if (UInputMappingContext* IMC = GetDefaultIMC())
         for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
@@ -124,28 +362,129 @@ void UInputSettingsWidget::NativeOnInitialized()
                 OriginalKeys.Add(FName(*M.Action->GetName()), M.Key);
 
     LoadAndApplyBindings();
+    RebuildRows(GetCurrentBindings());
 }
 
-// ─── BlueprintNativeEvent 預設實作 ───────────────────────────────────────────
+// ── 重綁狀態機 ───────────────────────────────────────────────────────────────
 
-void UInputSettingsWidget::OnBindingsChanged_Implementation(const TArray<FKeyBindingEntry>& UpdatedBindings)
+void UInputSettingsWidget::BeginRebind(const FString& RebindId, const FString& ActionName,
+                                       const FKey& OrigKey, UBorder* RowBorder)
 {
-    if (!BindingListContainer) return;
-    BindingListContainer->ClearChildren();
+    // 若已在等待中，先取消舊的
+    if (bAwaitingInput) CancelRebind();
 
-    for (const FKeyBindingEntry& E : UpdatedBindings)
-    {
-        const FString Marker  = E.bIsCustomized ? TEXT("*") : TEXT(" ");
-        const FString RowText = FString::Printf(
-            TEXT("%s  %-30s  →  %s"), *Marker, *E.ActionName, *E.BoundKey.ToString());
+    PendingRebindId   = RebindId;
+    PendingActionName = ActionName;
+    PendingOrigKey    = OrigKey;
+    PendingBorder     = RowBorder;
+    PendingKeys.Empty();
+    KeysCurrentlyHeld.Empty();
+    bAwaitingInput = true;
 
-        UTextBlock* Row = WidgetTree->ConstructWidget<UTextBlock>();
-        Row->SetText(FText::FromString(RowText));
-        BindingListContainer->AddChildToVerticalBox(Row);
-    }
+    // 黃色高亮
+    FSlateBrush Brush;
+    Brush.DrawAs   = ESlateBrushDrawType::RoundedBox;
+    Brush.TintColor = FSlateColor(FLinearColor(1.0f, 0.9f, 0.1f));
+    RowBorder->SetBrush(Brush);
+
+    // 讓此 Widget 接收鍵盤事件
+    SetFocus();
+
+    if (StatusText)
+        StatusText->SetText(FText::FromString(TEXT("請按下新鍵位（最多 4 鍵，Esc 取消）")));
 }
 
-// ─── 按鈕回呼 ────────────────────────────────────────────────────────────────
+void UInputSettingsWidget::CommitRebind()
+{
+    bAwaitingInput = false;
+
+    if (PendingBorder)
+    {
+        FSlateBrush Brush;
+        Brush.DrawAs   = ESlateBrushDrawType::RoundedBox;
+        Brush.TintColor = FSlateColor(FLinearColor(0.80f, 0.85f, 0.95f));
+        PendingBorder->SetBrush(Brush);
+    }
+
+    if (PendingKeys.IsEmpty() || !PendingOrigKey.IsValid()) { CancelRebind(); return; }
+
+    // 套用主鍵到 IMC
+    if (RemapActionInIMC(PendingActionName, PendingOrigKey, PendingKeys[0]))
+    {
+        // 寫入 Config（完整組合鍵）
+        const FString CfgPath = ConfigFilePath();
+        const FString NewRebindId = MakeRebindId(PendingActionName, PendingKeys[0]);
+        GConfig->SetString(ConfigSection, *NewRebindId, *KeysToConfigStr(PendingKeys), CfgPath);
+        // 若舊 RebindId 不同（主鍵改變），刪除舊 key
+        if (NewRebindId != PendingRebindId)
+            GConfig->RemoveKey(ConfigSection, *PendingRebindId, CfgPath);
+        GConfig->Flush(false, CfgPath);
+
+        if (StatusText)
+            StatusText->SetText(FText::FromString(
+                TEXT("已更新：") + GetDisplayName(PendingActionName, PendingKeys[0]) +
+                TEXT(" → ") + KeysToConfigStr(PendingKeys)));
+    }
+
+    PendingBorder = nullptr;
+    RebuildRows(GetCurrentBindings());
+}
+
+void UInputSettingsWidget::CancelRebind()
+{
+    bAwaitingInput = false;
+
+    if (PendingBorder)
+    {
+        FSlateBrush Brush;
+        Brush.DrawAs   = ESlateBrushDrawType::RoundedBox;
+        Brush.TintColor = FSlateColor(FLinearColor(0.80f, 0.85f, 0.95f));
+        PendingBorder->SetBrush(Brush);
+        PendingBorder = nullptr;
+    }
+
+    PendingKeys.Empty();
+    KeysCurrentlyHeld.Empty();
+    if (StatusText) StatusText->SetText(FText::GetEmpty());
+}
+
+// ── 鍵盤事件捕捉 ─────────────────────────────────────────────────────────────
+
+FReply UInputSettingsWidget::NativeOnKeyDown(const FGeometry& Geo, const FKeyEvent& Ev)
+{
+    if (!bAwaitingInput) return Super::NativeOnKeyDown(Geo, Ev);
+
+    const FKey Key = Ev.GetKey();
+
+    if (Key == EKeys::Escape)
+    {
+        CancelRebind();
+        return FReply::Handled();
+    }
+
+    if (!KeysCurrentlyHeld.Contains(Key))
+        KeysCurrentlyHeld.Add(Key);
+
+    if (!PendingKeys.Contains(Key) && PendingKeys.Num() < 4)
+        PendingKeys.Add(Key);
+
+    return FReply::Handled();
+}
+
+FReply UInputSettingsWidget::NativeOnKeyUp(const FGeometry& Geo, const FKeyEvent& Ev)
+{
+    if (!bAwaitingInput) return Super::NativeOnKeyUp(Geo, Ev);
+
+    KeysCurrentlyHeld.Remove(Ev.GetKey());
+
+    // 所有鍵都鬆開後 commit
+    if (KeysCurrentlyHeld.IsEmpty() && PendingKeys.Num() > 0)
+        CommitRebind();
+
+    return FReply::Handled();
+}
+
+// ── 按鈕回呼 ─────────────────────────────────────────────────────────────────
 
 void UInputSettingsWidget::OnSaveClicked()
 {
@@ -159,46 +498,7 @@ void UInputSettingsWidget::OnResetClicked()
     if (StatusText) StatusText->SetText(FText::FromString(TEXT("已恢復預設鍵位")));
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
-
-TArray<FKeyBindingEntry> UInputSettingsWidget::GetCurrentBindings() const
-{
-    TArray<FKeyBindingEntry> Result;
-    UInputMappingContext* IMC = GetDefaultIMC();
-    if (!IMC) return Result;
-
-    for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
-    {
-        if (!M.Action) continue;
-        FKeyBindingEntry Entry;
-        Entry.ActionName = M.Action->GetName();
-        Entry.BoundKey   = M.Key;
-        if (const FKey* Orig = OriginalKeys.Find(FName(*Entry.ActionName)))
-            Entry.bIsCustomized = (M.Key != *Orig);
-        Result.Add(Entry);
-    }
-    return Result;
-}
-
-bool UInputSettingsWidget::RemapAction(const FString& ActionName, const FKey& NewKey)
-{
-    UInputMappingContext* IMC = GetDefaultIMC();
-    if (!IMC) return false;
-
-    UInputAction* Action = FindActionByName(ActionName);
-    if (!Action) return false;
-
-    FKey OldKey;
-    for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
-        if (M.Action.Get() == Action) { OldKey = M.Key; break; }
-
-    IMC->UnmapKey(Action, OldKey);
-    IMC->MapKey(Action, NewKey);
-
-    RefreshSubsystem();
-    OnBindingsChanged(GetCurrentBindings());
-    return true;
-}
+// ── Public API ────────────────────────────────────────────────────────────────
 
 void UInputSettingsWidget::SaveBindings()
 {
@@ -208,9 +508,12 @@ void UInputSettingsWidget::SaveBindings()
     const FString CfgPath = ConfigFilePath();
     GConfig->EmptySection(ConfigSection, CfgPath);
 
-    for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
-        if (M.Action)
-            GConfig->SetString(ConfigSection, *M.Action->GetName(), *M.Key.ToString(), CfgPath);
+    for (const FKeyBindingEntry& E : GetCurrentBindings())
+    {
+        if (E.BoundKeys.IsEmpty()) continue;
+        const FString RebindId = MakeRebindId(E.ActionName, E.BoundKeys[0]);
+        GConfig->SetString(ConfigSection, *RebindId, *KeysToConfigStr(E.BoundKeys), CfgPath);
+    }
 
     GConfig->Flush(false, CfgPath);
 }
@@ -223,30 +526,37 @@ void UInputSettingsWidget::LoadAndApplyBindings()
     UInputMappingContext* IMC = GetDefaultIMC();
     if (!IMC) return;
 
-    // Copy the array before iterating: UnmapKey modifies GetMappings()'s backing array
+    // 快照避免迭代修改
     const TArray<FEnhancedActionKeyMapping> Snapshot = IMC->GetMappings();
 
     bool bChanged = false;
     for (const FEnhancedActionKeyMapping& M : Snapshot)
     {
         if (!M.Action) continue;
-        FString KeyStr;
-        if (!GConfig->GetString(ConfigSection, *M.Action->GetName(), KeyStr, CfgPath)) continue;
 
-        FKey LoadedKey(*KeyStr);
-        if (!LoadedKey.IsValid() || LoadedKey == M.Key) continue;
+        // 嘗試以 RebindId 讀取
+        FString ComboStr;
+        const FString RebindId = MakeRebindId(M.Action->GetName(), M.Key);
+        if (!GConfig->GetString(ConfigSection, *RebindId, ComboStr, CfgPath))
+        {
+            // 相容舊格式（只存 ActionName）
+            GConfig->GetString(ConfigSection, *M.Action->GetName(), ComboStr, CfgPath);
+        }
+        if (ComboStr.IsEmpty()) continue;
+
+        TArray<FKey> LoadedKeys = ConfigStrToKeys(ComboStr);
+        if (LoadedKeys.IsEmpty() || !LoadedKeys[0].IsValid()) continue;
+
+        const FKey NewPrimary = LoadedKeys[0];
+        if (NewPrimary == M.Key) continue;
 
         UInputAction* Action = const_cast<UInputAction*>(M.Action.Get());
         IMC->UnmapKey(Action, M.Key);
-        IMC->MapKey(Action, LoadedKey);
+        IMC->MapKey(Action, NewPrimary);
         bChanged = true;
     }
 
-    if (bChanged)
-    {
-        RefreshSubsystem();
-        OnBindingsChanged(GetCurrentBindings());
-    }
+    if (bChanged) RefreshSubsystem();
 }
 
 void UInputSettingsWidget::ResetToDefaults()
@@ -263,7 +573,7 @@ void UInputSettingsWidget::ResetToDefaults()
         for (const FEnhancedActionKeyMapping& M : IMC->GetMappings())
             if (M.Action.Get() == Action) { CurKey = M.Key; break; }
 
-        if (CurKey != Pair.Value)
+        if (CurKey.IsValid() && CurKey != Pair.Value)
         {
             IMC->UnmapKey(Action, CurKey);
             IMC->MapKey(Action, Pair.Value);
@@ -275,5 +585,5 @@ void UInputSettingsWidget::ResetToDefaults()
     const FString CfgPath = ConfigFilePath();
     if (FPaths::FileExists(CfgPath)) IFileManager::Get().Delete(*CfgPath);
 
-    OnBindingsChanged(GetCurrentBindings());
+    RebuildRows(GetCurrentBindings());
 }
