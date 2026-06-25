@@ -46,11 +46,11 @@ static const FMaterialData GMatData[] =
       -1.f, M::Air, M::Air, 0.8f, 0, 1.0f, 0.f, 1.0f, 1.0f, 0, M::Air, EC::None, 1.0f, 0.3f },
 
     // ID  6 — Lava（H-6：Godot 未標 IsTransparent，完全不透明；Godot MaterialRegistry.cs:18-19）
-    // FreezeToMaterial=Stone_Cobble；LuminanceLevel=15；LiquidFlowSpeed=0.2；LiquidViscosity=0.9
-    // ContactEffect=Burning；Stickyness=0.95；DangerFlags=bit0(Fire)
+    // FreezeToMaterial=Stone_Cobble；LuminanceLevel=15；LiquidFlowSpeed=0.333（Godot TileWorld3D.cs:265 每3幀）
+    // LiquidViscosity=0.9；ContactEffect=Burning；Stickyness=0.95；DangerFlags=bit0(Fire)
     { P::Liquid, 3.0f, false, 0,   0,   E::Fire,  false, 0.f,  0, 0.f,  0.5f, 255, I::None,          false, EMaterialCategory::None,  1.0f,
       -1.f, M::Air, M::Stone_Cobble, 0.f, 15,
-      0.2f, 0.9f, 1.0f, 1.0f, 0, M::Air,
+      0.333f, 0.9f, 1.0f, 1.0f, 0, M::Air,
       EC::Burning, 1.0f, 0.95f, 0.f, 0.f, 1.0f, 0, 0b0001 },
 
     // ID  7 — Wood（H-5：Godot RequiredToolTier=0 徒手砍樹）

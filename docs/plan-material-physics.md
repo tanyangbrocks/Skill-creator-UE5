@@ -393,11 +393,11 @@ uint8 DangerFlags = 0;
 8. [x] `ElectricalConductivity`：`PropagateThunder()` BFS（Threshold=0.3, MaxSteps=20）
 9. [x] `AutoignitionTemp`：`IgniteMaterial` + `TryIgniteAround` 加 AutoignitionTemp 材質支援（AutoignitionTemp≥0 可被引燃；機率 = Chance × max(1, 300/AutoignitionTemp)）
 
-### Phase 3 — CA 物理細化（P-6 ~ P-11）
-10. 液體流速 / 黏度接入 CPU `UpdateLiquid()`
-11. 氣體速度向量接入 `UpdateGas()`
-12. GasLifetime 計時消散
-13. BreakToMaterial 接入採礦 / 爆炸回呼
+### Phase 3 ✅ — CA 物理細化（P-6 ~ P-11）
+10. [x] P-6/P-7 液體流速/黏度：`UpdateLiquid()` 改資料驅動（SkipN=round(1/FlowSpeed)，Spread=FlowSpeed×3×(1-Viscosity)），Lava FlowSpeed 由 0.2→0.333 維持 Godot Frame%3 行為
+11. [x] P-8/P-9 氣體速度向量：`UpdateGas()` 上浮機率=min(1,GasUpwardSpeed)，斜向機率=min(1,GasHorizontalSpeed)
+12. [x] P-10 GasLifetime：`SetTile()` 在 InitState=0 且 Gas.GasLifetime>0 時自動設 CA_State
+13. [x] P-11 BreakToMaterial：`DestroyTile()` 破壞後轉換為 BreakToMaterial（非 Air 時）
 
 ### Phase 4 — 行為互動（P-12 ~ P-19）
 14. ContactStatusEffect 接入 `TileWorld3D` 角色站立格偵測

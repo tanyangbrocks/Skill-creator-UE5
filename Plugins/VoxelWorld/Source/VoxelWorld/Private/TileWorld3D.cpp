@@ -181,7 +181,9 @@ void FTileWorld3D::DestroyTile(int32 x, int32 y, int32 z, EDestroyReason Reason)
 {
     EMaterialType OldMat = GetTile(x, y, z);
     if (OldMat == EMaterialType::Air) return;
-    SetTile(x, y, z, EMaterialType::Air);
+    // P-11: BreakToMaterial — 採礦/爆炸破壞後轉換為指定材質（Air = 直接清空）
+    const FMaterialData& D = FMaterialRegistry::Get(OldMat);
+    SetTile(x, y, z, D.BreakToMaterial != EMaterialType::Air ? D.BreakToMaterial : EMaterialType::Air);
     if (OnTileDestroyed) OnTileDestroyed(x, y, z, OldMat, Reason);
 }
 
@@ -244,6 +246,13 @@ void FTileWorld3D::SetTile(int32 x, int32 y, int32 z, EMaterialType Mat, uint8 C
     FChunk3D&  C  = *GetOrCreateChunk(CC);
     FTileCell& Cell = C.CellAt(LC.X, LC.Y, LC.Z);
     Cell.MaterialID = static_cast<uint8>(Mat);
+    // P-10: GasLifetime — 氣體以 GasLifetime 為 CA_State 初始壽命（僅在呼叫端未指定時使用）
+    if (CA_StateInit == 0)
+    {
+        const FMaterialData& D = FMaterialRegistry::Get(Mat);
+        if (D.Physics == EPhysicsCategory::Gas && D.GasLifetime > 0)
+            CA_StateInit = static_cast<uint8>(FMath::Min<uint32>(D.GasLifetime, 255));
+    }
     Cell.CA_State   = CA_StateInit;
     Cell.Flags      = 0;
     C.MarkDirty(LC.X, LC.Y, LC.Z);
@@ -516,9 +525,12 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
 {
     FTileCell Cell = GetCell(x, y, z);
     EMaterialType Mat = static_cast<EMaterialType>(Cell.MaterialID);
+    const FMaterialData& D = FMaterialRegistry::Get(Mat);
 
-    // G-3a：Lava 限速 — 每 3 幀才更新一次，使岩漿流速約為水的 1/3（Godot TileWorld3D.cs:265）
-    if (Mat == EMaterialType::Lava && Frame % 3 != 0) return;
+    // P-6: LiquidFlowSpeed — 資料驅動幀跳過（原 Lava Frame%3 改由 FlowSpeed=0.333 控制）
+    // G-3a 對齊：Lava FlowSpeed=0.333 → SkipN=3，行為不變（Godot TileWorld3D.cs:265）
+    int32 SkipN = FMath::Max(1, FMath::RoundToInt(1.f / FMath::Max(0.001f, D.LiquidFlowSpeed)));
+    if (SkipN > 1 && Frame % SkipN != 0) return;
 
     if (TryMove(x, y, z, x, y+1, z)) return;
 
@@ -531,8 +543,8 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
         if (TryMove(x, y, z, x + Dx[j], y+1, z + Dz[j])) return;
     }
 
-    // 橫向擴散（Water=3格，Lava=1格；方向由幀號決定防止偏斜）
-    int32 Spread = (Mat == EMaterialType::Water) ? 3 : 1;
+    // P-6+P-7: Spread = FlowSpeed×3×(1-Viscosity)（Water→3, Lava 0.333×3×0.1≈1，對齊 G-3a）
+    int32 Spread = FMath::Max(1, FMath::RoundToInt(D.LiquidFlowSpeed * 3.f * (1.f - D.LiquidViscosity)));
     int32 HX     = (Frame % 2 == 0) ? 1 : -1;
     int32 HZ     = (Frame % 4 < 2)  ? 1 : -1;
     for (int32 s = 1; s <= Spread; ++s)
@@ -568,8 +580,14 @@ void FTileWorld3D::UpdateGas(int32 x, int32 y, int32 z)
     if (Mat == EMaterialType::Fire)
         TryIgniteAround(x, y, z, 0.02f);
 
+    const FMaterialData& GD = FMaterialRegistry::Get(Mat);
+    // P-8: GasUpwardSpeed — 直線上浮機率（>1.0 時夾到1；默認1.0=永遠試）
+    const float UpChance   = FMath::Min(1.f, GD.GasUpwardSpeed);
+    // P-9: GasHorizontalSpeed — 斜向/橫向擴散機率（<1.0 = 不一定擴散）
+    const float HorizChance = FMath::Min(1.f, GD.GasHorizontalSpeed);
+
     // 上浮（Y- = 向上）
-    if (TryMove(x, y, z, x, y-1, z)) return;
+    if (Rng.FRand() < UpChance && TryMove(x, y, z, x, y-1, z)) return;
 
     static const int32 Dx[] = {-1,  1,  0,  0};
     static const int32 Dz[] = { 0,  0, -1,  1};
@@ -577,7 +595,7 @@ void FTileWorld3D::UpdateGas(int32 x, int32 y, int32 z)
     for (int32 i = 0; i < 4; ++i)
     {
         int32 j = (Start + i) % 4;
-        if (TryMove(x, y, z, x + Dx[j], y-1, z + Dz[j])) return;
+        if (Rng.FRand() < HorizChance && TryMove(x, y, z, x + Dx[j], y-1, z + Dz[j])) return;
     }
 
     // 倒計時歸零 → 消散（CA_State 在 WriteCell 後已是最新值）
