@@ -2223,7 +2223,7 @@ void ASkillCreatorCharacter::TickWeedGrowth(float DeltaTime)
             FTransform(FRotator::ZeroRotator, SpawnLoc));
         if (Weed)
         {
-            Weed->TilePos = WeedTile;
+            Weed->AnchorTile = WeedTile;
             ActiveWeedTiles.Add(WeedTile);
 
             // 雜草自毀時清除記錄（OnDestroyed delegate 自動呼叫）
@@ -2235,5 +2235,5 @@ void ASkillCreatorCharacter::TickWeedGrowth(float DeltaTime)
 void ASkillCreatorCharacter::OnWeedDestroyed(AActor* DestroyedActor)
 {
     if (const AWeedEntity* Weed = Cast<AWeedEntity>(DestroyedActor))
-        ActiveWeedTiles.Remove(Weed->TilePos);
+        ActiveWeedTiles.Remove(Weed->AnchorTile);
 }

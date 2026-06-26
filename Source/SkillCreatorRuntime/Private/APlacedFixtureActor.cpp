@@ -13,11 +13,7 @@
 
 APlacedFixtureActor::APlacedFixtureActor()
 {
-    PrimaryActorTick.bCanEverTick = false;
-
-    // 同 AEnemy::MeshComp 模式：引擎內建 Cube，不需要額外美術資產
-    MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
-    SetRootComponent(MeshComp);
+    // MeshComp 由 AWorldUnit 基底建立；此處只設定 Fixture 特有的碰撞與外觀
     MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     MeshComp->SetCollisionObjectType(ECC_WorldStatic);
     MeshComp->SetCastShadow(true);
@@ -26,7 +22,7 @@ APlacedFixtureActor::APlacedFixtureActor()
     if (CubeFinder.Succeeded())
     {
         MeshComp->SetStaticMesh(CubeFinder.Object);
-        // 1 遊戲單位見方（同 WorldScale 恆等式：GrainCurrent*TileSizeCm = 100cm）
+        // 1 遊戲單位見方（GrainCurrent × TileSizeCm = 100cm）
         const float S = static_cast<float>(WorldScale::GrainCurrent) * WorldScale::TileSizeCm / 100.f;
         MeshComp->SetWorldScale3D(FVector(S));
     }

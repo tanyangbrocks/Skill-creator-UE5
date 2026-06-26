@@ -1,6 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
-#include "GameFramework/Actor.h"
+#include "AVisualFXActor.h"
 #include "AFloatingDamageActor.generated.h"
 
 class UWidgetComponent;
@@ -8,8 +8,9 @@ class UFloatingDamageWidget;
 
 // 浮動傷害數字 Actor（對應 Godot FloatingDamageNumber.cs）。
 // 生成後向上漂移並淡出，自動 Destroy。
+// MaxLifetime = 0（不用基底計時器）；自有 LifeTime 兼作淡出進度 T 的時間戳。
 UCLASS()
-class SKILLCREATORRUNTIME_API AFloatingDamageActor : public AActor
+class SKILLCREATORRUNTIME_API AFloatingDamageActor : public AVisualFXActor
 {
     GENERATED_BODY()
 public:
