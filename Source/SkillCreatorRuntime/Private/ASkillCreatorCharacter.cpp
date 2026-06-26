@@ -1,5 +1,6 @@
 #include "ASkillCreatorCharacter.h"
 #include "APhysicalItemActor.h"
+#include "ADebrisActor.h"
 #include "FCombatResolver.h"
 #include "UCombatantRegistrySubsystem.h"
 #include "UCharacterStateComponent.h"
@@ -2180,6 +2181,7 @@ void ASkillCreatorCharacter::OnWeedDestroyed(AActor* DestroyedActor)
 void ASkillCreatorCharacter::BeginCarry(AActor* Target)
 {
     IPhysicalPickable* P = Cast<APhysicalItemActor>(Target);
+    if (!P) P = Cast<ADebrisActor>(Target);
     if (!P || !P->IsPickable()) return;
     bIsCarrying = true;
     CarriedActor = Target;
@@ -2194,6 +2196,7 @@ void ASkillCreatorCharacter::EndCarry(FVector ThrowVelocityCms)
         return;
     }
     IPhysicalPickable* P = Cast<APhysicalItemActor>(CarriedActor.Get());
+    if (!P) P = Cast<ADebrisActor>(CarriedActor.Get());
     if (P) P->OnReleased(ThrowVelocityCms);
     bIsCarrying  = false;
     CarriedActor = nullptr;
@@ -2208,7 +2211,9 @@ AActor* ASkillCreatorCharacter::FindNearestPickable() const
     float BestDist = PickupRadiusCm;
     for (AActor* A : Overlaps)
     {
+        // 支援所有實作 IPhysicalPickable 的類別（APhysicalItemActor / ADebrisActor）
         IPhysicalPickable* P = Cast<APhysicalItemActor>(A);
+        if (!P) P = Cast<ADebrisActor>(A);
         if (!P || !P->IsPickable()) continue;
         const float D = FVector::Dist(GetActorLocation(), A->GetActorLocation());
         if (D < BestDist) { BestDist = D; Best = A; }

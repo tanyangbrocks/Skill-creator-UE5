@@ -19,6 +19,7 @@
 #include "APlacedFixtureActor.h"
 #include "ItemRegistry.h"
 #include "IPhysicalPickable.h"
+#include "ADebrisActor.h"
 #include "UPhysicalThrowWidget.h"
 #include "WorldScale.h"
 #include "Engine/Canvas.h"
@@ -465,6 +466,7 @@ void ASkillCreatorHUD::DrawHUD()
         if (AActor* Near = Char->FindNearestPickable())
         {
             IPhysicalPickable* P = Cast<APhysicalItemActor>(Near);
+            if (!P) P = Cast<ADebrisActor>(Near);
             FString Hint = P ? P->GetPickupHintText().ToString() : TEXT("G 拿取");
             const float CanvasW = Canvas ? Canvas.Get()->SizeX : 1280.f;
             const float CanvasH = Canvas ? Canvas.Get()->SizeY : 720.f;
@@ -495,6 +497,7 @@ void ASkillCreatorHUD::FinishThrowCharge(ASkillCreatorCharacter* Char)
     FVector AimDir = PC ? PC->GetControlRotation().Vector() : Char->GetActorForwardVector();
 
     IPhysicalPickable* P = Cast<APhysicalItemActor>(Char->CarriedActor.Get());
+    if (!P) P = Cast<ADebrisActor>(Char->CarriedActor.Get());
     const float Mass     = P ? P->GetMass() : 1.f;
     const float Strength = Char->Stats.Strength;
 

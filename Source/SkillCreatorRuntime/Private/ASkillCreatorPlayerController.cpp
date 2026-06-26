@@ -2,6 +2,7 @@
 #include "ASkillCreatorCharacter.h"
 #include "IPhysicalPickable.h"
 #include "APhysicalItemActor.h"
+#include "ADebrisActor.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -323,6 +324,7 @@ void ASkillCreatorPlayerController::OnPickupOrPanel()
     {
         // 攜帶中 G → 存入物品欄
         IPhysicalPickable* P = Cast<APhysicalItemActor>(Char->CarriedActor.Get());
+        if (!P) P = Cast<ADebrisActor>(Char->CarriedActor.Get());
         if (P && Char->InventoryComp && P->GetInventoryItemId() != EItemId::None)
             Char->InventoryComp->TryAdd(P->GetInventoryItemId(), P->GetInventoryCount());
         Char->EndCarry(FVector::ZeroVector);
