@@ -65,6 +65,9 @@ public:
     // 生存條（StateComp 資料）
     void UpdateSurvival(const UCharacterStateComponent* State);
 
+    // 拿取槽（熱鍵欄右側圓形，顯示 APhysicalItemActor 攜帶圖示）
+    void UpdateCarrySlot(bool bIsCarrying, EItemId ItemId = EItemId::None);
+
     // 等級 HUD
     void UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
                         const FString& TierName, FLinearColor TierColor);
@@ -119,18 +122,25 @@ private:
     // ── HP 文字標籤（左下角）───────────────────────────────────────
     TObjectPtr<UTextBlock> HpLabel = nullptr;
 
-    // ── 生存條（左下角，6 條 + 體溫）───────────────────────────────
-    TArray<TObjectPtr<UBorder>>    SurvivalBarFills;
-    TArray<TObjectPtr<UTextBlock>> SurvivalValLabels;
-    TObjectPtr<UTextBlock>         BodyTempLabel = nullptr;
-    float                          SurvivalBarWidth = 74.f;
+    // ── 生存條（左下角，5 條垂直 + 體溫雙向條）────────────────────
+    TArray<TObjectPtr<UBorder>>    SurvivalBarFills;   // index 0~3: 飢餓/口渴/氧氣/體力
+    TArray<TObjectPtr<UTextBlock>> SurvivalValLabels;  // 名稱標籤（危急時變紅）
+    TObjectPtr<UTextBlock>         BodyTempLabel = nullptr;   // 保留供舊版相容
+    // 體溫雙向條（從中線分別向上/下填充）
+    TObjectPtr<UBorder> TempBarBg    = nullptr;
+    TObjectPtr<UBorder> TempHotFill  = nullptr;
+    TObjectPtr<UBorder> TempColdFill = nullptr;
 
-    // ── 等級 / XP / 境界（左下角）──────────────────────────────────
+    // ── 拿取槽（熱鍵欄右側圓形）────────────────────────────────────
+    TObjectPtr<UBorder>    CarryBorder     = nullptr;
+    TObjectPtr<UBorder>    CarryIconBorder = nullptr;
+
+    // ── 等級 / XP / 境界（底部中央）────────────────────────────────
     TObjectPtr<UTextBlock> LevelLabel    = nullptr;
     TObjectPtr<UTextBlock> TierLabel     = nullptr;
     TObjectPtr<UTextBlock> XpLabel       = nullptr;
     TObjectPtr<UBorder>    XpBarFill     = nullptr;
-    float                  XpBarMaxWidth = 200.f;
+    float                  XpBarMaxWidth = 520.f;
 
     // ── 裝備標籤（左下角）──────────────────────────────────────────
     TObjectPtr<UTextBlock> EquipLabel = nullptr;
@@ -170,9 +180,11 @@ private:
     void BuildCrosshair(UCanvasPanel* Root);
     void BuildOffhandSlot(UCanvasPanel* Root);
     void BuildItemHotbar(UCanvasPanel* Root);
+    void BuildCarrySlot(UCanvasPanel* Root);
     void BuildSurvivalBars(UCanvasPanel* Root);
     void BuildLevelHud(UCanvasPanel* Root);
     void BuildManaHud(UCanvasPanel* Root);
+    void BuildMinimap(UCanvasPanel* Root);
     void BuildDeathScreenOverlay(UCanvasPanel* Root);
     void BuildFloatTooltip(UCanvasPanel* Root);
     void BuildBreakthroughLabel(UCanvasPanel* Root);

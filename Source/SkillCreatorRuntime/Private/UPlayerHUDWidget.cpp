@@ -132,7 +132,6 @@ void UPlayerHUDWidget::NativeOnInitialized()
         Pin(MpBar,        { 20, 44 }, { 180, 16 });
         Pin(MpTextBlock,  { 208, 44 }, { 120, 16 });
         Pin(StaminaBar,   { 20, 68 }, { 180, 12 });
-        Pin(MoodBar,      { 20, 88 }, { 180, 12 });
         Pin(HotBarBox,    { 0, -60 }, { 400, 48 },
             FAnchors(0.5f, 1.f, 0.5f, 1.f), { 0.5f, 1.f });
         return;
@@ -166,7 +165,6 @@ void UPlayerHUDWidget::NativeOnInitialized()
     HpBar      = AddBar(TEXT("HpBar"),      FLinearColor(0.85f, 0.12f, 0.12f), { 20, 20 });
     MpBar      = AddBar(TEXT("MpBar"),      FLinearColor(0.15f, 0.45f, 0.90f), { 20, 44 });
     StaminaBar = AddBar(TEXT("StaminaBar"), FLinearColor(0.15f, 0.80f, 0.25f), { 20, 68 });
-    MoodBar    = AddBar(TEXT("MoodBar"),    FLinearColor(0.65f, 0.20f, 0.80f), { 20, 88 });
     HpTextBlock = AddTxt(TEXT("HpText"), { 208, 20 });
     MpTextBlock = AddTxt(TEXT("MpText"), { 208, 44 });
 
@@ -182,9 +180,10 @@ void UPlayerHUDWidget::NativeOnInitialized()
     Root->AddChild(HpLabel);
     PinBL(HpLabel, { 10.f, -92.f }, { 180.f, 16.f });
 
-    // ④ 副手欄（熱鍵欄左側圓形槽）+ 物品熱鍵欄（底部 10 槽）
+    // ④ 副手欄（熱鍵欄左側圓形槽）+ 物品熱鍵欄（底部 10 槽）+ 拿取槽（右側）
     BuildOffhandSlot(Root);
     BuildItemHotbar(Root);
+    BuildCarrySlot(Root);
 
     // ⑤ 生存條
     BuildSurvivalBars(Root);
@@ -212,7 +211,7 @@ void UPlayerHUDWidget::NativeOnInitialized()
     }
     ShapeLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.60f)));
     Root->AddChild(ShapeLabel);
-    PinBL(ShapeLabel, { 10.f, -155.f }, { 160.f, 14.f });
+    PinBL(ShapeLabel, { 106.f, -155.f }, { 160.f, 14.f });
     SetActiveShape(EPlacementShape::Single, 1);
 
     // ⑩ 提示文字（底部中央）
@@ -229,6 +228,9 @@ void UPlayerHUDWidget::NativeOnInitialized()
 
     // ⑭ 遊戲時鐘（右上角）
     BuildClock(Root);
+
+    // ⑮ 小地圖佔位圓形（右上角，時鐘左側）
+    BuildMinimap(Root);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -391,135 +393,163 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
 
 void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
 {
-    constexpr float StartX = 10.f, StartY = -248.f, RowH = 13.f;
-    constexpr float LblW = 38.f, BarW = 74.f, BarH = 6.f, ValW = 36.f;
-    SurvivalBarWidth = BarW;
+    // 5 條垂直生存條（底部左側）：飢餓 / 口渴 / 氧氣 / 體力 / 溫度
+    // 垂直填充：由底往上（Ratio 增大 = 填充往上生長）
+    // BarBottomAbove: 條底距螢幕底部的像素數（讓條底與熱鍵欄頂有 18px 間距）
+    constexpr float BarW           = 10.f;
+    constexpr float BarH           = 80.f;
+    constexpr float GapX           = 18.f;  // BarW(10) + 間距(8)
+    constexpr float StartX         = 10.f;
+    constexpr float BarBottomAbove = 150.f;  // 條底距螢幕底部（熱鍵欄頂=132, 留 18px 空隙）
+    constexpr float BarTopY        = -(BarBottomAbove + BarH);  // = -230（條頂的 PinBL Y）
+    constexpr float LabelY         = -(BarBottomAbove - 4.f);   // = -146（標籤頂的 PinBL Y，條底下方 4px）
+    constexpr float LabelH         = 14.f;
+    constexpr float LabelW         = 20.f;
 
     static const struct { const TCHAR* Name; FLinearColor Fill; } Defs[] = {
-        { TEXT("體力"), FLinearColor(1.00f, 0.60f, 0.22f) },
-        { TEXT("精力"), FLinearColor(0.65f, 0.35f, 1.00f) },
-        { TEXT("心情"), FLinearColor(1.00f, 0.55f, 0.65f) },
-        { TEXT("口渴"), FLinearColor(0.28f, 0.78f, 1.00f) },
         { TEXT("飢餓"), FLinearColor(0.60f, 0.88f, 0.22f) },
+        { TEXT("口渴"), FLinearColor(0.28f, 0.78f, 1.00f) },
         { TEXT("氧氣"), FLinearColor(0.45f, 0.65f, 1.00f) },
+        { TEXT("體力"), FLinearColor(1.00f, 0.60f, 0.22f) },
     };
-    constexpr int32 NBar = UE_ARRAY_COUNT(Defs);
-    SurvivalBarFills.Reserve(NBar);
-    SurvivalValLabels.Reserve(NBar);
+    constexpr int32 NStd = UE_ARRAY_COUNT(Defs);
+    SurvivalBarFills.Reserve(NStd);
+    SurvivalValLabels.Reserve(NStd);
 
-    for (int32 i = 0; i < NBar; ++i)
+    for (int32 i = 0; i < NStd; ++i)
     {
-        float Y = StartY + i * RowH;
+        float X = StartX + i * GapX;
 
-        UTextBlock* NmLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-        NmLbl->SetText(FText::FromString(Defs[i].Name));
-        {
-            FSlateFontInfo F = NmLbl->GetFont(); F.Size = 10; NmLbl->SetFont(F);
-        }
-        NmLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.60f)));
-        Root->AddChild(NmLbl);
-        PinBL(NmLbl, { StartX, Y }, { LblW, RowH });
-
+        // 背景（暗色）
         UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         BarBg->SetBrush(MakeSolidBrush(FLinearColor(0.10f, 0.10f, 0.16f)));
         BarBg->SetPadding(FMargin(0.f));
         Root->AddChild(BarBg);
-        const float FillX = StartX + LblW + 2.f, FillY = Y + (RowH - BarH) * 0.5f;
-        PinBL(BarBg, { FillX, FillY }, { BarW, BarH });
+        PinBL(BarBg, { X, BarTopY }, { BarW, BarH });
 
-        // Fill 直接加到 Root（與 BarBg 同位置，因此 Root 的渲染順序讓 Fill 蓋在 BarBg 上）。
-        // Bug H-4 修復：Fill 若放在 BarBg->AddChild() 裡，Slot 型別是 UBorderSlot，
-        // Cast<UCanvasPanelSlot> 永遠 null，UpdateSurvival 的 SetSize 從未執行。
+        // 填充（直接加到 Root，避免 UBorderSlot Cast 失敗問題；初始滿格，UpdateSurvival 每幀調整）
         UBorder* Fill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Fill->SetBrush(MakeSolidBrush(Defs[i].Fill));
         Fill->SetPadding(FMargin(0.f));
         Root->AddChild(Fill);
-        PinBL(Fill, { FillX, FillY }, { BarW, BarH });
+        PinBL(Fill, { X, BarTopY }, { BarW, BarH });
         SurvivalBarFills.Add(Fill);
 
-        UTextBlock* Val = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+        // 名稱標籤（條正下方，危急時變紅）
+        UTextBlock* NmLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+        NmLbl->SetText(FText::FromString(Defs[i].Name));
         {
-            FSlateFontInfo F = Val->GetFont(); F.Size = 10; Val->SetFont(F);
+            FSlateFontInfo F = NmLbl->GetFont(); F.Size = 8; NmLbl->SetFont(F);
         }
-        Val->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.65f, 0.70f)));
-        Val->SetJustification(ETextJustify::Right);
-        Root->AddChild(Val);
-        PinBL(Val, { StartX + LblW + 2.f + BarW + 3.f, Y }, { ValW, RowH });
-        SurvivalValLabels.Add(Val);
+        NmLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.60f)));
+        NmLbl->SetJustification(ETextJustify::Center);
+        Root->AddChild(NmLbl);
+        PinBL(NmLbl, { X + BarW * 0.5f - LabelW * 0.5f, LabelY }, { LabelW, LabelH });
+        SurvivalValLabels.Add(NmLbl);
     }
 
-    // 體溫（最後一行）
-    float TempY = StartY + NBar * RowH;
+    // ── 體溫雙向條（第 5 格）──────────────────────────────────────────
+    // 正常體溫時游標在中點；偏熱往上（橙紅填充，從中點向上）；偏冷往下（藍色填充，從中點向下）
+    constexpr float TempBarCenterAbove = BarBottomAbove + BarH * 0.5f;  // 190px above screen
+    float TempX = StartX + NStd * GapX;  // X = 10 + 4*18 = 82
+
+    // 背景
+    TempBarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    TempBarBg->SetBrush(MakeSolidBrush(FLinearColor(0.08f, 0.08f, 0.12f)));
+    TempBarBg->SetPadding(FMargin(0.f));
+    Root->AddChild(TempBarBg);
+    PinBL(TempBarBg, { TempX, BarTopY }, { BarW, BarH });
+
+    // 中線標記（1px 白線，代表正常體溫位置）
+    UBorder* CenterLine = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    CenterLine->SetBrush(MakeSolidBrush(FLinearColor(0.7f, 0.7f, 0.7f, 0.85f)));
+    CenterLine->SetPadding(FMargin(0.f));
+    Root->AddChild(CenterLine);
+    PinBL(CenterLine, { TempX, -(TempBarCenterAbove + 0.5f) }, { BarW, 1.f });
+
+    // 熱填充（從中線往上，橙紅；初始高度=0，UpdateSurvival 調整 Y 和 H）
+    TempHotFill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    TempHotFill->SetBrush(MakeSolidBrush(FLinearColor(0.95f, 0.40f, 0.15f)));
+    TempHotFill->SetPadding(FMargin(0.f));
+    Root->AddChild(TempHotFill);
+    PinBL(TempHotFill, { TempX, -TempBarCenterAbove }, { BarW, 0.f });
+
+    // 冷填充（從中線往下，藍色；初始高度=0，UpdateSurvival 調整 H）
+    TempColdFill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    TempColdFill->SetBrush(MakeSolidBrush(FLinearColor(0.30f, 0.55f, 1.00f)));
+    TempColdFill->SetPadding(FMargin(0.f));
+    Root->AddChild(TempColdFill);
+    PinBL(TempColdFill, { TempX, -TempBarCenterAbove }, { BarW, 0.f });
+
+    // 體溫標籤
     UTextBlock* TempNm = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-    TempNm->SetText(FText::FromString(TEXT("體溫")));
+    TempNm->SetText(FText::FromString(TEXT("溫度")));
     {
-        FSlateFontInfo F = TempNm->GetFont(); F.Size = 10; TempNm->SetFont(F);
+        FSlateFontInfo F = TempNm->GetFont(); F.Size = 8; TempNm->SetFont(F);
     }
     TempNm->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.60f)));
+    TempNm->SetJustification(ETextJustify::Center);
     Root->AddChild(TempNm);
-    PinBL(TempNm, { StartX, TempY }, { LblW, RowH });
-
-    BodyTempLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-    {
-        FSlateFontInfo F = BodyTempLabel->GetFont(); F.Size = 10; BodyTempLabel->SetFont(F);
-    }
-    BodyTempLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.80f, 0.80f, 0.75f)));
-    Root->AddChild(BodyTempLabel);
-    PinBL(BodyTempLabel, { StartX + LblW + 2.f, TempY }, { 84.f, RowH });
+    PinBL(TempNm, { TempX + BarW * 0.5f - LabelW * 0.5f, LabelY }, { LabelW, LabelH });
 }
 
 void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
 {
-    // 裝備標籤 y=-290
+    // 裝備標籤（左下角，生存條左上方）
     EquipLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("EquipLabel"));
     {
         FSlateFontInfo F = EquipLabel->GetFont(); F.Size = 11; EquipLabel->SetFont(F);
     }
     EquipLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.85f, 0.65f)));
     Root->AddChild(EquipLabel);
-    PinBL(EquipLabel, { 10.f, -290.f }, { 300.f, 14.f });
+    PinBL(EquipLabel, { 106.f, -248.f }, { 300.f, 14.f });
 
-    // LV 標籤 y=-275
+    // LV 標籤（底部中央，XP 條左上方）：anchor 底部中央
     LevelLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LvLabel"));
     {
-        FSlateFontInfo F = LevelLabel->GetFont(); F.Size = 13; LevelLabel->SetFont(F);
+        FSlateFontInfo F = LevelLabel->GetFont(); F.Size = 11; LevelLabel->SetFont(F);
     }
     LevelLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f)));
     Root->AddChild(LevelLabel);
-    PinBL(LevelLabel, { 10.f, -275.f }, { 48.f, 16.f });
+    Pin(LevelLabel, { -256.f, -84.f }, { 80.f, 14.f },
+        FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
-    // 境界標籤 y=-275 x=58
+    // 境界標籤（LV 右側）
     TierLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TierLabel"));
     {
-        FSlateFontInfo F = TierLabel->GetFont(); F.Size = 13; TierLabel->SetFont(F);
+        FSlateFontInfo F = TierLabel->GetFont(); F.Size = 11; TierLabel->SetFont(F);
     }
     TierLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.65f, 0.65f)));
     Root->AddChild(TierLabel);
-    PinBL(TierLabel, { 58.f, -275.f }, { 120.f, 16.f });
+    Pin(TierLabel, { -174.f, -84.f }, { 120.f, 14.f },
+        FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
-    // XP 文字 y=-274 x=180
+    // XP 文字（XP 條右側外）
     XpLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("XpLabel"));
     {
-        FSlateFontInfo F = XpLabel->GetFont(); F.Size = 11; XpLabel->SetFont(F);
+        FSlateFontInfo F = XpLabel->GetFont(); F.Size = 9; XpLabel->SetFont(F);
     }
-    XpLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.55f, 0.60f)));
+    XpLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.55f)));
     Root->AddChild(XpLabel);
-    PinBL(XpLabel, { 180.f, -274.f }, { 130.f, 14.f });
+    Pin(XpLabel, { 264.f, -84.f }, { 130.f, 14.f },
+        FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
-    // XP 條背景 y=-262 h=7
+    // XP 條背景（底部水平置中，寬 520px，高 8px）
+    // anchor(0.5, 1)、alignment(0.5, 1)：widget 底部中心對齊 offset 點
     UBorder* XpBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpBg"));
     XpBg->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.18f)));
     XpBg->SetPadding(FMargin(0.f));
     Root->AddChild(XpBg);
-    PinBL(XpBg, { 10.f, -262.f }, { XpBarMaxWidth, 7.f });
+    Pin(XpBg, { 0.f, -72.f }, { XpBarMaxWidth, 8.f },
+        FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.5f, 1.f));
 
-    // XP 填充（Bug H-4 修復：直接加到 Root 而非 XpBg->AddChild，
-    // 確保 Slot 型別是 UCanvasPanelSlot，UpdateLevelHUD 可呼叫 SetSize 調整進度）
+    // XP 填充（同位置，初始寬度 0）
     XpBarFill = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpFill"));
     XpBarFill->SetBrush(MakeSolidBrush(FLinearColor(0.25f, 0.65f, 0.95f)));
     XpBarFill->SetPadding(FMargin(0.f));
     Root->AddChild(XpBarFill);
-    PinBL(XpBarFill, { 10.f, -262.f }, { 0.f, 7.f });  // 初始寬度 0，由 UpdateLevelHUD 設
+    Pin(XpBarFill, { 0.f, -72.f }, { 0.f, 8.f },
+        FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.5f, 1.f));
 }
 
 void UPlayerHUDWidget::BuildManaHud(UCanvasPanel* Root)
@@ -646,9 +676,111 @@ void UPlayerHUDWidget::BuildClock(UCanvasPanel* Root)
     ClockText->SetJustification(ETextJustify::Right);
     ClockText->SetText(FText::FromString(TEXT("蒼和5000年 01月01日 00：00 星期一")));
     Root->AddChild(ClockText);
-    // 右上角，距右邊 10px，距頂 10px
-    Pin(ClockText, { -10.f, 10.f }, { 320.f, 18.f },
+    // 右上角，距右邊 10px，距頂 10px；小地圖佔位圓建後右移 ≈ 100px
+    Pin(ClockText, { -100.f, 10.f }, { 280.f, 18.f },
         FAnchors(1.f, 0.f, 1.f, 0.f), { 1.f, 0.f });
+}
+
+void UPlayerHUDWidget::BuildMinimap(UCanvasPanel* Root)
+{
+    // 右上角小地圖佔位圓（無功能，僅 UI 佔位）
+    UBorder* Circle = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("MinimapCircle"));
+    FSlateBrush Brush;
+    Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+    Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+    Brush.OutlineSettings.CornerRadii  = FVector4(40.f, 40.f, 40.f, 40.f);  // 全圓角 = 圓形
+    Brush.TintColor    = FSlateColor(FLinearColor(0.05f, 0.08f, 0.15f, 0.75f));
+    Brush.OutlineSettings.Color = FSlateColor(FLinearColor(0.25f, 0.35f, 0.55f, 0.90f));
+    Brush.OutlineSettings.Width = 1.5f;
+    Circle->SetBrush(Brush);
+    Circle->SetPadding(FMargin(0.f));
+    Root->AddChild(Circle);
+    Pin(Circle, { -90.f, 10.f }, { 80.f, 80.f },
+        FAnchors(1.f, 0.f, 1.f, 0.f), FVector2D(1.f, 0.f));
+
+    // 「地圖」提示文字（居中）
+    UTextBlock* MapLbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MinimapLabel"));
+    {
+        FSlateFontInfo F = MapLbl->GetFont(); F.Size = 10; MapLbl->SetFont(F);
+    }
+    MapLbl->SetText(FText::FromString(TEXT("地圖")));
+    MapLbl->SetColorAndOpacity(FSlateColor(FLinearColor(0.30f, 0.40f, 0.55f)));
+    MapLbl->SetJustification(ETextJustify::Center);
+    Circle->AddChild(MapLbl);
+    if (UBorderSlot* BS = Cast<UBorderSlot>(MapLbl->Slot))
+    {
+        BS->SetHorizontalAlignment(HAlign_Center);
+        BS->SetVerticalAlignment(VAlign_Center);
+    }
+}
+
+void UPlayerHUDWidget::BuildCarrySlot(UCanvasPanel* Root)
+{
+    // 拿取槽：圓形 48×48，熱鍵欄右側（StartX=66, 10 格×52=520, gap=8 → X=594）
+    constexpr float SlotW = 48.f, SlotH = 48.f;
+    constexpr float X = 594.f, Y = -132.f;
+    constexpr float CornerR = SlotW * 0.5f;  // 全圓角 = 圓形
+
+    CarryBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CarryBorder"));
+    CarryBorder->SetPadding(FMargin(0.f));
+    Root->AddChild(CarryBorder);
+    PinBL(CarryBorder, { X, Y }, { SlotW, SlotH });
+
+    // 內層 Canvas
+    UCanvasPanel* SlotCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+    CarryBorder->AddChild(SlotCanvas);
+    if (UBorderSlot* BS = Cast<UBorderSlot>(SlotCanvas->Slot))
+    {
+        BS->SetHorizontalAlignment(HAlign_Fill);
+        BS->SetVerticalAlignment(VAlign_Fill);
+    }
+
+    // 物品色塊圖示（居中）
+    CarryIconBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    CarryIconBorder->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.16f)));
+    CarryIconBorder->SetPadding(FMargin(0.f));
+    SlotCanvas->AddChild(CarryIconBorder);
+    if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(CarryIconBorder->Slot))
+        IS->SetOffsets(FMargin(8.f, 8.f, 32.f, 32.f));
+
+    // 「拿取」標籤（左上小字）
+    UTextBlock* LabelTB = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    {
+        FSlateFontInfo F = LabelTB->GetFont(); F.Size = 8; LabelTB->SetFont(F);
+    }
+    LabelTB->SetText(FText::FromString(TEXT("拿")));
+    LabelTB->SetColorAndOpacity(FSlateColor(FLinearColor(0.45f, 0.45f, 0.55f)));
+    SlotCanvas->AddChild(LabelTB);
+    if (UCanvasPanelSlot* KS = Cast<UCanvasPanelSlot>(LabelTB->Slot))
+        KS->SetOffsets(FMargin(3.f, 2.f, 12.f, 10.f));
+
+    // 初始化外框（空槽、非啟用態）
+    UpdateCarrySlot(false, EItemId::None);
+}
+
+void UPlayerHUDWidget::UpdateCarrySlot(bool bIsCarrying, EItemId ItemId)
+{
+    constexpr float CornerR = 24.f;  // 48/2，全圓角 = 圓形
+
+    if (CarryBorder)
+    {
+        FSlateBrush Brush;
+        Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+        Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+        Brush.OutlineSettings.CornerRadii  = FVector4(CornerR, CornerR, CornerR, CornerR);
+        Brush.TintColor = FSlateColor(bIsCarrying
+            ? FLinearColor(0.18f, 0.18f, 0.28f)
+            : FLinearColor(0.10f, 0.10f, 0.15f));
+        Brush.OutlineSettings.Color = FSlateColor(bIsCarrying
+            ? FLinearColor(0.95f, 0.80f, 0.20f)   // 攜帶中：金黃框
+            : FLinearColor(0.35f, 0.45f, 0.60f));  // 空槽：藍灰框
+        Brush.OutlineSettings.Width = bIsCarrying ? 2.f : 1.f;
+        CarryBorder->SetBrush(Brush);
+    }
+    if (CarryIconBorder)
+        CarryIconBorder->SetBrush(MakeSolidBrush(bIsCarrying && ItemId != EItemId::None
+            ? ItemIconColor(ItemId)
+            : FLinearColor(0.12f, 0.12f, 0.16f)));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -697,7 +829,7 @@ void UPlayerHUDWidget::UpdateHpMp(float Hp, float MaxHp, float Mp, float MaxMp,
     HpPercent      = MaxHp > 0.f ? FMath::Clamp(Hp / MaxHp, 0.f, 1.f) : 0.f;
     MpPercent      = MaxMp > 0.f ? FMath::Clamp(Mp / MaxMp, 0.f, 1.f) : 0.f;
     StaminaPercent = FMath::Clamp(StaminaPct, 0.f, 1.f);
-    MoodPercent    = FMath::Clamp(MoodPct,    0.f, 1.f);
+    MoodPercent    = FMath::Clamp(MoodPct,    0.f, 1.f);  // 保留資料供 PlayerPanel 使用
 
     HpText = FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), Hp, MaxHp));
     MpText = FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), Mp, MaxMp));
@@ -705,7 +837,6 @@ void UPlayerHUDWidget::UpdateHpMp(float Hp, float MaxHp, float Mp, float MaxMp,
     if (HpBar)       HpBar->SetPercent(HpPercent);
     if (MpBar)       MpBar->SetPercent(MpPercent);
     if (StaminaBar)  StaminaBar->SetPercent(StaminaPercent);
-    if (MoodBar)     MoodBar->SetPercent(MoodPercent);
     if (HpTextBlock) HpTextBlock->SetText(HpText);
     if (MpTextBlock) MpTextBlock->SetText(MpText);
     if (HpLabel)     HpLabel->SetText(FText::FromString(
@@ -815,42 +946,77 @@ void UPlayerHUDWidget::UpdateSurvival(const UCharacterStateComponent* S)
 {
     if (!S) return;
 
-    struct { float V; float Max; bool Danger; } Data[] = {
-        { S->Stamina,     UCharacterStateComponent::MaxStamina,     S->IsStaminaDepleted() },
-        { S->MentalEnergy,UCharacterStateComponent::MaxMentalEnergy,S->IsMentalEnergyDepleted() },
-        { S->Mood,        UCharacterStateComponent::MaxMood,         S->IsInsane() },
-        { S->Thirst,      UCharacterStateComponent::MaxThirst,       S->IsDehydrated() },
-        { S->Hunger,      UCharacterStateComponent::MaxHunger,       S->IsStarving() },
-        { S->Oxygen,      UCharacterStateComponent::MaxOxygen,       S->IsSuffocating() },
+    // 4 條標準垂直條：飢餓 / 口渴 / 氧氣 / 體力（與 BuildSurvivalBars 順序一致）
+    constexpr float BarW           = 10.f;
+    constexpr float BarH           = 80.f;
+    constexpr float GapX           = 18.f;
+    constexpr float StartX         = 10.f;
+    constexpr float BarBottomAbove = 150.f;
+
+    struct { float V; float Max; bool Danger; } StdData[] = {
+        { S->Hunger,  UCharacterStateComponent::MaxHunger,  S->IsStarving()        },
+        { S->Thirst,  UCharacterStateComponent::MaxThirst,  S->IsDehydrated()      },
+        { S->Oxygen,  UCharacterStateComponent::MaxOxygen,  S->IsSuffocating()     },
+        { S->Stamina, UCharacterStateComponent::MaxStamina, S->IsStaminaDepleted() },
     };
 
-    for (int32 i = 0; i < UE_ARRAY_COUNT(Data) && i < SurvivalBarFills.Num(); ++i)
+    for (int32 i = 0; i < 4 && i < SurvivalBarFills.Num(); ++i)
     {
-        float Ratio = Data[i].Max > 0.f ? FMath::Clamp(Data[i].V / Data[i].Max, 0.f, 1.f) : 0.f;
+        float Ratio  = StdData[i].Max > 0.f ? FMath::Clamp(StdData[i].V / StdData[i].Max, 0.f, 1.f) : 0.f;
+        float FillH  = BarH * Ratio;
+        float FillY  = -(BarBottomAbove + FillH);  // 填充頂端 PinBL Y（底部對齊條底）
+        float X      = StartX + i * GapX;
+
         if (SurvivalBarFills[i])
         {
             if (UCanvasPanelSlot* FS = Cast<UCanvasPanelSlot>(SurvivalBarFills[i]->Slot))
-                FS->SetSize(FVector2D(SurvivalBarWidth * Ratio, 6.f));
+            {
+                FS->SetSize(FVector2D(BarW, FillH));
+                FS->SetPosition(FVector2D(X, FillY));
+            }
         }
-        if (SurvivalValLabels[i])
+        if (i < SurvivalValLabels.Num() && SurvivalValLabels[i])
         {
-            SurvivalValLabels[i]->SetText(FText::FromString(
-                FString::Printf(TEXT("%.0f"), Data[i].V)));
             SurvivalValLabels[i]->SetColorAndOpacity(FSlateColor(
-                Data[i].Danger
+                StdData[i].Danger
                     ? FLinearColor(1.0f, 0.35f, 0.35f)
-                    : FLinearColor(0.65f, 0.65f, 0.70f)));
+                    : FLinearColor(0.55f, 0.55f, 0.60f)));
         }
     }
 
-    if (BodyTempLabel)
+    // ── 體溫雙向條 ──────────────────────────────────────────────────────
+    // 熱端：NormalBodyTemp → HeatstrokeThreshold（5.5°C 範圍，往上填充）
+    // 冷端：NormalBodyTemp → HypothermiaThreshold（26.5°C 範圍，往下填充）
+    constexpr float Normal    = UCharacterStateComponent::NormalBodyTemp;
+    constexpr float ColdRange = Normal - UCharacterStateComponent::HypothermiaThreshold;
+    constexpr float HotRange  = UCharacterStateComponent::HeatstrokeThreshold - Normal;
+    constexpr float TempBarCenterAbove = BarBottomAbove + BarH * 0.5f;  // 190px above screen
+    constexpr float HalfH    = BarH * 0.5f;  // 40px (each half)
+    constexpr float TempX    = StartX + 4.f * GapX;  // X=82
+
+    const float T    = S->BodyTemperature;
+    float HotF  = FMath::Clamp((T - Normal) / HotRange,  0.f, 1.f);
+    float ColdF = FMath::Clamp((Normal - T) / ColdRange, 0.f, 1.f);
+    float HotH  = HalfH * HotF;
+    float ColdH = HalfH * ColdF;
+
+    if (TempHotFill)
     {
-        float T = S->BodyTemperature;
-        FLinearColor TempCol = S->IsHypothermic() ? FLinearColor(0.40f, 0.65f, 1.00f)
-                             : S->IsHeatstroke()  ? FLinearColor(1.00f, 0.40f, 0.20f)
-                             :                      FLinearColor(0.80f, 0.80f, 0.75f);
-        BodyTempLabel->SetText(FText::FromString(FString::Printf(TEXT("%.1f°C"), T)));
-        BodyTempLabel->SetColorAndOpacity(FSlateColor(TempCol));
+        if (UCanvasPanelSlot* HS = Cast<UCanvasPanelSlot>(TempHotFill->Slot))
+        {
+            // 熱填充頂端從中線往上延伸：Y = -(center + HotH)
+            HS->SetSize(FVector2D(BarW, HotH));
+            HS->SetPosition(FVector2D(TempX, -(TempBarCenterAbove + HotH)));
+        }
+    }
+    if (TempColdFill)
+    {
+        if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(TempColdFill->Slot))
+        {
+            // 冷填充頂端固定在中線，往下延伸：Y 固定 = -center
+            CS->SetSize(FVector2D(BarW, ColdH));
+            CS->SetPosition(FVector2D(TempX, -TempBarCenterAbove));
+        }
     }
 }
 
@@ -874,7 +1040,15 @@ void UPlayerHUDWidget::UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
     {
         float Ratio = XpReq > 0 ? FMath::Clamp(Xp / XpReq, 0.f, 1.f) : 1.f;
         if (UCanvasPanelSlot* XS = Cast<UCanvasPanelSlot>(XpBarFill->Slot))
-            XS->SetSize(FVector2D(XpBarMaxWidth * Ratio, 7.f));
+        {
+            // XP 條置中：填充從左端開始，offset 維持與背景相同（alignment=0.5,1），
+            // 只改寬度；position 已由 BuildLevelHud 設為置中
+            XS->SetSize(FVector2D(XpBarMaxWidth * Ratio, 8.f));
+            // 填充須對齊背景左邊緣：background 左邊 = center - W/2，fill 左邊需一致
+            // 改 alignment 為 (0,1) 後，調整 position 到背景左邊緣
+            XS->SetAlignment(FVector2D(0.f, 1.f));
+            XS->SetPosition(FVector2D(-XpBarMaxWidth * 0.5f, -72.f));
+        }
     }
 }
 

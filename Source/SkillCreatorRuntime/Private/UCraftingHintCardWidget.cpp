@@ -21,8 +21,9 @@ void UCraftingHintCardWidget::NativeOnInitialized()
     Root->AddChild(Card);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Card->Slot))
     {
-        S->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
-        S->SetPosition(FVector2D(10.f, -H * 0.5f));
+        // 左側偏上：HP 圓形（約 120px 高）下方，距頂 140px
+        S->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
+        S->SetPosition(FVector2D(10.f, 140.f));
         S->SetSize(FVector2D(W, H));
         S->SetAlignment(FVector2D::ZeroVector);
     }

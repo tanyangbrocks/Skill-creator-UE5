@@ -18,6 +18,7 @@
 #include "UCraftingStationSubsystem.h"
 #include "APlacedFixtureActor.h"
 #include "ItemRegistry.h"
+#include "APhysicalItemActor.h"
 #include "IPhysicalPickable.h"
 #include "ADebrisActor.h"
 #include "UPhysicalThrowWidget.h"
@@ -379,13 +380,23 @@ void ASkillCreatorHUD::DrawHUD()
         HUDWidget->UpdateSpellHotBar(L.Slots, L.ActiveIndex);
     }
 
-    // ── 副手欄 + 物品熱鍵欄 ──────────────────────────────────────────
+    // ── 副手欄 + 物品熱鍵欄 + 拿取槽 ───────────────────────────────
     if (Char->InventoryComp)
     {
         HUDWidget->UpdateOffhandSlot(
             Char->InventoryComp->OffhandSlot, Char->InventoryComp->bOffhandActive);
         HUDWidget->UpdateItemHotbar(
             Char->InventoryComp->Slots, Char->InventoryComp->ActiveHotbarIndex);
+    }
+    {
+        const bool bCarrying = Char->IsCarrying();
+        EItemId CarryId = EItemId::None;
+        if (bCarrying)
+        {
+            if (APhysicalItemActor* PhysItem = Cast<APhysicalItemActor>(Char->CarriedActor.Get()))
+                CarryId = PhysItem->GetInventoryItemId();
+        }
+        HUDWidget->UpdateCarrySlot(bCarrying, CarryId);
     }
 
     // ── 加工選單（docs/plan-item-crafting-system.md §八）────────────────
