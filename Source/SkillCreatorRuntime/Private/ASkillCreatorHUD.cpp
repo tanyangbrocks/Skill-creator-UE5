@@ -107,7 +107,26 @@ void ASkillCreatorHUD::ToggleInventoryAndEquipment()
 }
 
 void ASkillCreatorHUD::ToggleShapeMenu()       { TogglePanel(ShapeMenuPanel);      }
-void ASkillCreatorHUD::ToggleSpellGroup()      { TogglePanel(SpellGroupPanel);     }
+void ASkillCreatorHUD::ToggleSpellGroup()
+{
+    if (!SpellGroupPanel) return;
+    APlayerController* PC = GetOwningPlayerController();
+    const bool bCurrentlyVisible = SpellGroupPanel->GetVisibility() == ESlateVisibility::Visible;
+    if (bCurrentlyVisible)
+    {
+        SpellGroupPanel->SetVisibility(ESlateVisibility::Collapsed);
+        if (PC) PC->SetShowMouseCursor(false);
+    }
+    else
+    {
+        SpellGroupPanel->SetVisibility(ESlateVisibility::Visible);
+        if (PC)
+        {
+            PC->SetShowMouseCursor(true);
+            PC->SetInputMode(FInputModeGameAndUI());
+        }
+    }
+}
 void ASkillCreatorHUD::ToggleInventory()       { TogglePanel(InventoryPanel);      }
 void ASkillCreatorHUD::ToggleEquipment()       { TogglePanel(EquipmentPanel);      }
 void ASkillCreatorHUD::ToggleDebugPaint()      { TogglePanel(DebugPaintPanel);     }
@@ -245,15 +264,20 @@ void ASkillCreatorHUD::BeginPlay()
         SpellGroupPanel->OnGroupSelected.BindLambda(
             [this](int32 G)
             {
-                ASkillCreatorCharacter* Char = GetOwningPlayerController()
-                    ? Cast<ASkillCreatorCharacter>(GetOwningPlayerController()->GetPawn()) : nullptr;
+                APlayerController* PC = GetOwningPlayerController();
+                ASkillCreatorCharacter* Char = PC ? Cast<ASkillCreatorCharacter>(PC->GetPawn()) : nullptr;
                 if (Char && Char->SpellCasterComp)
                     Char->SpellCasterComp->SpellGroups.SetActiveGroup(G);
                 if (SpellGroupPanel)
                     SpellGroupPanel->SetVisibility(ESlateVisibility::Collapsed);
+                if (PC) PC->SetShowMouseCursor(false);
             });
         SpellGroupPanel->OnCloseRequested.BindLambda(
-            [this](){ if (SpellGroupPanel) SpellGroupPanel->SetVisibility(ESlateVisibility::Collapsed); });
+            [this]()
+            {
+                if (SpellGroupPanel) SpellGroupPanel->SetVisibility(ESlateVisibility::Collapsed);
+                if (APlayerController* PC = GetOwningPlayerController()) PC->SetShowMouseCursor(false);
+            });
     }
 
     // Inventory

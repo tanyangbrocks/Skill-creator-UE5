@@ -149,6 +149,8 @@ void ASkillCreatorPlayerController::SetupInputComponent()
 
     // Shift：展開/收起加工選單面板
     Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCraftingPanel);
+    // V：展開/收起技能組切換面板（對應 Godot InputBindings.cs:76 spell_group_switch = Key.V）
+    Bind(EKeys::V,         &ASkillCreatorPlayerController::OnOpenSpellGroupPanel);
 
     // Ctrl / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
     // Ctrl（短按 Tap ≤0.2s）→ CycleCameraMode（長按不觸發，解決 Ctrl+滾輪縮放衝突）
@@ -304,6 +306,14 @@ void ASkillCreatorPlayerController::ToggleCraftingPanel()
 {
     if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
         HUD->ToggleCraftingPanel();
+}
+
+void ASkillCreatorPlayerController::OnOpenSpellGroupPanel()
+{
+    // 對應 Godot Main.cs:1430：!_editorOpen 才允許開技能組面板
+    if (bBlockEditorOpen) return;
+    if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+        HUD->ToggleSpellGroup();
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, int32 SlotIndex)
