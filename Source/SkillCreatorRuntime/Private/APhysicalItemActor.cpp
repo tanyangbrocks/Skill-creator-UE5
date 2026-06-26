@@ -5,6 +5,7 @@
 #include "WorldScale.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 
 APhysicalItemActor::APhysicalItemActor()
 {
@@ -34,6 +35,16 @@ void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVe
     Count    = InCount;
     Velocity = InitialVelocityCms;
     bLanded  = false;
+
+    // 武器：依 ItemId 設定 3D 展示模型（資產不存在時靜默忽略）
+    if (InItemId == EItemId::WeaponWoodSword)
+    {
+        if (UStaticMesh* M = LoadObject<UStaticMesh>(
+            nullptr, TEXT("/Game/Weapons/DemonSword/SM_DemonSword.SM_DemonSword")))
+        {
+            MeshComp->SetStaticMesh(M);
+        }
+    }
 }
 
 float APhysicalItemActor::GetMass() const

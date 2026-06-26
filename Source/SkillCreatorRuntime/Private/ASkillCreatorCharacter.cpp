@@ -43,6 +43,8 @@
 #include "UPotionBagComponent.h"
 #include "UMapComponent.h"
 #include "UAfterimageFXComponent.h"
+#include "Animation/AnimSequence.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "InputTriggers.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -79,6 +81,11 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     // 不設定 → Grain=16 時有效重力過強，跳躍高度僅 4 cm（物理公式：h = v²/2g）。
     GetCharacterMovement()->GravityScale  = WorldScale::GravityScaleMult;
 
+    // ACharacter 預設 Mesh Z = -88cm；修正為我們的 CapsuleHalfHeight（-100cm @ Grain=16）
+    GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -WorldScale::CapsuleHalfHeight));
+    // Yaw = -90 度（Mixamo +Y forward → UE5 +X forward）已由 ACharacter 設定，不須重複
+    GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+
     // 鏡頭 rig：臂長與偏移依 WorldScale 尺度
     SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
     SpringArm->SetupAttachment(RootComponent);
@@ -109,6 +116,24 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
 void ASkillCreatorCharacter::BeginPlay()
 {
     Super::BeginPlay();
+
+    // ── 角色 Mesh + 動畫序列（資產不存在時靜默失敗，等 import_assets.py 執行後生效）──────
+    if (USkeletalMesh* SKM = LoadObject<USkeletalMesh>(
+        nullptr, TEXT("/Game/Characters/Player/SK_Player.SK_Player")))
+    {
+        GetMesh()->SetSkeletalMesh(SKM);
+        GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+    }
+    Anim_Walk    = LoadObject<UAnimSequence>(nullptr,
+        TEXT("/Game/Characters/Player/Anim/AS_Walk.AS_Walk"));
+    Anim_Run     = LoadObject<UAnimSequence>(nullptr,
+        TEXT("/Game/Characters/Player/Anim/AS_Run.AS_Run"));
+    Anim_FastRun = LoadObject<UAnimSequence>(nullptr,
+        TEXT("/Game/Characters/Player/Anim/AS_FastRun.AS_FastRun"));
+    Anim_Punch   = LoadObject<UAnimSequence>(nullptr,
+        TEXT("/Game/Characters/Player/Anim/AS_Punch.AS_Punch"));
+    ApplyLocomotionAnim();
+
     if (SpecialStatusComp) SpecialStatusComp->SetOwnerTarget(this);
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
@@ -1196,6 +1221,7 @@ void ASkillCreatorCharacter::ApplyMovementState()
             if (!bIsCrouched) Crouch();
             break;
     }
+    ApplyLocomotionAnim();
 }
 
 void ASkillCreatorCharacter::StartSprint()
@@ -2016,6 +2042,11 @@ void ASkillCreatorCharacter::StartChargingAttack()
     if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     bChargingAttack  = true;
     AttackChargeTimer = 0.f;
+    if (Anim_Punch && GetMesh())
+    {
+        GetMesh()->SetAnimation(Anim_Punch);
+        GetMesh()->Play(false);
+    }
 }
 
 void ASkillCreatorCharacter::ReleaseAttack()
@@ -2056,6 +2087,7 @@ void ASkillCreatorCharacter::ReleaseAttack()
             }
         }
     }
+    ApplyLocomotionAnim();
 }
 
 void ASkillCreatorCharacter::PerformHeavyAttack()
@@ -2092,6 +2124,18 @@ void ASkillCreatorCharacter::CancelAttack()
 {
     bChargingAttack   = false;
     AttackChargeTimer = 0.f;
+    ApplyLocomotionAnim();
+}
+
+void ASkillCreatorCharacter::ApplyLocomotionAnim()
+{
+    if (!GetMesh()) return;
+    UAnimSequence* Seq = IsSuperSprinting() ? Anim_FastRun
+                       : (MovementState == EPlayerMovementState::Sprinting) ? Anim_Run
+                       : Anim_Walk;
+    if (!Seq) return;
+    GetMesh()->SetAnimation(Seq);
+    GetMesh()->Play(true);
 }
 
 // ── S-1 擴展移動狀態 ──────────────────────────────────────────────────────

@@ -419,6 +419,13 @@ private:
     void OnDebugCoord();
     void OnDebugSurvival();
 
+    // ── 角色動畫（AnimationSingleNode，BeginPlay 載入；資產不存在時靜默忽略）──────
+    UPROPERTY() TObjectPtr<UAnimSequence> Anim_Walk;
+    UPROPERTY() TObjectPtr<UAnimSequence> Anim_Run;
+    UPROPERTY() TObjectPtr<UAnimSequence> Anim_FastRun;
+    UPROPERTY() TObjectPtr<UAnimSequence> Anim_Punch;
+    void ApplyLocomotionAnim();
+
     UPROPERTY() TObjectPtr<AVoxelWorldActor>    CachedVoxelWorld;
     UPROPERTY() TObjectPtr<AEnemyManager>       CachedEnemyMgr;
 
