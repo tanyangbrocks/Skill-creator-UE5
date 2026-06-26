@@ -34,6 +34,7 @@ enum class EPlayerMovementState : uint8
 
 class UCharacterStateComponent;
 class UElementalAuraComponent;
+class USpecialStatusComponent;
 class USpellCaster;
 class USpringArmComponent;
 class UCameraComponent;
@@ -193,6 +194,9 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UElementalAuraComponent> AuraComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<USpecialStatusComponent> SpecialStatusComp;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<USpellCaster> SpellCasterComp;

@@ -57,7 +57,10 @@ public:
     // 直接套用蔓生緩速（刻印用）；跳過元素反應機制
     void ApplySlow(float Duration, IElementalTarget* Target);
 
-    // 每幀呼叫：更新冷卻、Aura 計時、效果 tick，並重算聚合輸出
+    // TickComponent 自動呼叫 Process（所有持有本元件的 Actor 無需手動呼叫）
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+                               FActorComponentTickFunction* ThisTickFunction) override;
+    // 每幀更新冷卻、Aura 計時、效果 tick，並重算聚合輸出（TickComponent 內部呼叫）
     void Process(float DeltaTime);
     // 清除所有 Aura 與效果（死亡 / 復活用）
     void Reset();

@@ -14,6 +14,7 @@
 #include "ABeastCharacter.generated.h"
 
 class UElementalAuraComponent;
+class USpecialStatusComponent;
 class AVoxelWorldActor;
 class ASkillCreatorCharacter;
 
@@ -110,6 +111,9 @@ public:
     // ── 組件 ──────────────────────────────────────────────────────
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UElementalAuraComponent> AuraComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<USpecialStatusComponent> SpecialStatusComp;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;

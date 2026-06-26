@@ -1,6 +1,12 @@
 ﻿# UE5 已完成里程碑（歸檔）
 
-> 最後歸檔：2026-06-25（第八次，debug-checklist + NPC Disposition 快照修復後超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+> 最後歸檔：2026-06-26（第九次，特殊狀態架構 + Bug 1/2 修復後超過 8 筆觸發歸檔，保留最新 5 筆於 `實作進度.md`）
+
+| AWorldUnit + AVisualFXActor 基底 | `AWorldUnit.h/.cpp`（新增）`AVisualFXActor.h/.cpp`（新增）`AWeedEntity.h/.cpp`（繼承 AWorldUnit）`APlacedFixtureActor.h/.cpp`（繼承 AWorldUnit）`AFloatingDamageActor.h`（繼承 AVisualFXActor） | AWorldUnit：AnchorTile/MeshComp/CachedVoxelWorld；AVisualFXActor：MaxLifetime 自動 Destroy。AWeedEntity 改繼承 AWorldUnit，APlacedFixtureActor 改繼承 AWorldUnit，AFloatingDamageActor 改繼承 AVisualFXActor。Build 0 錯誤 0 警告。 |
+| 靜態 Debug A-1~A-4 + B-1/B-2 | `SnapshotTypes.h`（+bHasDisposition）`ANPCCharacter.cpp`（TakeSnapshot/Restore）`SurfaceWaterPool.cpp`（WaterFill 公式）`docs/debug-checklist.md`（新建） | A-3 NPC Disposition 快照修復；B-1 水池公式修正（(1-WaterFill)→WaterFill）；B-2 Delegate 全確認。Build 0 錯誤。 |
+| M-10 Phase 4+5 GPU CA 效能量測 + Async Readback | `CaGpuSimulator.h/.cpp`（BeginAsync/TryCollectAsync）`TileWorld3D.cpp`（稀疏打包 TickGpuZone） | Phase 4 QUICK_SCOPE_CYCLE_COUNTER + 稀疏 chunk 打包；Phase 5 1-frame async readback，CVar r.VoxelWorld.GpuCaAsync 切換。Build 0 錯誤 0 警告。 |
+| 元素攻擊力管線 | `ASkillCreatorCharacter/ABeastCharacter/ANPCCharacter.h/.cpp`（+TakeElementalDamage） | 三類別各加 TakeElementalDamage：命中/閃避→元素抗性比例減傷→可選能量防禦→暴擊。Build 0 錯誤 0 警告。 |
+| 遊戲時鐘系統 T-1~T-4 | `UGameClockSubsystem.h/.cpp`（FGameDateTime/蒼和曆）`WorldSaveData.h/.cpp`（+ElapsedTicks）`ASkillCreatorGameMode.cpp`（存讀）`UPlayerHUDWidget.h/.cpp`（BuildClock） | 蒼和曆 5000年起/360天/1min=1RealSec；ElapsedTicks 持久化；HUD 右上角每分鐘更新。Build 0 錯誤 0 警告。 |
 
 | W-A~W-G More World Setting（docs/plan-more-world-setting.md） | `Source/SkillCreatorCore/Public/MaterialType.h`（Stone_Cobble/Dirt_Dry/FallenLeaf）`ItemId.h`（OakLog/FallenLeaf/OakSapling/OakFruit/Weed）`WorldHierarchy.h`（新增）`ICollectible.h`（新增）`AWeedEntity.h/.cpp`（新增）`MaterialRegistry.cpp`（GetDefaultDrops 更新）`MapGenerator3D.cpp`（PlantTreesForChunk）`AVoxelWorldActor.h/.cpp`（GrassRegrowthSystem）`ASkillCreatorCharacter.h/.cpp`（W-D 採集 / W-G TickWeedGrowth） | W-A~W-G 7 項 Build 0 錯誤 0 警告。W-A 材質子類型；W-B 樹木生成；W-C 樹崩塌；W-D ICollectible 採集；W-E 草地再生（180s）；W-F 世界層級分類 enum；W-G AWeedEntity 隨機蔓延。 |
 | M-NPC-4 Prompt 組裝＋回應解析 + M-NPC-6 行動系統（plan-npc-brain.md） | `NPCActionTypes.h`（新增）`FPromptBuilder.h/.cpp`（新增）`FNPCResponseParser.h/.cpp`（新增）`ANPCCharacter.h/.cpp`（TriggerDialogue/DispatchBrainAction）`UBTTask_NPCFlee/Follow.h/.cpp`（新增） | FPromptBuilder 組裝 system+user 兩層訊息；FNPCResponseParser strip think-tag + JSON 解析四欄；DispatchBrainAction Attack→Hostile/Flee/Follow/stub；UBTTask_NPCFlee/Follow tile-step。Build 0 錯誤 0 警告。 |

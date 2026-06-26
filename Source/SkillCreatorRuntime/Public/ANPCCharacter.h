@@ -18,6 +18,7 @@ class USkeletalMeshComponent;
 class UNPCMemoryComponent;
 class UNPCPerceptionComponent;
 class UElementalAuraComponent;
+class USpecialStatusComponent;
 class AVoxelWorldActor;
 class AEnemyManager;
 class FWorldInterfaceAdapter;
@@ -76,6 +77,8 @@ public:
     TObjectPtr<UNPCPerceptionComponent> PerceptionComp;
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
     TObjectPtr<UElementalAuraComponent> AuraComp;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+    TObjectPtr<USpecialStatusComponent> SpecialStatusComp;
 
     UPROPERTY() TObjectPtr<AVoxelWorldActor> CachedVoxelWorld;
     UPROPERTY() TObjectPtr<AEnemyManager>    CachedEnemyMgr;

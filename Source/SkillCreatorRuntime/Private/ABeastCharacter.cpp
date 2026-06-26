@@ -1,5 +1,6 @@
 #include "ABeastCharacter.h"
 #include "UElementalAuraComponent.h"
+#include "USpecialStatusComponent.h"
 #include "AEnemyAIController.h"
 #include "AVoxelWorldActor.h"
 #include "WorldScale.h"
@@ -18,7 +19,8 @@ int32 ABeastCharacter::NextId = 0;
 ABeastCharacter::ABeastCharacter()
 {
     PrimaryActorTick.bCanEverTick = false;
-    AuraComp = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
+    AuraComp          = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
+    SpecialStatusComp = CreateDefaultSubobject<USpecialStatusComponent>(TEXT("SpecialStatusComp"));
     UniqueId = ++NextId;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -158,7 +160,9 @@ void ABeastCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Eleme
 void ABeastCharacter::TakeDamageAmount(float Amount)
 {
     if (!IsAlive()) return;
-    float Modified = Amount * (1.f + AuraComp->DamageTakenBonus) * (1.f + AuraComp->DefensePenalty);
+    const float DmgBonus = SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+    const float DefPen   = SpecialStatusComp ? SpecialStatusComp->TotalDefensePenalty   : AuraComp->DefensePenalty;
+    float Modified = Amount * (1.f + DmgBonus) * (1.f + DefPen);
     Modified = ActionBus.DispatchPlayerDamage(Modified);
     Hp = FMath::Max(0.f, Hp - Modified);
     if (Modified > 0.f)
@@ -270,7 +274,11 @@ float ABeastCharacter::GetBaseMoveInterval() const
     }
 }
 
-float ABeastCharacter::GetMoveInterval() const { return GetBaseMoveInterval() * (1.f + AuraComp->SpeedPenalty); }
+float ABeastCharacter::GetMoveInterval() const
+{
+    const float Pen = SpecialStatusComp ? SpecialStatusComp->TotalSpeedPenalty : AuraComp->SpeedPenalty;
+    return GetBaseMoveInterval() * (1.f + Pen);
+}
 
 float ABeastCharacter::GetAttackInterval() const
 {

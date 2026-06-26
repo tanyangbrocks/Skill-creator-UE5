@@ -5,6 +5,7 @@
 #include "UCombatantRegistrySubsystem.h"
 #include "UCharacterStateComponent.h"
 #include "UElementalAuraComponent.h"
+#include "USpecialStatusComponent.h"
 #include "USpellCaster.h"
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
@@ -93,9 +94,10 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     bUseControllerRotationPitch = false;
     bUseControllerRotationRoll  = false;
 
-    StateComp       = CreateDefaultSubobject<UCharacterStateComponent>(TEXT("StateComp"));
-    AuraComp        = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
-    SpellCasterComp = CreateDefaultSubobject<USpellCaster>(TEXT("SpellCasterComp"));
+    StateComp          = CreateDefaultSubobject<UCharacterStateComponent>(TEXT("StateComp"));
+    AuraComp           = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
+    SpecialStatusComp  = CreateDefaultSubobject<USpecialStatusComponent>(TEXT("SpecialStatusComp"));
+    SpellCasterComp    = CreateDefaultSubobject<USpellCaster>(TEXT("SpellCasterComp"));
     InventoryComp   = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComp"));
     EquipmentComp   = CreateDefaultSubobject<UEquipmentComponent>(TEXT("EquipmentComp"));
     PotionBagComp   = CreateDefaultSubobject<UPotionBagComponent>(TEXT("PotionBagComp"));
@@ -347,7 +349,7 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     if (SurvivalDamage > 0.f)
         TakeDirectDamage(SurvivalDamage);
 
-    AuraComp->Process(DeltaTime);
+    // AuraComp->Process 已由 UElementalAuraComponent::TickComponent 自動呼叫（Bug 1 fix）
     ActionBus.Update(DeltaTime);
 
     ApplyEnvironmentalDamage(DeltaTime);
@@ -711,10 +713,17 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
             case EPlayerMovementState::Sliding:        BaseSpeed = WorldScale::WalkSpeedCm * 2.f;  break;
             default: break;
         }
-        GetCharacterMovement()->MaxWalkSpeed = FMath::Max(0.f, BaseSpeed * SpeedMult);
+        // Bug 2 fix: 套用特殊狀態的移速懲罰（元素 + 異常狀態合算）
+        const float StatusSpeedPen = SpecialStatusComp ? SpecialStatusComp->TotalSpeedPenalty : 0.f;
+        const float FinalSpeed = FMath::Max(0.f, BaseSpeed * SpeedMult * (1.f - StatusSpeedPen));
+        GetCharacterMovement()->MaxWalkSpeed = FinalSpeed;
         // P-15: Slippery（腳下材質）→ 地面摩擦係數（8.0 = 預設急停；0 = 完全無摩擦）
         GetCharacterMovement()->GroundFriction = 8.f * (1.f - FloorData.Slippery);
     }
+
+    // Bug 2 fix: 無法移動（結凍/感電）→ MaxWalkSpeed 歸零
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized)
+        GetCharacterMovement()->MaxWalkSpeed = 0.f;
 
     // Phase 1-C: GlobalGravityScale 接入 CharacterMovement
     // GravityScale = GravityScaleMult（tile 尺度倍率）× GlobalGravityScale（全局重力場）

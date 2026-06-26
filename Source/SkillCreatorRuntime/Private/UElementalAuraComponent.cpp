@@ -3,7 +3,14 @@
 
 UElementalAuraComponent::UElementalAuraComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bCanEverTick = true;  // Bug 1 fix: 自帶 tick，任何持有本元件的 Actor 均自動更新
+}
+
+void UElementalAuraComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+                                            FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    Process(DeltaTime);
 }
 
 // ── 主要 API ──────────────────────────────────────────────────────────────
