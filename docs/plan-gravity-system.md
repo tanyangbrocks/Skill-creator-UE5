@@ -174,9 +174,9 @@ struct FGravityZone
 
 ## 六、實作順序
 
-- [ ] Phase 1-A：`WorldScale.h` 加 `GlobalGravityScale`
-- [ ] Phase 1-B：CA `UpdatePowder/Liquid/Gas` 讀取 `GlobalGravityScale`
-- [ ] Phase 1-C：Entity Jump / GravityScale / 墜落傷害接入
-- [ ] Phase 1-D：**實體物品 `APhysicalItemActor` 接入**（實體物品系統實作時完成）
-- [ ] Phase 2：FGravityZone per-region 支援
+- [x] Phase 1-A：`WorldScale.h` 加 `GlobalGravityScale`（由 plan-physical-item.md G-1 完成，2026-06-26）
+- [ ] Phase 1-B：CA `UpdatePowder/Liquid/Gas` 讀取 `GlobalGravityScale`（與實體物品無關，獨立排期）
+- [ ] Phase 1-C：Entity Jump / GravityScale / 墜落傷害接入（獨立排期）
+- [x] Phase 1-D：**實體物品 `APhysicalItemActor` 接入**（由 plan-physical-item.md G-3 完成，2026-06-26）
+- [ ] Phase 2：FGravityZone per-region 支援（需技能系統「重力領域」積木）
 - [ ] Phase 3：CA 方向向量抽象化（長期）

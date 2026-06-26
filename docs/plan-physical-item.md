@@ -642,15 +642,15 @@ G-3 + G-10 ───────────────────────
 
 ```
 [x] G-0  G→T 鍵位（2026-06-26 完成；OnPickupOrPanel stub 掛 G，G-5 填實作）
-[ ] G-1  WorldScale::GlobalGravityScale（同步完成 plan-gravity-system Phase 1-A）
-[ ] G-2  IPhysicalPickable.h 純介面
-[ ] G-3  APhysicalItemActor（手動物理 + PickupSphere）
-[ ] G-4  bIsCarrying + BeginCarry/EndCarry + 攻擊阻斷
-[ ] G-5  OnPickupOrPanel() 脈絡感知 G 鍵 + FindNearestPickable
-[ ] G-6  拿取提示 HUD（DrawHUD DrawText）
-[ ] G-7  UPhysicalThrowWidget 力量條 UI
-[ ] G-8  F Pressed/Released + FinishThrowCharge（攜帶中投擲）
-[ ] G-9  非攜帶狀態長按 F → 從物品欄投擲
+[x] G-1  WorldScale::GlobalGravityScale（同步完成 plan-gravity-system Phase 1-A）
+[x] G-2  IPhysicalPickable.h 純介面
+[x] G-3  APhysicalItemActor（手動物理 + PickupSphere）
+[x] G-4  bIsCarrying + BeginCarry/EndCarry + 攻擊阻斷
+[x] G-5  OnPickupOrPanel() 脈絡感知 G 鍵 + FindNearestPickable
+[x] G-6  拿取提示 HUD（DrawHUD DrawText）
+[x] G-7  UPhysicalThrowWidget 力量條 UI
+[x] G-8  F Pressed/Released + FinishThrowCharge（攜帶中投擲）
+[x] G-9  非攜帶狀態長按 F → 從物品欄投擲
 [ ] G-10 ADebrisActor 實作 IPhysicalPickable（碎塊可撿）
          ※ G-9 完成後前置全滿足，直接接著做；需關 Editor + Rebuild（改 ADebrisActor.h）
 ──── 以下未來待辦 ────

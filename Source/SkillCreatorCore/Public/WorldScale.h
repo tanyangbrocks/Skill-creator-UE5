@@ -43,6 +43,11 @@ namespace WorldScale
     constexpr float CameraArmLength    = TileSizeCm * 20.f;  // 20 tile 距離
     constexpr float CameraArmZOffset   = TileSizeCm * 1.5f;  // 臂根向上 1.5 tile
 
+    // ── 全域重力倍率（1.0=正常；0.5=月球；2.0=重力異常區）────────────────
+    // APhysicalItemActor::PhysicsTick 讀取此值。
+    // 未來 per-region 版本：AVoxelWorldActor 持有 TArray<FGravityZone>。
+    inline float GlobalGravityScale = 1.0f;
+
     // ── 衍生常數：移動 ────────────────────────────────────────────────
     // WalkSpeed：以「遊戲單位/s」表示（1 遊戲單位 = GrainCurrent tiles = 100 cm）。
     // TileSizeCm * GrainCurrent = 100 cm（恆等式），故 4 遊戲單位/s = 400 cm/s（不隨 Grain 改變）。

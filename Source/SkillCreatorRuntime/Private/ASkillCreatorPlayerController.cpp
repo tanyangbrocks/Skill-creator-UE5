@@ -1,5 +1,7 @@
 #include "ASkillCreatorPlayerController.h"
 #include "ASkillCreatorCharacter.h"
+#include "IPhysicalPickable.h"
+#include "APhysicalItemActor.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputMappingContext.h"
 #include "InputAction.h"
@@ -133,7 +135,9 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);        // S-6 服用藥水袋
     Bind(EKeys::E,   &ASkillCreatorPlayerController::OnToggleLockTarget);  // S-3 鎖敵切換
     Bind(EKeys::Tab, &ASkillCreatorPlayerController::OnSwitchLockTarget);  // S-3 循環切換目標
-    Bind(EKeys::F,   &ASkillCreatorPlayerController::OnDropCurrentItem);
+    // F 鍵改為 Pressed+Released 雙軸（短按=丟掉落物，長按=投擲；G-8）
+    InputComponent->BindKey(EKeys::F, IE_Pressed,  this, &ASkillCreatorPlayerController::OnDropPressed);
+    InputComponent->BindKey(EKeys::F, IE_Released, this, &ASkillCreatorPlayerController::OnDropReleased);
     Bind(EKeys::H,   &ASkillCreatorPlayerController::OnCancelAction);
     // Z：toggle 疾跑/超速（再按一次取消），計時 1s 升超速（無須一直按住）
     Bind(EKeys::Z, &ASkillCreatorPlayerController::OnSprintPressed);
@@ -312,8 +316,27 @@ void ASkillCreatorPlayerController::ToggleCraftingPanel()
 
 void ASkillCreatorPlayerController::OnPickupOrPanel()
 {
-    // G-0 stub：G-5（plan-physical-item.md）實作後替換為脈絡感知版本
-    // （撿取實體物品 / 攜帶中收入物品欄 / 無物時開玩家面板）
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+
+    if (Char->bIsCarrying)
+    {
+        // 攜帶中 G → 存入物品欄
+        IPhysicalPickable* P = Cast<APhysicalItemActor>(Char->CarriedActor.Get());
+        if (P && Char->InventoryComp && P->GetInventoryItemId() != EItemId::None)
+            Char->InventoryComp->TryAdd(P->GetInventoryItemId(), P->GetInventoryCount());
+        Char->EndCarry(FVector::ZeroVector);
+        return;
+    }
+
+    // 搜尋附近可撿物
+    if (AActor* Nearest = Char->FindNearestPickable())
+    {
+        Char->BeginCarry(Nearest);
+        return;
+    }
+
+    // 附近無物 → 開玩家面板（原 G 鍵行為）
     OnOpenPlayerPanel();
 }
 
@@ -411,6 +434,51 @@ void ASkillCreatorPlayerController::OnSwitchLockTarget()
     if (Char) Char->SwitchToNextLockTarget();
 }
 
+// ── G-8 F 長/短按分離 ────────────────────────────────────────────────────
+
+void ASkillCreatorPlayerController::OnDropPressed()
+{
+    FHoldStart = GetWorld()->GetTimeSeconds();
+
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->bIsCarrying)
+        if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+            HUD->StartThrowCharge();
+}
+
+void ASkillCreatorPlayerController::OnDropReleased()
+{
+    if (FHoldStart < 0.f) return;
+    const float HoldSec = GetWorld()->GetTimeSeconds() - FHoldStart;
+    FHoldStart = -1.f;
+
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char) return;
+
+    if (HoldSec < 0.2f)
+    {
+        // 短按路徑
+        if (Char->bIsCarrying)
+            Char->EndCarry(FVector::ZeroVector);  // 放下，無初速
+        else
+            OnDropCurrentItem();
+    }
+    else
+    {
+        // 長按路徑
+        if (Char->bIsCarrying)
+        {
+            if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+                HUD->FinishThrowCharge(Char);
+        }
+        else
+        {
+            // G-9：從物品欄生成實體物品後投擲
+            OnThrowFromInventory(HoldSec);
+        }
+    }
+}
+
 void ASkillCreatorPlayerController::OnDropCurrentItem()
 {
     ASkillCreatorCharacter* Char =
@@ -428,6 +496,33 @@ void ASkillCreatorPlayerController::OnDropCurrentItem()
         DropMgr->SpawnDrop(Stack.ItemId, Stack.Count, DropPos);
     }
     Char->InventoryComp->Consume(Idx, Stack.Count);
+}
+
+// G-9：非攜帶狀態長按 F → 從物品欄生成實體物品 → 立刻投擲
+void ASkillCreatorPlayerController::OnThrowFromInventory(float /*HoldSec*/)
+{
+    ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (!Char || !Char->InventoryComp) return;
+
+    const int32 Idx = Char->InventoryComp->ActiveHotbarIndex;
+    if (!Char->InventoryComp->Slots.IsValidIndex(Idx)) return;
+    const FItemStack S = Char->InventoryComp->Slots[Idx];
+    if (S.IsEmpty()) return;
+
+    // 在角色前方 1.5 tile 生成實體物品
+    FVector SpawnPos = Char->GetActorLocation()
+        + Char->GetActorForwardVector() * WorldScale::TileSizeCm * 1.5f;
+    APhysicalItemActor* PA = GetWorld()->SpawnActor<APhysicalItemActor>(
+        APhysicalItemActor::StaticClass(), SpawnPos, FRotator::ZeroRotator);
+    if (!PA) return;
+
+    PA->Init(S.ItemId, S.Count);
+    Char->InventoryComp->Consume(Idx, S.Count);
+    Char->BeginCarry(PA);
+
+    // 力量條已在 OnDropPressed 開始計時，直接計算投擲
+    if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+        HUD->FinishThrowCharge(Char);
 }
 
 void ASkillCreatorPlayerController::OnCancelAction()

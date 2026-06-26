@@ -17,6 +17,8 @@ class UChestWidget;
 class AChestActor;
 class UCraftingPanelWidget;
 class UCraftingHintCardWidget;
+class UPhysicalThrowWidget;
+class ASkillCreatorCharacter;
 
 // 玩家 HUD 生命週期管理 + 每幀資料餵送。
 // 所有面板 widget 在 BeginPlay() 建立，預設隱藏；各 Toggle*() 切換顯示狀態。
@@ -70,6 +72,10 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
     TObjectPtr<UCraftingPanelWidget> CraftingPanel;
 
+    // 投擲力量條（F 長按時顯示，G-7）
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UPhysicalThrowWidget> ThrowWidget;
+
     // ── 全域放置狀態（PlayerController 切換，VoxelWorld 讀取）───────
     bool bHoldToPlace    = true;   // Godot Main.cs:124 _holdToPlace = true
     bool bPerfectRemove  = true;   // K-5：Godot Main.cs:125 _perfectRemove = true（原 UE5 誤設 false，從未接通）
@@ -89,6 +95,10 @@ public:
     void ToggleEquipment();
     void ToggleDebugPaint();
     void ToggleCraftingPanel();  // Shift 鍵：展開/收起加工選單 + 顯示/隱藏游標
+
+    // G-7/G-8：投擲力量條操作
+    void StartThrowCharge();
+    void FinishThrowCharge(ASkillCreatorCharacter* Char);  // 停止計時 + 投擲
 
     virtual void BeginPlay() override;
     virtual void DrawHUD() override;

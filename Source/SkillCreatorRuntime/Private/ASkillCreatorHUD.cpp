@@ -18,6 +18,10 @@
 #include "UCraftingStationSubsystem.h"
 #include "APlacedFixtureActor.h"
 #include "ItemRegistry.h"
+#include "IPhysicalPickable.h"
+#include "UPhysicalThrowWidget.h"
+#include "WorldScale.h"
+#include "Engine/Canvas.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 
@@ -336,6 +340,9 @@ void ASkillCreatorHUD::BeginPlay()
 
     // 加工選單完整面板（Shift 展開/收起，預設 Collapsed）
     CraftingPanel = CreatePanel<UCraftingPanelWidget>();
+
+    // 投擲力量條（F 長按時才顯示，預設 Collapsed）
+    ThrowWidget = CreatePanel<UPhysicalThrowWidget>();
 }
 
 // ── DrawHUD：每幀餵資料 ───────────────────────────────────────────────────
@@ -451,4 +458,50 @@ void ASkillCreatorHUD::DrawHUD()
             DrawRect(LockCol, SP.X - S,     SP.Y + S - 5, S * 2.f, 5.f);    // 下邊
         }
     }
+
+    // ── G-6 拿取提示（附近有可撿物時在畫面中下方顯示）────────────────
+    if (!Char->bIsCarrying)
+    {
+        if (AActor* Near = Char->FindNearestPickable())
+        {
+            IPhysicalPickable* P = Cast<APhysicalItemActor>(Near);
+            FString Hint = P ? P->GetPickupHintText().ToString() : TEXT("G 拿取");
+            const float CanvasW = Canvas ? Canvas.Get()->SizeX : 1280.f;
+            const float CanvasH = Canvas ? Canvas.Get()->SizeY : 720.f;
+            DrawText(Hint, FColor::White, CanvasW * 0.5f - 60.f, CanvasH * 0.72f, GEngine->GetSmallFont(), 1.2f);
+        }
+    }
+}
+
+// ── G-7/G-8 投擲力量條 ────────────────────────────────────────────────────
+
+void ASkillCreatorHUD::StartThrowCharge()
+{
+    if (ThrowWidget)
+        ThrowWidget->StartCharging();
+}
+
+void ASkillCreatorHUD::FinishThrowCharge(ASkillCreatorCharacter* Char)
+{
+    if (!ThrowWidget || !Char) return;
+
+    ThrowWidget->StopCharging();
+    const float PowerPct = ThrowWidget->GetPowerPct();
+    ThrowWidget->Reset();
+
+    if (!Char->bIsCarrying) return;
+
+    APlayerController* PC = GetOwningPlayerController();
+    FVector AimDir = PC ? PC->GetControlRotation().Vector() : Char->GetActorForwardVector();
+
+    IPhysicalPickable* P = Cast<APhysicalItemActor>(Char->CarriedActor.Get());
+    const float Mass     = P ? P->GetMass() : 1.f;
+    const float Strength = Char->Stats.Strength;
+
+    constexpr float BaseSpeed = 200.f * WorldScale::TileSizeCm;
+    const float Speed = FMath::Clamp(
+        BaseSpeed * PowerPct * Strength / FMath::Max(0.1f, Mass),
+        0.f, 5000.f);
+
+    Char->EndCarry(AimDir * Speed);
 }

@@ -6,6 +6,7 @@
 struct FInputActionValue;
 #include "ICreature.h"
 #include "IElementalTarget.h"
+#include "IPhysicalPickable.h"
 #include "ISnapshottable.h"
 #include "ICombatant.h"
 #include "CharacterStats.h"
@@ -223,6 +224,18 @@ public:
 
     // ── ActionBus（DamageShield / DeathGuard 攔截，DeltaTime 計時，pause-aware）──
     FActionBus ActionBus;
+
+    // ── 拿取狀態（G-4）────────────────────────────────────────────────
+    // 獨立 bool：可疊加在任意 MovementState 上（走路、蹲伏、飛行均可拿取）
+    bool bIsCarrying = false;
+    TWeakObjectPtr<AActor> CarriedActor;  // 實作 IPhysicalPickable 的 Actor
+
+    bool IsCarrying() const { return bIsCarrying && CarriedActor.IsValid(); }
+    void BeginCarry(AActor* Target);
+    void EndCarry(FVector ThrowVelocityCms);
+
+    // 搜尋周圍最近可撿取物（G-5 用）
+    AActor* FindNearestPickable() const;
 
     // ── 戰鬥 API ──────────────────────────────────────────────────
     // UI-2: 讓 InputSettingsWidget 取得 IMC 進行鍵位重綁

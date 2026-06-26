@@ -1,4 +1,5 @@
 #include "ASkillCreatorCharacter.h"
+#include "APhysicalItemActor.h"
 #include "FCombatResolver.h"
 #include "UCombatantRegistrySubsystem.h"
 #include "UCharacterStateComponent.h"
@@ -1855,7 +1856,7 @@ void ASkillCreatorCharacter::OnMineReleased()
 // 不阻塞本計畫其餘部分，等該文件的攻擊框架決策確定後再接上真正的傷害判定）。
 void ASkillCreatorCharacter::OnPrimaryTap()
 {
-    if (!InventoryComp) return;
+    if (!InventoryComp || bIsCarrying) return;  // 拿取中不可攻擊
     const FItemStack& Active = InventoryComp->GetActiveItem();
     if (!Active.IsEmpty() && FItemRegistry::Get(Active.ItemId).bIsConsumable)
     {
@@ -1932,7 +1933,7 @@ void ASkillCreatorCharacter::PerformBackDash()
 
 void ASkillCreatorCharacter::StartChargingAttack()
 {
-    if (!IsAlive() || IsGuarding()) return;
+    if (!IsAlive() || IsGuarding() || bIsCarrying) return;  // 拿取中不可基礎攻擊
     bChargingAttack  = true;
     AttackChargeTimer = 0.f;
 }
@@ -2172,4 +2173,45 @@ void ASkillCreatorCharacter::OnWeedDestroyed(AActor* DestroyedActor)
 {
     if (const AWeedEntity* Weed = Cast<AWeedEntity>(DestroyedActor))
         ActiveWeedTiles.Remove(Weed->AnchorTile);
+}
+
+// ── G-4 拿取狀態 ──────────────────────────────────────────────────────────
+
+void ASkillCreatorCharacter::BeginCarry(AActor* Target)
+{
+    IPhysicalPickable* P = Cast<APhysicalItemActor>(Target);
+    if (!P || !P->IsPickable()) return;
+    bIsCarrying = true;
+    CarriedActor = Target;
+    P->OnCarried(this);
+}
+
+void ASkillCreatorCharacter::EndCarry(FVector ThrowVelocityCms)
+{
+    if (!CarriedActor.IsValid())
+    {
+        bIsCarrying = false;
+        return;
+    }
+    IPhysicalPickable* P = Cast<APhysicalItemActor>(CarriedActor.Get());
+    if (P) P->OnReleased(ThrowVelocityCms);
+    bIsCarrying  = false;
+    CarriedActor = nullptr;
+}
+
+AActor* ASkillCreatorCharacter::FindNearestPickable() const
+{
+    const float PickupRadiusCm = WorldScale::TileSizeCm * 3.f;
+    TArray<AActor*> Overlaps;
+    GetOverlappingActors(Overlaps);
+    AActor* Best = nullptr;
+    float BestDist = PickupRadiusCm;
+    for (AActor* A : Overlaps)
+    {
+        IPhysicalPickable* P = Cast<APhysicalItemActor>(A);
+        if (!P || !P->IsPickable()) continue;
+        const float D = FVector::Dist(GetActorLocation(), A->GetActorLocation());
+        if (D < BestDist) { BestDist = D; Best = A; }
+    }
+    return Best;
 }

@@ -78,7 +78,11 @@ private:
     void OnUsePotion();           // Q — S-6 服用所有藥水袋（PotionBagComp->UseAllBags）
     void OnToggleLockTarget();    // E — S-3 鎖敵切換（TryToggleLockTarget）
     void OnSwitchLockTarget();    // Tab — S-3 循環切換目標（SwitchToNextLockTarget）
-    void OnDropCurrentItem();     // F — 丟出當前物品（DroppedItemManager）
+    void OnDropPressed();         // F IE_Pressed  — 開始計時（攜帶中立即啟動力量條）
+    void OnDropReleased();        // F IE_Released — 短按=放下/丟掉落物；長按=投擲
+    void OnDropCurrentItem();     // F 短按路徑：丟出當前物品（DroppedItemManager）
+    void OnThrowFromInventory(float HoldSec);  // G-9：非攜帶長按 F → 從物品欄生成並投擲
+    float FHoldStart = -1.f;      // F 按下時間（GetTimeSeconds），-1=未按
     void OnCancelAction();        // H — 取消施法（SpellRunner::PruneAll）
     void OnSprintPressed();        // Z toggle：第一次=進入疾跑（計時1s升超速），第二次=取消
     void OnGuardBreakOrFly();     // K — 空中=飛行；地面對防禦目標=破防 stub；K+L=前衝 stub
