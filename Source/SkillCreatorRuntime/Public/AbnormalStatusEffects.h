@@ -209,10 +209,10 @@ public:
 };
 
 // 能量封印（不可疊，持續時間由外部決定，鎖住所有 MP）
-class FEnergySeaStatus final : public FAbnormalStatusEffect
+class FEnergySealStatus final : public FAbnormalStatusEffect
 {
 public:
-    explicit FEnergySeaStatus(float Duration = 5.f) { RemainingDuration = Duration; }
+    explicit FEnergySealStatus(float Duration = 5.f) { RemainingDuration = Duration; }
     FName GetStatusId()    const override { return AbnormalStatusId::EnergySeal; }
     FText GetDisplayName() const override { return FText::FromString(TEXT("能量封印")); }
     bool  GetCannotUseMP() const override { return true; }

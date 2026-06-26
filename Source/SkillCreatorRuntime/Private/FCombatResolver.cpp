@@ -39,6 +39,12 @@ float FCombatResolver::ApplyCrit(float Base, const FCharacterStats& Def, const F
 // 兩者都在 ResolvePhysicalDmg 之前套，確保閃避/暴擊公式看到正確的基礎值。
 bool FCombatResolver::TakePhysicalDamage(ICombatant& Target, float Dmg, const FCharacterStats* Atk)
 {
+    // Phase C-4：無敵期間所有傷害歸零（ApplyFinalDamage(0) 跳過 ActionBus 等副作用）
+    if (Target.IsInvincible()) return false;
+    // TODO(Phase C-4 攻擊力懲罰)：攻擊方 TotalAttackPenalty 需從攻擊方 ICombatant* 讀取，
+    // 目前簽章只傳 const FCharacterStats*（無法呼叫 GetStatusAttackPenalty()），
+    // 待 FCombatResolver 簽章增加 ICombatant* AtkCombatant 參數時一併套入。
+
     const float DmgBonus = Target.GetStatusDamageTakenBonus();
     const float DefPen   = Target.GetStatusDefensePenalty();
 
@@ -58,6 +64,7 @@ bool FCombatResolver::TakePhysicalDamage(ICombatant& Target, float Dmg, const FC
 // 對應 ABeastCharacter::TakeEnergyDamage + ASkillCreatorCharacter::TakeEnergyDamage（邏輯完全一致）
 void FCombatResolver::TakeEnergyDamage(ICombatant& Target, float Dmg, FName ManaTypeKey, const FCharacterStats* Atk)
 {
+    if (Target.IsInvincible()) return;  // Phase C-4
     const FCharacterStats& Def = Target.GetStats();
     if (!CheckHitDodge(Def, Atk)) return;
 
@@ -76,19 +83,31 @@ void FCombatResolver::TakeEnergyDamage(ICombatant& Target, float Dmg, FName Mana
 void FCombatResolver::TakeElementalDamage(ICombatant& Target, float Dmg, ESkillElementType Elem,
                                           bool bEnergyDefenseApplies, const FCharacterStats* Atk)
 {
+    if (Target.IsInvincible()) return;  // Phase C-4
     const FCharacterStats& Def = Target.GetStats();
     if (!CheckHitDodge(Def, Atk)) return;
 
     Dmg *= (1.f + Target.GetStatusDamageTakenBonus());
 
-    const float Resistance = FMath::Clamp(Def.GetElemResistance(Elem), 0.f, 1.f);
-    float Step1 = Dmg * (1.f - Resistance);
-
-    float Final = Step1;
-    if (bEnergyDefenseApplies)
+    float Final;
+    if (Target.HasBasicElemResistance())
     {
-        Final = FMath::Max(0.f, Step1 - Def.EnergyDefense);
-        Final = FMath::Max(0.f, Final - Def.EnergyDamageReduction);
+        // Phase C-4 基礎元素抵抗：先套能量防禦層，再套元素抗性（高抗性 build）
+        float After = FMath::Max(0.f, Dmg - Def.EnergyDefense);
+        After       = FMath::Max(0.f, After - Def.EnergyDamageReduction);
+        const float Resistance = FMath::Clamp(Def.GetElemResistance(Elem), 0.f, 1.f);
+        Final = After * (1.f - Resistance);
+    }
+    else
+    {
+        const float Resistance = FMath::Clamp(Def.GetElemResistance(Elem), 0.f, 1.f);
+        float Step1 = Dmg * (1.f - Resistance);
+        Final = Step1;
+        if (bEnergyDefenseApplies)
+        {
+            Final = FMath::Max(0.f, Step1 - Def.EnergyDefense);
+            Final = FMath::Max(0.f, Final - Def.EnergyDamageReduction);
+        }
     }
     Final = FMath::Max(0.f, Final);
     Final = ApplyCrit(Final, Def, Atk);

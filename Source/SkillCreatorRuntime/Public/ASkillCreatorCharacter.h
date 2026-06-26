@@ -278,6 +278,9 @@ public:
     virtual void                   ApplyFinalDamage(float FinalDmg) override;
     virtual float GetStatusDefensePenalty()   const override;
     virtual float GetStatusDamageTakenBonus() const override;
+    virtual bool  IsInvincible()              const override;
+    virtual float GetStatusAttackPenalty()    const override;
+    virtual bool  HasBasicElemResistance()    const override;
 
     bool IsEnemy() const { return false; }
 

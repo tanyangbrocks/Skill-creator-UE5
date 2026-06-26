@@ -47,9 +47,15 @@ public:
     // ── 特殊狀態修飾（FCombatResolver 在計算前讀取）──────────────
     // DefensePenalty：縮減 PhysicalDefense，[0,1]；0 = 無懲罰
     // DamageTakenBonus：放大進入傷害（物理/能量/元素均適用），>=0
-    // 預設回傳 0 = 無狀態，各類別若有 SpecialStatusComp 則覆寫
-    virtual float GetStatusDefensePenalty()   const { return 0.f; }
-    virtual float GetStatusDamageTakenBonus() const { return 0.f; }
+    // IsInvincible：無敵期間所有傷害管線 early return（ApplyFinalDamage(0) 跳過）
+    // GetAttackPenalty：攻擊方攻擊力懲罰（恐懼），FCombatResolver 從 Atk ICombatant 讀取
+    // 預設回傳 0 / false = 無狀態，各類別若有 SpecialStatusComp 則覆寫
+    virtual float GetStatusDefensePenalty()    const { return 0.f; }
+    virtual float GetStatusDamageTakenBonus()  const { return 0.f; }
+    virtual bool  IsInvincible()               const { return false; }
+    virtual float GetStatusAttackPenalty()     const { return 0.f; }
+    // HasBasicElemResistance：基礎元素抵抗（使元素傷害先套能量防禦再套元素抗性）
+    virtual bool  HasBasicElemResistance()     const { return false; }
 
     // ── FCombatResolver 呼叫點 ──────────────────────────────────
     // Resolver 算完最終傷害後呼叫此方法；各類別在此扣 HP、ActionBus、觸發死亡

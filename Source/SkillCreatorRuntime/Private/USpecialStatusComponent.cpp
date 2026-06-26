@@ -58,6 +58,9 @@ void USpecialStatusComponent::ApplyStatus(TUniquePtr<FAbnormalStatusEffect> Effe
     }
 
     Effect->OnApply(T);
+    // RemainingDuration <= 0 means the effect is instant (e.g. FInstantDeathStatus);
+    // damage/side effects already happened in OnApply, no need to track it.
+    if (Effect->RemainingDuration <= 0.f) return;
     ActiveEffects.Add(MoveTemp(Effect));
     RecalcAggregates();
 }
@@ -124,6 +127,7 @@ void USpecialStatusComponent::ClearOutOfCombat(IElementalTarget* Target)
 
 void USpecialStatusComponent::ProcessEffects(float DeltaTime)
 {
+    bool bAnyRemoved = false;
     for (int32 i = ActiveEffects.Num() - 1; i >= 0; --i)
     {
         ActiveEffects[i]->OnProcess(DeltaTime, CachedTarget);
@@ -132,8 +136,10 @@ void USpecialStatusComponent::ProcessEffects(float DeltaTime)
         {
             ActiveEffects[i]->OnRemove(CachedTarget);
             ActiveEffects.RemoveAt(i);
+            bAnyRemoved = true;
         }
     }
+    if (bAnyRemoved) RecalcAggregates();
 }
 
 void USpecialStatusComponent::CheckChainTriggers()

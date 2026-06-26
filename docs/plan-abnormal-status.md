@@ -217,9 +217,9 @@ float Interval = BaseAttackInterval * (1.f + SpecialStatusComp->TotalAttackSpeed
 
 ## 五、完成後驗證清單
 
-- [ ] Phase A Build 0 錯誤 0 警告
-- [ ] Phase B Build 0 錯誤 0 警告
-- [ ] Phase C Build 0 錯誤 0 警告
+- [x] Phase A Build 0 錯誤 0 警告
+- [x] Phase B Build 0 錯誤 0 警告
+- [ ] Phase C Build 0 錯誤 0 警告（含 .h 變更，需 Rebuild）
 - [ ] 燒傷：疊 10 層後每層各自倒計時 3s，瀕死時停止傷害輸出
 - [ ] 凍傷：疊滿 5 層觸發結凍 2s，5s 內再疊滿不再觸發
 - [ ] 結凍：完全無法移動/攻擊/施技，物理防禦歸零，霸體可覆蓋
@@ -232,7 +232,7 @@ float Interval = BaseAttackInterval * (1.f + SpecialStatusComp->TotalAttackSpeed
 ## 六、未決事項
 
 - `FreezeImmunityTimer`（凍傷的 5s 結凍免疫計時）存放位置：建議存在 `USpecialStatusComponent` 的 `TMap<FName, float> StatusCooldowns` 通用冷卻表，由狀態的 `OnRemove/OnProcess` 讀寫
-- `GetAttackBonus`（正面）已在架構中，但「攻擊力懲罰」（負面）目前走 `GetAttackPenalty()`，FCombatResolver 需要在呼叫 TakePhysicalDamage 時從**攻擊方**讀 `TotalAttackPenalty`（現在只讀防禦方的修飾），待 Phase C 時一併確認
+- `GetAttackBonus`（正面）已在架構中，但「攻擊力懲罰」（負面）目前走 `GetAttackPenalty()`，FCombatResolver 需要在呼叫 TakePhysicalDamage 時從**攻擊方**讀 `TotalAttackPenalty`（現在只讀防禦方的修飾）。Phase C 已在 `FCombatResolver.cpp` 留 TODO 說明：FCombatResolver 目前簽章只傳 `const FCharacterStats*`（非 ICombatant*），攻擊方懲罰待簽章擴充時一併套入
 
 ## 七、待辦（暫不實作）
 

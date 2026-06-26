@@ -6,6 +6,7 @@
 #include "UCharacterStateComponent.h"
 #include "UElementalAuraComponent.h"
 #include "USpecialStatusComponent.h"
+#include "AbnormalStatusEffects.h"
 #include "USpellCaster.h"
 #include "UInventoryComponent.h"
 #include "UEquipmentComponent.h"
@@ -356,6 +357,18 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     if (SurvivalDamage > 0.f)
         TakeDirectDamage(SurvivalDamage);
 
+    // Phase C-5：氧氣歸零 → 套用 FSuffocationStatus（週期傷害 MaxHP×15%/0.5s，不停止瀕死，可致命）
+    // 回復後移除。FSuffocationStatus::OnProcess 自行計時，StateComp 的 OxygenCriticalDamage 仍生效作備援。
+    if (SpecialStatusComp)
+    {
+        const bool bSuffocating = StateComp->IsSuffocating();
+        const bool bHasSuff     = SpecialStatusComp->HasStatus(AbnormalStatusId::Suffocation);
+        if (bSuffocating && !bHasSuff)
+            SpecialStatusComp->ApplyStatus(MakeUnique<FSuffocationStatus>());
+        else if (!bSuffocating && bHasSuff)
+            SpecialStatusComp->RemoveStatus(AbnormalStatusId::Suffocation);
+    }
+
     // AuraComp->Process 已由 UElementalAuraComponent::TickComponent 自動呼叫（Bug 1 fix）
     ActionBus.Update(DeltaTime);
 
@@ -523,6 +536,9 @@ float ASkillCreatorCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
 }
+bool  ASkillCreatorCharacter::IsInvincible()           const { return SpecialStatusComp && SpecialStatusComp->bIsInvincible; }
+float ASkillCreatorCharacter::GetStatusAttackPenalty() const { return SpecialStatusComp ? SpecialStatusComp->TotalAttackPenalty : 0.f; }
+bool  ASkillCreatorCharacter::HasBasicElemResistance() const { return SpecialStatusComp && SpecialStatusComp->bHasBasicElemResistance; }
 
 void ASkillCreatorCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
 {
@@ -1054,6 +1070,7 @@ void ASkillCreatorCharacter::CycleCameraMode()
 
 void ASkillCreatorCharacter::OnJumpStarted()
 {
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     JumpPressedTime = GetWorld()->GetTimeSeconds();
 
     // P-17: JumpFactor — 讀腳下材質的跳躍倍數（只在剛起跳時生效，空中二段跳不再重算）
@@ -1433,7 +1450,11 @@ void ASkillCreatorCharacter::HandleSpellInput()
     else if (bU)                   Slot = 0;
 
     if (Slot >= 0)
+    {
+        // Phase C-1：封技/結凍/石化/暈眩/麻痺/極度恐懼 → 阻斷施法
+        if (SpecialStatusComp && SpecialStatusComp->bCannotCastSkills) return;
         SpellCasterComp->TryCastSlot(Slot);
+    }
 }
 
 // ── Mining / Placement ──────────────────────────────────────────────────
@@ -1557,7 +1578,13 @@ void ASkillCreatorCharacter::OnMine()
     }
 
     // 以 60fps 為基準累加進度，乘上工具速度倍率（Godot PlayerController.cs:461）
-    const float SpeedMult = InventoryComp ? InventoryComp->GetActiveMiningSpeedMult(TargetMat) : 1.f;
+    // Phase C-6：採掘疲勞（3 層各 0.3，上限 clamp 0.9）→ 降低有效 SpeedMult
+    float SpeedMult = InventoryComp ? InventoryComp->GetActiveMiningSpeedMult(TargetMat) : 1.f;
+    if (SpecialStatusComp && SpecialStatusComp->TotalMiningSpeedPenalty > 0.f)
+    {
+        const float Pen = FMath::Clamp(SpecialStatusComp->TotalMiningSpeedPenalty, 0.f, 0.9f);
+        SpeedMult *= (1.f - Pen);
+    }
     MiningProgress += SpeedMult * GetWorld()->GetDeltaSeconds() * 60.f;
 
     if (MiningProgress < MatData.Hardness)
@@ -1974,6 +2001,7 @@ void ASkillCreatorCharacter::PerformBackDash()
 void ASkillCreatorCharacter::StartChargingAttack()
 {
     if (!IsAlive() || IsGuarding() || bIsCarrying) return;  // 拿取中不可基礎攻擊
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     bChargingAttack  = true;
     AttackChargeTimer = 0.f;
 }
@@ -2074,6 +2102,7 @@ void ASkillCreatorCharacter::EndCrouch()
 void ASkillCreatorCharacter::PerformRoll()
 {
     if (!IsAlive() || IsFlying() || IsRolling() || IsSliding()) return;
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     PreActionState = MovementState;
     MovementState  = EPlayerMovementState::Rolling;
     ApplyMovementState();
@@ -2096,6 +2125,7 @@ void ASkillCreatorCharacter::PerformRoll()
 void ASkillCreatorCharacter::PerformSlide()
 {
     if (!IsAlive() || IsFlying() || IsRolling() || IsSliding()) return;
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     PreActionState = MovementState;
     MovementState  = EPlayerMovementState::Sliding;
     ApplyMovementState();
@@ -2219,6 +2249,7 @@ void ASkillCreatorCharacter::OnWeedDestroyed(AActor* DestroyedActor)
 
 void ASkillCreatorCharacter::BeginCarry(AActor* Target)
 {
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return; // Phase C-3
     IPhysicalPickable* P = Cast<APhysicalItemActor>(Target);
     if (!P) P = Cast<ADebrisActor>(Target);
     if (!P || !P->IsPickable()) return;

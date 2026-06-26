@@ -166,6 +166,9 @@ float ABeastCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
 }
+bool  ABeastCharacter::IsInvincible()           const { return SpecialStatusComp && SpecialStatusComp->bIsInvincible; }
+float ABeastCharacter::GetStatusAttackPenalty() const { return SpecialStatusComp ? SpecialStatusComp->TotalAttackPenalty : 0.f; }
+bool  ABeastCharacter::HasBasicElemResistance() const { return SpecialStatusComp && SpecialStatusComp->bHasBasicElemResistance; }
 
 void ABeastCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
 {
@@ -294,12 +297,19 @@ float ABeastCharacter::GetMoveInterval() const
 
 float ABeastCharacter::GetAttackInterval() const
 {
+    float Base;
     switch (Type)
     {
-    case EEnemyType::Heavy:  return 2.5f;
-    case EEnemyType::Ranged: return 2.2f;
-    default:                 return 1.8f;
+    case EEnemyType::Heavy:  Base = 2.5f; break;
+    case EEnemyType::Ranged: Base = 2.2f; break;
+    default:                 Base = 1.8f; break;
     }
+    // Phase C-7：不動封鎖（結凍/暈眩等）→ 攻擊 interval 設為 FLT_MAX 讓 BT Task 永遠不觸發攻擊
+    if (SpecialStatusComp && SpecialStatusComp->bIsImmobilized) return TNumericLimits<float>::Max();
+    // Phase C-7：攻擊速度懲罰（攻速過快 → interval 拉長，即放慢）
+    if (SpecialStatusComp && SpecialStatusComp->TotalAttackSpeedPenalty > 0.f)
+        Base *= (1.f + SpecialStatusComp->TotalAttackSpeedPenalty);
+    return Base;
 }
 
 float ABeastCharacter::GetAttackDamage() const

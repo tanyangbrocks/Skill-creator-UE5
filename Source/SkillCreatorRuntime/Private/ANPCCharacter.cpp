@@ -133,6 +133,9 @@ float ANPCCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
 }
+bool  ANPCCharacter::IsInvincible()           const { return SpecialStatusComp && SpecialStatusComp->bIsInvincible; }
+float ANPCCharacter::GetStatusAttackPenalty() const { return SpecialStatusComp ? SpecialStatusComp->TotalAttackPenalty : 0.f; }
+bool  ANPCCharacter::HasBasicElemResistance() const { return SpecialStatusComp && SpecialStatusComp->bHasBasicElemResistance; }
 
 void ANPCCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
 {

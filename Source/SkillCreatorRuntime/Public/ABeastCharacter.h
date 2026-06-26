@@ -143,6 +143,9 @@ public:
     virtual void                   ApplyFinalDamage(float FinalDmg) override { TakeDamageAmount(FinalDmg); }
     virtual float GetStatusDefensePenalty()   const override;
     virtual float GetStatusDamageTakenBonus() const override;
+    virtual bool  IsInvincible()              const override;
+    virtual float GetStatusAttackPenalty()    const override;
+    virtual bool  HasBasicElemResistance()    const override;
 
     // ── 傷害管線（B-3；ICombatant override，FCombatResolver 統一公式）──
     virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;

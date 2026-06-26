@@ -150,6 +150,9 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
     // 能力點上限亂施法。對應 Godot SpellCaster.TryCast() 的等級上限拒放檢查。
     if (FAbilityPointCalculator::ExceedsLevelCap(Spell, Char->Level)) return false;
 
+    // Phase C-2：能量封印 → 無法消耗任何 MP（施法本身也取消）
+    if (Char->SpecialStatusComp && Char->SpecialStatusComp->bCannotUseMP) return false;
+
     // B-2 修正：依 ManaTypeKey 按比例分配 MP，先全部驗證再原子扣除
     // 對應 Godot SpellCaster.cs:251-275 TryConsumeMp（bound.Count=0 回退 slot[0]，否則均分）
     const float TotalMpCost = FAbilityPointCalculator::CalculateMpCost(Spell);
