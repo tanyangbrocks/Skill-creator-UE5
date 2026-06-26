@@ -651,8 +651,9 @@ G-3 + G-10 ───────────────────────
 [ ] G-7  UPhysicalThrowWidget 力量條 UI
 [ ] G-8  F Pressed/Released + FinishThrowCharge（攜帶中投擲）
 [ ] G-9  非攜帶狀態長按 F → 從物品欄投擲
-──── 以下未來待辦 ────
 [ ] G-10 ADebrisActor 實作 IPhysicalPickable（碎塊可撿）
+         ※ G-9 完成後前置全滿足，直接接著做；需關 Editor + Rebuild（改 ADebrisActor.h）
+──── 以下未來待辦 ────
 [ ] G-11 浮沉判斷（液體材質浮力精確版）
 [ ] G-12 爆炸飛散接入（炸到實體物品 → AddImpulse 而非無視）
 [ ] G-13 生物/投射物可撿取（IPhysicalPickable 擴充）
