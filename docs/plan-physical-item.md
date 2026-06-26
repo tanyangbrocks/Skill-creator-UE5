@@ -671,12 +671,48 @@ G-3 + G-10 ───────────────────────
 
 ---
 
-## 十、待確認事項（設計層）
+## 十、設計決策（已確認）
 
-| 事項 | 建議 | 說明 |
+| 事項 | 決策 |
+|------|------|
+| 短按 F 攜帶中的行為 | ✅ **放下（無初速）** |
+| 丟出鍵 | ✅ **F 鍵**（`OnDropCurrentItem` 綁 F 確認） |
+| 力量條來回時間 | ✅ **3 秒**（初始值，視手感可調） |
+| 撿取半徑 | ✅ **3 tile**（~18.75cm @ Grain=16，可調） |
+| 攜帶中手部視覺 | ✅ Phase 1 先讓 Actor 跟隨角色位置，hand IK 留後續 |
+
+---
+
+## 十一、完成後需同步更新的其他計畫
+
+> **這是本計畫最後一個強制步驟（G-0~G-9 全完成後執行）。**
+
+### plan-gravity-system.md 剩餘任務
+
+G-0~G-9 完成後，在 `plan-gravity-system.md` 的「六、實作順序」勾選並標注：
+
+| 步驟 | 狀態 | 說明 |
 |------|------|------|
-| 短按 F 時，攜帶中的行為 | 「放下（無初速）」 | 玩家可能想輕輕放下碎塊而不是丟遠 |
-| 丟出鍵確認為 F | ✅ 確認（`OnDropCurrentItem` 綁 F）| real object.txt 問 F 是不是丟出鍵 |
-| 力量條從底部到頂部一個來回 3 秒 | 可調 | 初始值，視手感微調 |
-| `PickupRadius` 3 tile（~18.75cm @ Grain=16）| 可調 | 比 InteractRangeTiles 短，避免隔牆撿到 |
-| 攜帶中玩家手部視覺（mesh 位置） | Phase 1 先跟隨 Actor 座標 | 完整 hand IK 留後續 |
+| Phase 1-A `GlobalGravityScale` | ✅ 由 G-1 完成 | |
+| Phase 1-B CA `UpdatePowder/Liquid/Gas` 讀取 GlobalGravityScale | **❌ 仍待做** | 與實體物品無關，屬純 CA 模擬調整，獨立排期 |
+| Phase 1-C Entity 跳躍初速 / 墜落傷害接入 | **❌ 仍待做** | `ASkillCreatorCharacter` GravityScale、JumpVelocity 需改讀 GlobalGravityScale |
+| Phase 1-D `APhysicalItemActor` 接入 | ✅ 由 G-3 完成 | |
+| Phase 2 per-region FGravityZone | **❌ 仍待做** | 需技能系統支援「重力領域」積木效果 |
+| Phase 3 CA 方向向量抽象化 | **❌ 長期，未排期** | 需大改 CA 更新邏輯 |
+
+### plan-debris-fragment.md 剩餘任務
+
+| 步驟 | 狀態 | 說明 |
+|------|------|------|
+| D-1~D-5 | ✅ 已完成 | |
+| D-6 Chaos Fracture 幾何集合設定 | **❌ 需 3D 美術資產才能動** | 前置：匯入敵人/NPC mesh |
+| D-7 Chaos 破壞事件 → ADebrisActor | **❌ 同上** | |
+| D-8 ADebrisActor Chaos 模式 | **❌ 同上** | |
+| ADebrisActor 撿取整合 | 由本計畫 **G-10** 負責（未來待辦） | 讓碎塊進入拿取系統 |
+
+### 同步步驟（寫進 G-0~G-9 完成的 commit message）
+
+完成 G-9 後，執行：
+1. 在 `plan-gravity-system.md` Phase 1-A 和 Phase 1-D 前加 `[x]` 並補標注「由 plan-physical-item.md G-1/G-3 完成」
+2. 在 `plan-gravity-system.md` 開頭加一行說明哪些 Phase 仍待做、建議排期順序
+3. `plan-debris-fragment.md` 的 D-1~D-5 已是 `[x]`，在底部加一行說明 D-6~D-8 前置條件（需 3D 美術），G-10 整合路徑在 `plan-physical-item.md`
