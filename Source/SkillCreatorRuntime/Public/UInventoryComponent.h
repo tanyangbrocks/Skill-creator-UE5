@@ -23,6 +23,15 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Inventory")
     int32 ActiveHotbarIndex = 0;
 
+    // 副手欄：圓形單槽，位於熱鍵欄左側；` 鍵切換是否「正在使用副手」
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Inventory")
+    FItemStack OffhandSlot;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Inventory")
+    bool bOffhandActive = false;
+
+    void ToggleOffhand();
+
     // 查詢
     UFUNCTION(BlueprintPure, Category="Inventory")
     FItemStack GetActiveItem() const;

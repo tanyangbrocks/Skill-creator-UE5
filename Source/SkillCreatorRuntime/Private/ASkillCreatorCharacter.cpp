@@ -265,7 +265,10 @@ void ASkillCreatorCharacter::FillSaveData(FCharacterSaveData& OutData) const
     OutData.TilePosition = FIntVector(Pos.X, Pos.Y, Pos.Z);
 
     if (InventoryComp)
+    {
         OutData.InventorySlots = InventoryComp->Slots;
+        OutData.OffhandSlot    = InventoryComp->OffhandSlot;
+    }
 
     if (StateComp)
     {
@@ -290,7 +293,10 @@ void ASkillCreatorCharacter::ApplyCharacterSaveData(const FCharacterSaveData& Da
     CurrentMp = Data.CurrentMp;
 
     if (InventoryComp)
-        InventoryComp->Slots = Data.InventorySlots;
+    {
+        InventoryComp->Slots       = Data.InventorySlots;
+        InventoryComp->OffhandSlot = Data.OffhandSlot;
+    }
 
     if (StateComp)
     {

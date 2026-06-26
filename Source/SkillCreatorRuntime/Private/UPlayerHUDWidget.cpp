@@ -182,7 +182,8 @@ void UPlayerHUDWidget::NativeOnInitialized()
     Root->AddChild(HpLabel);
     PinBL(HpLabel, { 10.f, -92.f }, { 180.f, 16.f });
 
-    // ④ 物品熱鍵欄（底部 10 槽）
+    // ④ 副手欄（熱鍵欄左側圓形槽）+ 物品熱鍵欄（底部 10 槽）
+    BuildOffhandSlot(Root);
     BuildItemHotbar(Root);
 
     // ⑤ 生存條
@@ -257,10 +258,69 @@ void UPlayerHUDWidget::BuildCrosshair(UCanvasPanel* Root)
     }
 }
 
+void UPlayerHUDWidget::BuildOffhandSlot(UCanvasPanel* Root)
+{
+    // 副手欄：圓形 48×48，位於熱鍵欄最左格再往左 8px（StartX=10, 方格 48+gap4=52, 再-8 gap = 10-52-8=-50... 用負值）
+    // 熱鍵欄已右移至 StartX=66，副手欄放在 10（與左側 HUD 齊）
+    constexpr float SlotW = 48.f, SlotH = 48.f;
+    constexpr float X = 10.f, Y = -132.f;
+    constexpr float CornerR = SlotW * 0.5f;  // 全圓角 = 圓形
+
+    OffhandBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    OffhandBorder->SetPadding(FMargin(0.f));
+    Root->AddChild(OffhandBorder);
+    PinBL(OffhandBorder, { X, Y }, { SlotW, SlotH });
+
+    // 內層 CanvasPanel（承載 Icon / Count / Key 標籤）
+    UCanvasPanel* SlotCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
+    OffhandBorder->AddChild(SlotCanvas);
+    if (UBorderSlot* BS = Cast<UBorderSlot>(SlotCanvas->Slot))
+    {
+        BS->SetHorizontalAlignment(HAlign_Fill);
+        BS->SetVerticalAlignment(VAlign_Fill);
+    }
+
+    // 物品色塊圖示
+    OffhandIconBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+    OffhandIconBorder->SetBrush(MakeSolidBrush(FLinearColor(0.18f, 0.18f, 0.22f)));
+    OffhandIconBorder->SetPadding(FMargin(0.f));
+    SlotCanvas->AddChild(OffhandIconBorder);
+    if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(OffhandIconBorder->Slot))
+        IS->SetOffsets(FMargin(8.f, 8.f, 32.f, 24.f));
+
+    // 數量標籤（右下）
+    OffhandCountLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    {
+        FSlateFontInfo F = OffhandCountLabel->GetFont(); F.Size = 9;
+        OffhandCountLabel->SetFont(F);
+    }
+    OffhandCountLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 1.f, 0.85f)));
+    OffhandCountLabel->SetJustification(ETextJustify::Right);
+    SlotCanvas->AddChild(OffhandCountLabel);
+    if (UCanvasPanelSlot* CS = Cast<UCanvasPanelSlot>(OffhandCountLabel->Slot))
+        CS->SetOffsets(FMargin(28.f, 32.f, 18.f, 14.f));
+
+    // ` 鍵提示（左上小字）
+    OffhandKeyLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+    {
+        FSlateFontInfo F = OffhandKeyLabel->GetFont(); F.Size = 9;
+        OffhandKeyLabel->SetFont(F);
+    }
+    OffhandKeyLabel->SetText(FText::FromString(TEXT("`")));
+    OffhandKeyLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.60f)));
+    SlotCanvas->AddChild(OffhandKeyLabel);
+    if (UCanvasPanelSlot* KS = Cast<UCanvasPanelSlot>(OffhandKeyLabel->Slot))
+        KS->SetOffsets(FMargin(3.f, 2.f, 14.f, 12.f));
+
+    // 初始化外框外觀（非 active 狀態）
+    UpdateOffhandSlot(FItemStack(), false);
+}
+
 void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
 {
     constexpr float SlotW = 48.f, SlotH = 48.f, Gap = 4.f;
-    constexpr float StartX = 10.f, StartY = -132.f;
+    // 副手欄佔 10（X） + 48（寬）+ 8（間距）= 66，熱鍵欄從此開始
+    constexpr float StartX = 66.f, StartY = -132.f;
     constexpr int32 Count  = 10;
 
     ItemSlotBorders.Reserve(Count);
@@ -718,6 +778,37 @@ void UPlayerHUDWidget::UpdateItemHotbar(const TArray<FItemStack>& Slots, int32 A
                 ? FText::GetEmpty()
                 : FText::FromString(FString::Printf(TEXT("×%d"), Slots[i].Count)));
     }
+}
+
+void UPlayerHUDWidget::UpdateOffhandSlot(const FItemStack& ItemSlot, bool bActive)
+{
+    constexpr float CornerR = 24.f;  // 48 / 2，全圓角 = 圓形外框
+
+    if (OffhandBorder)
+    {
+        FSlateBrush Brush;
+        Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+        Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+        Brush.OutlineSettings.CornerRadii  = FVector4(CornerR, CornerR, CornerR, CornerR);
+        Brush.TintColor = FSlateColor(bActive
+            ? FLinearColor(0.18f, 0.18f, 0.28f)
+            : FLinearColor(0.10f, 0.10f, 0.15f));
+        Brush.OutlineSettings.Color = FSlateColor(bActive
+            ? FLinearColor(0.95f, 0.80f, 0.20f)   // 啟用：金黃邊框（對齊熱鍵欄 active 顏色）
+            : FLinearColor(0.45f, 0.55f, 0.65f));  // 未啟用：藍灰邊框（區別於熱鍵欄深灰）
+        Brush.OutlineSettings.Width = bActive ? 2.f : 1.5f;
+        OffhandBorder->SetBrush(Brush);
+    }
+
+    if (OffhandIconBorder)
+        OffhandIconBorder->SetBrush(MakeSolidBrush(ItemSlot.IsEmpty()
+            ? FLinearColor(0.18f, 0.18f, 0.22f)
+            : ItemIconColor(ItemSlot.ItemId)));
+
+    if (OffhandCountLabel)
+        OffhandCountLabel->SetText(ItemSlot.IsEmpty()
+            ? FText::GetEmpty()
+            : FText::FromString(FString::Printf(TEXT("×%d"), ItemSlot.Count)));
 }
 
 void UPlayerHUDWidget::UpdateSurvival(const UCharacterStateComponent* S)

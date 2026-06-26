@@ -104,3 +104,8 @@ void UInventoryComponent::SetActiveHotbarIndex(int32 Idx)
 {
     ActiveHotbarIndex = FMath::Clamp(Idx, 0, HotbarSize - 1);
 }
+
+void UInventoryComponent::ToggleOffhand()
+{
+    bOffhandActive = !bOffhandActive;
+}

@@ -74,6 +74,9 @@ private:
     // OnOpenEditor 保留供 SpellList 綁定邏輯使用（Stage 3 移入 UPlayerPanelWidget 後刪除）
     // B 已無預設鍵位；G = OnPickupOrPanel；T = OnOpenPlayerPanel；V = OnOpenSpellGroupPanel
 
+    // ` 鍵：切換副手欄啟用狀態（OffhandSlot）
+    void OnToggleOffhand();
+
     // 動作快捷鍵（plan-player-actions.md）
     void OnUsePotion();           // Q — S-6 服用所有藥水袋（PotionBagComp->UseAllBags）
     void OnToggleLockTarget();    // E — S-3 鎖敵切換（TryToggleLockTarget）

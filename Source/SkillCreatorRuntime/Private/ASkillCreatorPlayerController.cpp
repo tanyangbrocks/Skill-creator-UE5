@@ -131,6 +131,8 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     // N → 形狀選單
     Bind(EKeys::N, &ASkillCreatorPlayerController::OnOpenShapeMenu);
     // V / B 已無預設鍵位（移除綁定）；G = OnPickupOrPanel；T = OnOpenPlayerPanel
+    // ` → 副手欄啟用切換（OffhandSlot，位於熱鍵欄左側）
+    Bind(EKeys::Tilde, &ASkillCreatorPlayerController::OnToggleOffhand);
 
     // 動作快捷鍵
     Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);        // S-6 服用藥水袋
@@ -222,6 +224,14 @@ void ASkillCreatorPlayerController::OnScrollDown()
                      % UInventoryComponent::HotbarSize;
         Char->InventoryComp->SetActiveHotbarIndex(Next);
     }
+}
+
+void ASkillCreatorPlayerController::OnToggleOffhand()
+{
+    ASkillCreatorCharacter* Char =
+        GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
+    if (Char && Char->InventoryComp)
+        Char->InventoryComp->ToggleOffhand();
 }
 
 void ASkillCreatorPlayerController::OnHotbar1() { SetActiveHotbarIndex(0); }

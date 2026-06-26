@@ -35,6 +35,7 @@ struct SKILLCREATORRUNTIME_API FCharacterSaveData
     UPROPERTY() float               Xp            = 0.f;
     UPROPERTY() TArray<FItemStack>  InventorySlots;   // 30 格背包（對應 UInventoryComponent.Slots）
     UPROPERTY() int32               ActiveHotbar  = 0; // 目前選中熱鍵欄格
+    UPROPERTY() FItemStack          OffhandSlot;       // 副手欄（圓形單槽，` 鍵切換）
     UPROPERTY() TMap<FName, float>  ManaCurrents;      // ManaTypeKey → 目前法力值
 
     // W-6: FSpellGroup 全組序列化 JSON（ActiveGroupIndex + 5 組 × 10 槽 + 被動）

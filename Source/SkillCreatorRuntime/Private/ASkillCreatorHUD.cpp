@@ -379,10 +379,14 @@ void ASkillCreatorHUD::DrawHUD()
         HUDWidget->UpdateSpellHotBar(L.Slots, L.ActiveIndex);
     }
 
-    // ── 物品熱鍵欄 ───────────────────────────────────────────────────
+    // ── 副手欄 + 物品熱鍵欄 ──────────────────────────────────────────
     if (Char->InventoryComp)
+    {
+        HUDWidget->UpdateOffhandSlot(
+            Char->InventoryComp->OffhandSlot, Char->InventoryComp->bOffhandActive);
         HUDWidget->UpdateItemHotbar(
             Char->InventoryComp->Slots, Char->InventoryComp->ActiveHotbarIndex);
+    }
 
     // ── 加工選單（docs/plan-item-crafting-system.md §八）────────────────
     if (CraftingPanel && Char->InventoryComp)

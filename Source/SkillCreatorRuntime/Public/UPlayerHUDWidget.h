@@ -59,6 +59,9 @@ public:
     // 物品熱鍵欄（10 格）
     void UpdateItemHotbar(const TArray<struct FItemStack>& Slots, int32 ActiveIdx);
 
+    // 副手欄（圓形單槽，熱鍵欄左側）
+    void UpdateOffhandSlot(const struct FItemStack& ItemSlot, bool bActive);
+
     // 生存條（StateComp 資料）
     void UpdateSurvival(const UCharacterStateComponent* State);
 
@@ -98,6 +101,12 @@ protected:
 private:
     // ── 基本血魔 bars（左上角或舊版）────────────────────────────────
     // （保留供舊版 Blueprint 子類使用，NativeOnInitialized 自動建立）
+
+    // ── 副手欄（熱鍵欄左側，圓形單槽）────────────────────────────
+    TObjectPtr<UBorder>    OffhandBorder     = nullptr;
+    TObjectPtr<UBorder>    OffhandIconBorder = nullptr;
+    TObjectPtr<UTextBlock> OffhandCountLabel = nullptr;
+    TObjectPtr<UTextBlock> OffhandKeyLabel   = nullptr;
 
     // ── 物品熱鍵欄（底部）──────────────────────────────────────────
     TArray<TObjectPtr<UBorder>>    ItemSlotBorders;
@@ -159,6 +168,7 @@ private:
 
     // ── 私有建構 helper ─────────────────────────────────────────────
     void BuildCrosshair(UCanvasPanel* Root);
+    void BuildOffhandSlot(UCanvasPanel* Root);
     void BuildItemHotbar(UCanvasPanel* Root);
     void BuildSurvivalBars(UCanvasPanel* Root);
     void BuildLevelHud(UCanvasPanel* Root);
