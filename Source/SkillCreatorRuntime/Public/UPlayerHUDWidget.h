@@ -11,7 +11,11 @@
 #include "ManaSlot.h"
 #include "PlacementShape.h"
 #include "ItemId.h"
+#include "SpecialStatusTypes.h"
 #include "UPlayerHUDWidget.generated.h"
+
+class UHpMpCircleWidget;
+class UAbnormalStatusBarWidget;
 
 class UCharacterStateComponent;
 class UCanvasPanel;
@@ -68,6 +72,9 @@ public:
     // 拿取槽（熱鍵欄右側圓形，顯示 APhysicalItemActor 攜帶圖示）
     void UpdateCarrySlot(bool bIsCarrying, EItemId ItemId = EItemId::None);
 
+    // 異常狀態圖示列（頂部中央）
+    void UpdateAbnormalStatusBar(const TArray<FStatusDisplaySnapshot>& Snaps);
+
     // 等級 HUD
     void UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
                         const FString& TierName, FLinearColor TierColor);
@@ -102,6 +109,12 @@ protected:
     virtual void NativeTick(const FGeometry& Geo, float Delta) override;
 
 private:
+    // ── HP/MP 圓形水缸 + MP 外環（左上角）──────────────────────────────
+    TObjectPtr<UHpMpCircleWidget>       HpMpCircle       = nullptr;
+
+    // ── 異常狀態圖示列（頂部中央）───────────────────────────────────────
+    TObjectPtr<UAbnormalStatusBarWidget> AbnormalStatusBar = nullptr;
+
     // ── 基本血魔 bars（左上角或舊版）────────────────────────────────
     // （保留供舊版 Blueprint 子類使用，NativeOnInitialized 自動建立）
 
@@ -177,6 +190,8 @@ private:
     int64                  LastClockMinute = -1;
 
     // ── 私有建構 helper ─────────────────────────────────────────────
+    void BuildHpMpCircle(UCanvasPanel* Root);
+    void BuildAbnormalStatusBar(UCanvasPanel* Root);
     void BuildCrosshair(UCanvasPanel* Root);
     void BuildOffhandSlot(UCanvasPanel* Root);
     void BuildItemHotbar(UCanvasPanel* Root);

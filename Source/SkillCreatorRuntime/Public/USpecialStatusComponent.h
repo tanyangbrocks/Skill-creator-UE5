@@ -69,6 +69,9 @@ public:
     // 由 Owner（角色）在 BeginPlay 主動呼叫，供 ProcessEffects 使用（無 RTTI 不可 dynamic_cast）
     void SetOwnerTarget(IElementalTarget* T) { CachedTarget = T; }
 
+    // UI 用：取得目前所有活躍狀態快照（依 StatusId 合併疊加層）
+    void GetStatusSnapshots(TArray<FStatusDisplaySnapshot>& Out) const;
+
 private:
     // 元素 Aura（不擁有，BeginPlay 查詢 Owner 上的元件）
     UPROPERTY() TObjectPtr<UElementalAuraComponent> ElementalAura;

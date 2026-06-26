@@ -20,6 +20,7 @@
 #include "ItemRegistry.h"
 #include "APhysicalItemActor.h"
 #include "IPhysicalPickable.h"
+#include "USpecialStatusComponent.h"
 #include "ADebrisActor.h"
 #include "UPhysicalThrowWidget.h"
 #include "WorldScale.h"
@@ -417,6 +418,14 @@ void ASkillCreatorHUD::DrawHUD()
     // ── 生存條 ───────────────────────────────────────────────────────
     if (Char->StateComp)
         HUDWidget->UpdateSurvival(Char->StateComp);
+
+    // ── 異常狀態圖示列（頂部中央）─────────────────────────────────────
+    if (Char->SpecialStatusComp)
+    {
+        TArray<FStatusDisplaySnapshot> Snaps;
+        Char->SpecialStatusComp->GetStatusSnapshots(Snaps);
+        HUDWidget->UpdateAbnormalStatusBar(Snaps);
+    }
 
     // ── 等級 / XP / 境界 ─────────────────────────────────────────────
     {

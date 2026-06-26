@@ -73,3 +73,13 @@ public:
     virtual float GetAccumulatedState()            const { return 0.f; }
     virtual void  RestoreAccumulatedState(float V)       {}
 };
+
+// UI 顯示用快照（由 USpecialStatusComponent::GetStatusSnapshots 生成）
+struct FStatusDisplaySnapshot
+{
+    FName             StatusId;
+    FText             DisplayName;
+    EAbnormalPolarity Polarity          = EAbnormalPolarity::Negative;
+    float             RemainingDuration = 0.f;
+    int32             StackCount        = 1;
+};

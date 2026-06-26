@@ -1,4 +1,6 @@
 #include "UPlayerHUDWidget.h"
+#include "UHpMpCircleWidget.h"
+#include "UAbnormalStatusBarWidget.h"
 #include "UGameClockSubsystem.h"
 #include "UInventoryComponent.h"
 #include "UCharacterStateComponent.h"
@@ -167,6 +169,15 @@ void UPlayerHUDWidget::NativeOnInitialized()
     StaminaBar = AddBar(TEXT("StaminaBar"), FLinearColor(0.15f, 0.80f, 0.25f), { 20, 68 });
     HpTextBlock = AddTxt(TEXT("HpText"), { 208, 20 });
     MpTextBlock = AddTxt(TEXT("MpText"), { 208, 44 });
+    // 舊版長條被 HP/MP 圓形水缸取代，隱藏避免重疊
+    HpBar->SetVisibility(ESlateVisibility::Collapsed);
+    MpBar->SetVisibility(ESlateVisibility::Collapsed);
+    StaminaBar->SetVisibility(ESlateVisibility::Collapsed);
+    HpTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+    MpTextBlock->SetVisibility(ESlateVisibility::Collapsed);
+
+    // ① HP/MP 圓形水缸（左上角 10,10，120×120）
+    BuildHpMpCircle(Root);
 
     // ② 準心
     BuildCrosshair(Root);
@@ -231,6 +242,9 @@ void UPlayerHUDWidget::NativeOnInitialized()
 
     // ⑮ 小地圖佔位圓形（右上角，時鐘左側）
     BuildMinimap(Root);
+
+    // ⑯ 異常狀態圖示列（頂部中央）
+    BuildAbnormalStatusBar(Root);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -841,6 +855,7 @@ void UPlayerHUDWidget::UpdateHpMp(float Hp, float MaxHp, float Mp, float MaxMp,
     if (MpTextBlock) MpTextBlock->SetText(MpText);
     if (HpLabel)     HpLabel->SetText(FText::FromString(
         FString::Printf(TEXT("HP  %.0f / %.0f"), Hp, MaxHp)));
+    if (HpMpCircle)  HpMpCircle->UpdateHp(HpPercent, MpPercent);
 }
 
 void UPlayerHUDWidget::UpdateSpellHotBar(const TArray<FSpellArray>& HotBar, int32 ActiveIdx)
@@ -1163,6 +1178,7 @@ void UPlayerHUDWidget::UpdateManaSlots(const TArray<FManaSlot>& Slots)
             ManaValLabels[i]->SetText(FText::FromString(
                 FString::Printf(TEXT("%.0f/%.0f"), Slots[i].Current, Slots[i].Max)));
     }
+    if (HpMpCircle) HpMpCircle->UpdateManaSlots(Slots);
 }
 
 void UPlayerHUDWidget::ShowDeathScreen(bool bVisible)
@@ -1207,4 +1223,33 @@ void UPlayerHUDWidget::HideFloatTooltip()
 {
     if (FloatTooltipPanel)
         FloatTooltipPanel->SetVisibility(ESlateVisibility::Hidden);
+}
+
+// ── Phase 4 新增：HP/MP 圓形水缸 ─────────────────────────────────────────────
+
+void UPlayerHUDWidget::BuildHpMpCircle(UCanvasPanel* Root)
+{
+    HpMpCircle = CreateWidget<UHpMpCircleWidget>(GetOwningPlayer(),
+        UHpMpCircleWidget::StaticClass());
+    if (!HpMpCircle) return;
+    Root->AddChild(HpMpCircle);
+    Pin(HpMpCircle, { 10.f, 10.f }, { 120.f, 120.f });
+}
+
+// ── Phase 4 新增：異常狀態圖示列 ─────────────────────────────────────────────
+
+void UPlayerHUDWidget::BuildAbnormalStatusBar(UCanvasPanel* Root)
+{
+    AbnormalStatusBar = CreateWidget<UAbnormalStatusBarWidget>(GetOwningPlayer(),
+        UAbnormalStatusBarWidget::StaticClass());
+    if (!AbnormalStatusBar) return;
+    Root->AddChild(AbnormalStatusBar);
+    // 頂部置中，距頂 10px，最多 15 格 (15*22=330px)，高 25px
+    Pin(AbnormalStatusBar, { 0.f, 10.f }, { 330.f, 25.f },
+        FAnchors(0.5f, 0.f, 0.5f, 0.f), FVector2D(0.5f, 0.f));
+}
+
+void UPlayerHUDWidget::UpdateAbnormalStatusBar(const TArray<FStatusDisplaySnapshot>& Snaps)
+{
+    if (AbnormalStatusBar) AbnormalStatusBar->UpdateStatuses(Snaps);
 }

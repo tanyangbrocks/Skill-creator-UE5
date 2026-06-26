@@ -242,3 +242,30 @@ void USpecialStatusComponent::RecalcAggregates()
     bHasBasicElemResistance = bBasicRes;
     bHasAdvElemResistance   = bAdvRes;
 }
+
+void USpecialStatusComponent::GetStatusSnapshots(TArray<FStatusDisplaySnapshot>& Out) const
+{
+    Out.Reset();
+    TMap<FName, int32> IdxMap; // StatusId → Out index
+    for (const auto& E : ActiveEffects)
+    {
+        if (!E || E->RemainingDuration <= 0.f) continue;
+        const FName Id = E->GetStatusId();
+        if (int32* Existing = IdxMap.Find(Id))
+        {
+            Out[*Existing].StackCount++;
+            Out[*Existing].RemainingDuration =
+                FMath::Max(Out[*Existing].RemainingDuration, E->RemainingDuration);
+        }
+        else
+        {
+            FStatusDisplaySnapshot S;
+            S.StatusId          = Id;
+            S.DisplayName       = E->GetDisplayName();
+            S.Polarity          = E->GetPolarity();
+            S.RemainingDuration = E->RemainingDuration;
+            S.StackCount        = 1;
+            IdxMap.Add(Id, Out.Add(S));
+        }
+    }
+}
