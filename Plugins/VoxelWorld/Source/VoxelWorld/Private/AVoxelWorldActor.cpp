@@ -11,6 +11,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TileMaterialRegistry.h"
 #include "MaterialType.h"
+#include "MaterialRegistry.h"
 #include "DrawDebugHelpers.h"
 
 // ============================================================
@@ -35,6 +36,11 @@ AVoxelWorldActor::AVoxelWorldActor()
         TEXT("/Game/Data/DA_TileMaterialRegistry.DA_TileMaterialRegistry"));
     if (RegFinder.Succeeded())
         TileMaterialRegistry = RegFinder.Object;
+
+    // P-18: passthrough RMC（NoCollision，只渲染 PlatformType=1 材質）
+    RMCPassthroughComp = CreateDefaultSubobject<URealtimeMeshComponent>(TEXT("RMCPassthrough"));
+    RMCPassthroughComp->SetupAttachment(RMCComp);
+    RMCPassthroughComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     // 採掘高亮：引擎內建 Cube mesh + 半透明材質（預設隱藏）
     HighlightMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HighlightMesh"));
@@ -119,7 +125,9 @@ void AVoxelWorldActor::ReinitializeForWorld(int32 NewWorldSeed, const FString& N
     TileWorld.ClearAllChunks();
     PlacedRegistry = FPlacedObjectRegistry();
     CreatedMegaChunks.Empty();
+    CreatedPassthroughChunks.Empty(); // P-18
     HideHighlight();
+    ClearAllChunkLights(); // P-5: 清除舊世界所有發光格點光源
 
     WorldSeed    = NewWorldSeed;
     WorldSaveDir = NewWorldSaveDir;
@@ -172,6 +180,7 @@ void AVoxelWorldActor::InitializeWorldState()
     // 每個 EMaterialType 值對應一個 material slot（PolyGroup = MaterialID）。
     // Registry 未建立或某 slot 為 null 時，fallback 到 VoxelMaterial。
     RMCMesh = RMCComp->InitializeRealtimeMesh<URealtimeMeshSimple>();
+    RMCPassthroughMesh = RMCPassthroughComp->InitializeRealtimeMesh<URealtimeMeshSimple>();
     const int32 MatCount = static_cast<int32>(EMaterialType::Count);
     for (int32 i = 0; i < MatCount; ++i)
     {
@@ -181,6 +190,7 @@ void AVoxelWorldActor::InitializeWorldState()
         if (!Mat)
             Mat = VoxelMaterial;
         RMCMesh->SetupMaterialSlot(i, *FString::Printf(TEXT("TileMat_%d"), i), Mat);
+        RMCPassthroughMesh->SetupMaterialSlot(i, *FString::Printf(TEXT("TileMat_%d"), i), Mat);
     }
 }
 
@@ -325,4 +335,126 @@ void AVoxelWorldActor::RebuildMegaChunk(FIntVector MC)
         FChunk3D* Chunk = TileWorld.GetChunkAt(FIntVector(cx, cy, cz));
         if (Chunk) Chunk->bMeshNeedsRebuild = false;
     }
+
+    // P-18: 同步更新可穿越格視覺網格（PlatformType=1，無碰撞）
+    {
+        using namespace RealtimeMesh;
+        FRealtimeMeshStreamSet PassSet = FGreedyMesher::Build(
+            TileWorld, MC, EGreedyMeshFilter::PassthroughOnly);
+        const FName PTName = FName(*FString::Printf(TEXT("PT_%d_%d_%d"), MC.X, MC.Y, MC.Z));
+        const FRealtimeMeshSectionGroupKey PTKey = FRealtimeMeshSectionGroupKey::Create(0, PTName);
+        if (CreatedPassthroughChunks.Contains(MC))
+            RMCPassthroughMesh->UpdateSectionGroup(PTKey, MoveTemp(PassSet));
+        else
+        {
+            RMCPassthroughMesh->CreateSectionGroup(PTKey, MoveTemp(PassSet));
+            CreatedPassthroughChunks.Add(MC);
+        }
+    }
+
+    // P-5: 同步更新此 MegaChunk 的發光格點光源
+    RebuildChunkLights(MC);
+}
+
+// ============================================================
+// P-5: 發光格點光源管理
+// ============================================================
+
+// 每 16³ tile 子區域最多一個 UPointLightComponent，強度/半徑由 max(LuminanceLevel) 決定。
+// 顏色依材質 NativeElement 分流（Fire→暖橙，Light→冷藍，其餘→暖白）。
+// 不投射動態陰影（避免 voxel 世界中大量光源的 shadow map overhead）。
+void AVoxelWorldActor::RebuildChunkLights(FIntVector MC)
+{
+    ClearChunkLights(MC);
+
+    const int32 Side     = WorldScale::ChunkSize * WorldScale::MegaChunkMult; // 64
+    const int32 CellSize = Side / 4;                                           // 16
+    const int32 T0X = MC.X * Side, T0Y = MC.Y * Side, T0Z = MC.Z * Side;
+
+    struct FLightCell
+    {
+        double SumX = 0, SumY = 0, SumZ = 0;
+        uint8  MaxLum = 0;
+        int32  Count  = 0;
+        ESkillElementType Element = ESkillElementType::None;
+    };
+    TMap<uint32, FLightCell> Cells; // key = cx*16 + cy*4 + cz (max 64 cells)
+
+    for (int32 tx = T0X; tx < T0X + Side; ++tx)
+    for (int32 ty = T0Y; ty < T0Y + Side; ++ty)
+    for (int32 tz = T0Z; tz < T0Z + Side; ++tz)
+    {
+        const EMaterialType Mat = TileWorld.GetTile(tx, ty, tz);
+        if (Mat == EMaterialType::Air) continue;
+        const FMaterialData& D = FMaterialRegistry::Get(Mat);
+        if (D.LuminanceLevel == 0) continue;
+
+        const uint32 Key =
+            uint32((tx - T0X) / CellSize) * 16 +
+            uint32((ty - T0Y) / CellSize) * 4  +
+            uint32((tz - T0Z) / CellSize);
+
+        FLightCell& Cell = Cells.FindOrAdd(Key);
+        Cell.SumX += tx; Cell.SumY += ty; Cell.SumZ += tz;
+        if (D.LuminanceLevel > Cell.MaxLum)
+        {
+            Cell.MaxLum  = D.LuminanceLevel;
+            Cell.Element = D.NativeElement;
+        }
+        ++Cell.Count;
+    }
+
+    if (Cells.IsEmpty()) return;
+
+    TArray<UPointLightComponent*>& Lights = MCLightMap.FindOrAdd(MC);
+
+    for (auto& KV : Cells)
+    {
+        const FLightCell& Cell = KV.Value;
+        const double Inv = 1.0 / Cell.Count;
+        const FVector WorldPos = WorldScale::TileToWorld(
+            (int32)FMath::RoundToInt(Cell.SumX * Inv),
+            (int32)FMath::RoundToInt(Cell.SumY * Inv),
+            (int32)FMath::RoundToInt(Cell.SumZ * Inv),
+            WorldHeight);
+
+        UPointLightComponent* Light = NewObject<UPointLightComponent>(this);
+        Light->RegisterComponent();
+        Light->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+        Light->SetWorldLocation(WorldPos);
+
+        const float NormLum = Cell.MaxLum / 15.f;
+        Light->SetIntensity(NormLum * 5000.f);
+        Light->SetAttenuationRadius(NormLum * WorldScale::TileSizeCm * 20.f);
+        Light->SetCastShadows(false);
+
+        FLinearColor LightColor;
+        switch (Cell.Element)
+        {
+            case ESkillElementType::Fire:  LightColor = FLinearColor(1.f, 0.35f, 0.05f); break;
+            case ESkillElementType::Light: LightColor = FLinearColor(0.5f, 0.6f,  1.f);  break;
+            default:                       LightColor = FLinearColor(1.f, 0.85f, 0.6f);  break;
+        }
+        Light->SetLightColor(LightColor);
+
+        Lights.Add(Light);
+    }
+}
+
+void AVoxelWorldActor::ClearChunkLights(FIntVector MC)
+{
+    if (TArray<UPointLightComponent*>* Old = MCLightMap.Find(MC))
+    {
+        for (UPointLightComponent* L : *Old)
+            if (IsValid(L)) L->DestroyComponent();
+        Old->Reset();
+    }
+}
+
+void AVoxelWorldActor::ClearAllChunkLights()
+{
+    for (auto& KV : MCLightMap)
+        for (UPointLightComponent* L : KV.Value)
+            if (IsValid(L)) L->DestroyComponent();
+    MCLightMap.Empty();
 }

@@ -884,7 +884,7 @@ void FTileWorld3D::PropagateThunder(int32 x, int32 y, int32 z, float Threshold, 
     while (Queue.Num() > 0 && Steps < MaxSteps)
     {
         FThunderCell Cur = Queue[0];
-        Queue.RemoveAt(0, 1, false);
+        Queue.RemoveAt(0, 1, EAllowShrinking::No);
         ++Steps;
 
         const FMaterialData& D = FMaterialRegistry::Get(GetTile(Cur.X, Cur.Y, Cur.Z));

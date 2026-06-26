@@ -389,7 +389,7 @@ uint8 DangerFlags = 0;
 ### Phase 2 ✅ — 接入高優先邏輯（P-1 ~ P-5）
 5. [x] `FreezeToMaterial`：接入 `ApplyElementalImpact(Ice)`
 6. [x] `MeltToMaterial`：接入 `ApplyElementalImpact(Fire)`
-7. [ ] `LuminanceLevel`：Chunk 建立時對發光格加點光源（延後：涉及大量 UPointLightComponent 管理，獨立實作）
+7. [x] `LuminanceLevel`：`RebuildChunkLights(MC)` — 每 16³ tile 子區域 1 個 UPointLightComponent，強度/半徑由 MaxLum/15 決定，NativeElement 決定顏色（Fire=暖橙/Light=冷藍/其餘=暖白），不投陰影；`ClearAllChunkLights()` 於 `ReinitializeForWorld` 清除
 8. [x] `ElectricalConductivity`：`PropagateThunder()` BFS（Threshold=0.3, MaxSteps=20）
 9. [x] `AutoignitionTemp`：`IgniteMaterial` + `TryIgniteAround` 加 AutoignitionTemp 材質支援（AutoignitionTemp≥0 可被引燃；機率 = Chance × max(1, 300/AutoignitionTemp)）
 
@@ -404,7 +404,8 @@ uint8 DangerFlags = 0;
 15. [x] P-13/P-14/P-15 SpeedFactor/Stickyness/Slippery：`ApplyEnvironmentalDamage()` 每幀依移動狀態 BaseSpeed × SpeedFactor(腳下) × (1−Stickyness)(身體格) 更新 MaxWalkSpeed；GroundFriction = 8×(1−Slippery)（非飛行時生效）
 16. [x] P-16 Restitution：`Landed()` 在 Super 前讀取 Velocity.Z，落地後依腳下材質 Restitution LaunchCharacter 向上反彈
 17. [x] P-17 JumpFactor：`OnJumpStarted()` 臨時縮放 JumpZVelocity×JumpFactor，Jump() 後立刻還原（不影響空中物理）
-18. [x] P-19 DangerFlags：`ANPCAIController::TryStep()` 攔截 DangerFlags!=0 的目標格地板，NPC 直接跳過不踏入危險格（P-18 PlatformType 為資料備用，暫無邏輯需求）
+18. [x] P-18 PlatformType=1：`RMCPassthroughComp`（`ECollisionEnabled::NoCollision`）+ `EGreedyMeshFilter::PassthroughOnly` 獨立渲染 passthrough tile；PlatformType=2 在 3D 語意不明確，永久略過
+19. [x] P-19 DangerFlags：`ANPCAIController::TryStep()` 攔截 DangerFlags!=0 的目標格地板，NPC 直接跳過不踏入危險格
 
 ---
 

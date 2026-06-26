@@ -1,6 +1,7 @@
 #include "GreedyMesher.h"
 #include "TileWorld3D.h"
 #include "MaterialType.h"
+#include "MaterialRegistry.h"
 #include "WorldScale.h"
 #include "RealtimeMeshSimple.h"
 
@@ -22,7 +23,8 @@ static bool IsOpaque(uint8 MatID)
 }
 
 FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
-                                             FIntVector          MegaChunkCoord)
+                                             FIntVector          MegaChunkCoord,
+                                             EGreedyMeshFilter   Filter)
 {
     constexpr int32 MegaSize = WorldScale::MegaChunkMult * WorldScale::ChunkSize; // 64
     const float     S        = WorldScale::TileSizeCm;                             // cm per tile
@@ -113,8 +115,16 @@ FRealtimeMeshStreamSet FGreedyMesher::Build(const FTileWorld3D& World,
                                           MinTile.Y + Nbr.Y,
                                           MinTile.Z + Nbr.Z));
 
-                        Mask[i * MegaSize + j] =
-                            (IsOpaque(SelfMat) && !IsOpaque(NbrMat)) ? SelfMat : 0;
+                        // P-18: filter by PlatformType
+                        bool bSelfVisible = IsOpaque(SelfMat) && !IsOpaque(NbrMat);
+                        if (bSelfVisible && SelfMat != 0)
+                        {
+                            const uint8 PT = FMaterialRegistry::Get(
+                                static_cast<EMaterialType>(SelfMat)).PlatformType;
+                            if (Filter == EGreedyMeshFilter::SolidOnly       && PT != 0) bSelfVisible = false;
+                            if (Filter == EGreedyMeshFilter::PassthroughOnly && PT != 1) bSelfVisible = false;
+                        }
+                        Mask[i * MegaSize + j] = bSelfVisible ? SelfMat : 0;
                         VariantMask[i * MegaSize + j] = SelfCell.Variant;
                     }
                 }

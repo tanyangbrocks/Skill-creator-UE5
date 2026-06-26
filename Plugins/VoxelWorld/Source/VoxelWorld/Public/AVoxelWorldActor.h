@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
 #include "TileWorld3D.h"
 #include "ChunkStreamingManager.h"
 #include "RealtimeMeshComponent.h"
@@ -66,6 +67,10 @@ public:
     UPROPERTY(VisibleAnywhere, Category="VoxelWorld|Rendering")
     TObjectPtr<URealtimeMeshComponent> RMCComp;
 
+    // P-18: 可穿越格（PlatformType=1）獨立渲染組件，碰撞完全關閉
+    UPROPERTY(VisibleAnywhere, Category="VoxelWorld|Rendering")
+    TObjectPtr<URealtimeMeshComponent> RMCPassthroughComp;
+
     // ── Accessors ─────────────────────────────────────────────────
     FTileWorld3D* GetTileWorld() { return &TileWorld; }
 
@@ -127,6 +132,10 @@ private:
     TObjectPtr<URealtimeMeshSimple> RMCMesh;
     TSet<FIntVector> CreatedMegaChunks;
 
+    // P-18: passthrough mesh state
+    TObjectPtr<URealtimeMeshSimple> RMCPassthroughMesh;
+    TSet<FIntVector> CreatedPassthroughChunks;
+
     void RebuildMegaChunk(FIntVector MegaChunkCoord);
     static int32 MegaFloorDiv(int32 a, int32 b);
 
@@ -138,4 +147,10 @@ private:
     struct FRegrowthEntry { FIntVector Pos; float TimeLeft; };
     TArray<FRegrowthEntry> GrassRegrowthQueue;
     void TickGrassRegrowth(float DeltaTime);
+
+    // P-5：發光格點光源管理（per-MegaChunk，每 16³ tile 區域最多一個光源）
+    TMap<FIntVector, TArray<UPointLightComponent*>> MCLightMap;
+    void RebuildChunkLights(FIntVector MegaChunkCoord);
+    void ClearChunkLights(FIntVector MegaChunkCoord);
+    void ClearAllChunkLights();
 };
