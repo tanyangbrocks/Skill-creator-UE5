@@ -6,6 +6,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "UObject/Class.h"
 
 APhysicalItemActor::APhysicalItemActor()
 {
@@ -36,15 +37,42 @@ void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVe
     Velocity = InitialVelocityCms;
     bLanded  = false;
 
-    // 武器：依 ItemId 設定 3D 展示模型（資產不存在時靜默忽略）
-    if (InItemId == EItemId::WeaponWoodSword)
+    // ── 展示 Mesh 三層 fallback ─────────────────────────────────────────
+    // 1. FItemData::MeshPath（明確設定，最優先）
+    // 2. 慣例路徑 /Game/Items/SM_{EnumName}（generate_placeholders.py 產生，可被真實 FBX 覆蓋）
+    // 3. Engine BasicShape（Cube/Cylinder/Sphere，依物品分類，確保絕對不空）
+    const FItemData& Data = FItemRegistry::Get(InItemId);
+    UStaticMesh* Mesh = nullptr;
+
+    if (!Data.MeshPath.IsNull())
+        Mesh = Cast<UStaticMesh>(Data.MeshPath.TryLoad());
+
+    if (!Mesh)
     {
-        if (UStaticMesh* M = LoadObject<UStaticMesh>(
-            nullptr, TEXT("/Game/Weapons/DemonSword/SM_DemonSword.SM_DemonSword")))
+        if (const UEnum* E = StaticEnum<EItemId>())
         {
-            MeshComp->SetStaticMesh(M);
+            const FString Name = E->GetNameStringByValue((int64)InItemId);
+            const FString Path = FString::Printf(TEXT("/Game/Items/SM_%s.SM_%s"), *Name, *Name);
+            Mesh = LoadObject<UStaticMesh>(nullptr, *Path);
         }
     }
+
+    if (!Mesh)
+    {
+        // BasicShape 尺寸 100cm；縮到約 1.5 tile（9.4cm @Grain=16）使視覺比例合理
+        const TCHAR* FallbackPath = TEXT("/Engine/BasicShapes/Cube.Cube");
+        if (Data.bIsConsumable)
+            FallbackPath = TEXT("/Engine/BasicShapes/Sphere.Sphere");
+        else if (Data.bIsWeapon || Data.bIsTool)
+            FallbackPath = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+
+        Mesh = LoadObject<UStaticMesh>(nullptr, FallbackPath);
+        if (Mesh)
+            MeshComp->SetRelativeScale3D(FVector(WorldScale::TileSizeCm * 1.5f / 100.f));
+    }
+
+    if (Mesh)
+        MeshComp->SetStaticMesh(Mesh);
 }
 
 float APhysicalItemActor::GetMass() const

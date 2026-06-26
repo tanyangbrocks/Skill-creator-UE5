@@ -68,5 +68,10 @@ struct SKILLCREATORCORE_API FItemData
     bool IsMoldablePlaceable()    const { return bIsPlaceable && PlaceAs != EMaterialType::Air; }
     bool IsNonMoldablePlaceable() const { return bIsPlaceable && PlaceAsActor != nullptr; }
 
+    // 3D 展示用網格（APhysicalItemActor 顯示用）
+    // 設定後優先於慣例路徑；空值 → 自動查 /Game/Items/SM_{EnumName}（placeholders）→ Engine BasicShape
+    // 替換：匯入真實 FBX 到同路徑加 replace_existing=True，C++ 一行不用改
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) FSoftObjectPath MeshPath;
+
     FItemData() = default;
 };

@@ -87,7 +87,11 @@ void FItemRegistry::Init(TArray<FItemData>& Out)
     // 武器（規格「★武器」：攻擊力 = 力量 × AtkMult，不佔裝備欄。
     // EquipBasicSword 原本佔用 Weapon 裝備欄，現改成跟新武器同一套 bIsWeapon 機制）
     Set(MakeWeapon(EItemId::EquipBasicSword,  INVTEXT("基礎劍"), 1.3f));
-    Set(MakeWeapon(EItemId::WeaponWoodSword,  INVTEXT("木劍"),   1.0f));
+    {
+        FItemData D = MakeWeapon(EItemId::WeaponWoodSword, INVTEXT("木劍"), 1.0f);
+        D.MeshPath = FSoftObjectPath(TEXT("/Game/Weapons/DemonSword/SM_DemonSword.SM_DemonSword"));
+        Set(MoveTemp(D));
+    }
     Set(MakeWeapon(EItemId::WeaponStoneSword, INVTEXT("石劍"),   1.3f));
 
     // 素材（可塑形可放置物，吃形狀選單；同時 bIsComponent=true 可用於加工）
