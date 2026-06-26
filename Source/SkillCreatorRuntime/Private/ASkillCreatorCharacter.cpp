@@ -508,6 +508,15 @@ UElementalAuraComponent* ASkillCreatorCharacter::GetAuraComp() const { return Au
 
 void ASkillCreatorCharacter::ApplyFinalDamage(float FinalDmg) { TakeDirectDamage(FinalDmg); }
 
+float ASkillCreatorCharacter::GetStatusDefensePenalty()   const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDefensePenalty   : AuraComp->DefensePenalty;
+}
+float ASkillCreatorCharacter::GetStatusDamageTakenBonus() const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
 void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk, AActor* Attacker)
 {
     // S-4 防禦/彈反判定（先於命中/閃避計算）

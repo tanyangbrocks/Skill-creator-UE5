@@ -276,6 +276,8 @@ public:
     virtual AActor*                AsActor()                override { return this; }
     virtual IElementalTarget*      AsElementalTarget()      override { return this; }
     virtual void                   ApplyFinalDamage(float FinalDmg) override;
+    virtual float GetStatusDefensePenalty()   const override;
+    virtual float GetStatusDamageTakenBonus() const override;
 
     bool IsEnemy() const { return false; }
 

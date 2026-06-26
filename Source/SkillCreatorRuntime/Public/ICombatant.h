@@ -44,6 +44,13 @@ public:
     // ── 佔位判定（Heavy 等大型生物覆寫為多格）──────────────────────
     virtual bool OccupiesTile(FGridPos Pos) const { return GetPosition() == Pos; }
 
+    // ── 特殊狀態修飾（FCombatResolver 在計算前讀取）──────────────
+    // DefensePenalty：縮減 PhysicalDefense，[0,1]；0 = 無懲罰
+    // DamageTakenBonus：放大進入傷害（物理/能量/元素均適用），>=0
+    // 預設回傳 0 = 無狀態，各類別若有 SpecialStatusComp 則覆寫
+    virtual float GetStatusDefensePenalty()   const { return 0.f; }
+    virtual float GetStatusDamageTakenBonus() const { return 0.f; }
+
     // ── FCombatResolver 呼叫點 ──────────────────────────────────
     // Resolver 算完最終傷害後呼叫此方法；各類別在此扣 HP、ActionBus、觸發死亡
     virtual void ApplyFinalDamage(float FinalDmg) = 0;

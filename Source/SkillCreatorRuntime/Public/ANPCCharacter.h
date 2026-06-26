@@ -123,6 +123,8 @@ public:
     virtual AActor*                AsActor()                override { return this; }
     virtual IElementalTarget*      AsElementalTarget()      override { return this; }
     virtual void                   ApplyFinalDamage(float FinalDmg) override { TakeDamageAmount(FinalDmg); }
+    virtual float GetStatusDefensePenalty()   const override;
+    virtual float GetStatusDamageTakenBonus() const override;
 
     // B-3 管線（ICombatant override，FCombatResolver 統一公式）；命中敵人 → Disposition=Hostile
     virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;

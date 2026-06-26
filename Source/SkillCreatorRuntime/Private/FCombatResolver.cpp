@@ -34,9 +34,21 @@ float FCombatResolver::ApplyCrit(float Base, const FCharacterStats& Def, const F
 // ── 公開方法 ─────────────────────────────────────────────────────────────────
 
 // 物理傷害管線對應 FCharacterStats::ResolvePhysicalDmg（H-1 已集中公式）
+// DamageTakenBonus 放大進攻方傷害（等效提高 PhysAtk）；
+// DefensePenalty 縮減 PhysicalDefense（讓防禦減法算出更高傷害）——
+// 兩者都在 ResolvePhysicalDmg 之前套，確保閃避/暴擊公式看到正確的基礎值。
 bool FCombatResolver::TakePhysicalDamage(ICombatant& Target, float Dmg, const FCharacterStats* Atk)
 {
-    const float Final = FCharacterStats::ResolvePhysicalDmg(Dmg, Target.GetStats(), Atk);
+    const float DmgBonus = Target.GetStatusDamageTakenBonus();
+    const float DefPen   = Target.GetStatusDefensePenalty();
+
+    const float AdjDmg = Dmg * (1.f + DmgBonus);
+
+    FCharacterStats DefCopy = Target.GetStats();
+    DefCopy.PhysicalDefense       *= (1.f - DefPen);
+    DefCopy.PhysicalDamageReduction *= (1.f - DefPen);
+
+    const float Final = FCharacterStats::ResolvePhysicalDmg(AdjDmg, DefCopy, Atk);
     if (Final < 0.f) return false;  // miss / dodge
     Target.ApplyFinalDamage(Final);
     return true;
@@ -48,6 +60,8 @@ void FCombatResolver::TakeEnergyDamage(ICombatant& Target, float Dmg, FName Mana
 {
     const FCharacterStats& Def = Target.GetStats();
     if (!CheckHitDodge(Def, Atk)) return;
+
+    Dmg *= (1.f + Target.GetStatusDamageTakenBonus());
 
     float Step1 = FMath::Max(0.f, Dmg    - Def.GetMpDefense(ManaTypeKey));
     float Step2 = FMath::Max(0.f, Step1  - Def.EnergyDefense);
@@ -64,6 +78,8 @@ void FCombatResolver::TakeElementalDamage(ICombatant& Target, float Dmg, ESkillE
 {
     const FCharacterStats& Def = Target.GetStats();
     if (!CheckHitDodge(Def, Atk)) return;
+
+    Dmg *= (1.f + Target.GetStatusDamageTakenBonus());
 
     const float Resistance = FMath::Clamp(Def.GetElemResistance(Elem), 0.f, 1.f);
     float Step1 = Dmg * (1.f - Resistance);

@@ -124,6 +124,15 @@ void ANPCCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Element
     FCombatResolver::TakeElementalDamage(*this, ElemAtk, Element, bEnergyDefenseApplies, Atk);
 }
 
+float ANPCCharacter::GetStatusDefensePenalty()   const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDefensePenalty   : AuraComp->DefensePenalty;
+}
+float ANPCCharacter::GetStatusDamageTakenBonus() const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
 void ANPCCharacter::TakeDamageAmount(float Amount)
 {
     if (!IsAlive()) return;

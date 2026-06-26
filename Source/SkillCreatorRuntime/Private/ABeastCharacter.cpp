@@ -157,13 +157,19 @@ void ABeastCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Eleme
     FCombatResolver::TakeElementalDamage(*this, ElemAtk, Element, bEnergyDefenseApplies, Atk);
 }
 
+float ABeastCharacter::GetStatusDefensePenalty()   const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDefensePenalty   : AuraComp->DefensePenalty;
+}
+float ABeastCharacter::GetStatusDamageTakenBonus() const
+{
+    return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
 void ABeastCharacter::TakeDamageAmount(float Amount)
 {
     if (!IsAlive()) return;
-    const float DmgBonus = SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
-    const float DefPen   = SpecialStatusComp ? SpecialStatusComp->TotalDefensePenalty   : AuraComp->DefensePenalty;
-    float Modified = Amount * (1.f + DmgBonus) * (1.f + DefPen);
-    Modified = ActionBus.DispatchPlayerDamage(Modified);
+    float Modified = ActionBus.DispatchPlayerDamage(Amount);
     Hp = FMath::Max(0.f, Hp - Modified);
     if (Modified > 0.f)
         AFloatingDamageActor::Spawn(GetWorld(),
