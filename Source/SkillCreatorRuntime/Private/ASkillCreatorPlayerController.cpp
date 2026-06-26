@@ -46,16 +46,27 @@ void ASkillCreatorPlayerController::OnPossess(APawn* InPawn)
     if (!FPaths::FileExists(CfgPath)) return;
 
     static const TCHAR* Section = TEXT("PlayerInputBindings");
+    // 快照避免邊迭代邊修改 IMC
     const TArray<FEnhancedActionKeyMapping> Snapshot = IMC->GetMappings();
 
     bool bChanged = false;
     for (const FEnhancedActionKeyMapping& M : Snapshot)
     {
         if (!M.Action) continue;
-        FString KeyStr;
-        if (!GConfig->GetString(Section, *M.Action->GetName(), KeyStr, CfgPath)) continue;
 
-        FKey LoadedKey(*KeyStr);
+        // Widget 寫入格式："ActionName|CurrentKey" → "NewKey1,NewKey2,..."
+        // 同時相容舊格式（只存 ActionName → SingleKey）
+        FString ComboStr;
+        const FString RebindId = M.Action->GetName() + TEXT("|") + M.Key.ToString();
+        if (!GConfig->GetString(Section, *RebindId, ComboStr, CfgPath))
+            GConfig->GetString(Section, *M.Action->GetName(), ComboStr, CfgPath);
+        if (ComboStr.IsEmpty()) continue;
+
+        // 取第一個 key（主鍵）
+        TArray<FString> Parts;
+        ComboStr.ParseIntoArray(Parts, TEXT(","), true);
+        if (Parts.IsEmpty()) continue;
+        FKey LoadedKey(FName(*Parts[0].TrimStartAndEnd()));
         if (!LoadedKey.IsValid() || LoadedKey == M.Key) continue;
 
         UInputAction* Action = const_cast<UInputAction*>(M.Action.Get());
