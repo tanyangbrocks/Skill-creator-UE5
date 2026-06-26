@@ -715,6 +715,15 @@ void ASkillCreatorCharacter::ApplyEnvironmentalDamage(float DeltaTime)
         // P-15: Slippery（腳下材質）→ 地面摩擦係數（8.0 = 預設急停；0 = 完全無摩擦）
         GetCharacterMovement()->GroundFriction = 8.f * (1.f - FloorData.Slippery);
     }
+
+    // Phase 1-C: GlobalGravityScale 接入 CharacterMovement
+    // GravityScale = GravityScaleMult（tile 尺度倍率）× GlobalGravityScale（全局重力場）
+    // JumpZVelocity ∝ sqrt(g) 維持 tile 單位跳高不變（h = v²/2g → v ∝ sqrt(g)）
+    {
+        const float G = WorldScale::GlobalGravityScale;
+        GetCharacterMovement()->GravityScale  = WorldScale::GravityScaleMult * G;
+        GetCharacterMovement()->JumpZVelocity = WorldScale::JumpZVelocityCm * FMath::Sqrt(FMath::Max(0.01f, G));
+    }
 }
 
 FManaSlot* ASkillCreatorCharacter::GetManaSlot(FName Key)

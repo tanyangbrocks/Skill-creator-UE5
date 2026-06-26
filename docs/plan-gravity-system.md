@@ -184,8 +184,12 @@ struct FGravityZone
 ## 六、實作順序
 
 - [x] Phase 1-A：`WorldScale.h` 加 `GlobalGravityScale`（由 plan-physical-item.md G-1 完成，2026-06-26）
-- [ ] Phase 1-B：CA `UpdatePowder/Liquid/Gas` 讀取 `GlobalGravityScale`（與實體物品無關，獨立排期）
-- [ ] Phase 1-C：Entity Jump / GravityScale / 墜落傷害接入（獨立排期）
+- [x] Phase 1-B：CA `UpdatePowder/Liquid/Gas` 讀取 `GlobalGravityScale`（2026-06-26 完成）
+      Scale≥1 → 多步落下；Scale<1 → 機率跳幀；Gas 上浮速度同步縮放
+- [~] Phase 1-C：Entity Jump / GravityScale / 墜落傷害接入（2026-06-26 **部分完成**）
+      ✅ GravityScale = GravityScaleMult × GlobalGravityScale（在 ApplyEnvironmentalDamage 每幀更新）
+      ✅ JumpZVelocity = JumpZVelocityCm × sqrt(GlobalGravityScale)（維持 tile 單位跳高不變）
+      ⬜ **墜落傷害（FallDamage）待實作**：需在 Landed() 事件計算 KE = ½mv²，超過閾值扣血
 - [x] Phase 1-D：**實體物品 `APhysicalItemActor` 接入**（由 plan-physical-item.md G-3 完成，2026-06-26）
 - [ ] Phase 2：FGravityZone per-region 支援（需技能系統「重力領域」積木）
 - [ ] Phase 3：CA 方向向量抽象化（長期）

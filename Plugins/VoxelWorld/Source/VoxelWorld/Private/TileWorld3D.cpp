@@ -3,6 +3,7 @@
 #include "HAL/FileManager.h"
 #include "ElementalReactionTable.h"
 #include "CaCellPacking.h"
+#include "WorldScale.h"
 
 // ============================================================
 // 構造 / 解構
@@ -508,7 +509,14 @@ bool FTileWorld3D::TryMove(int32 fx, int32 fy, int32 fz, int32 tx, int32 ty, int
 
 void FTileWorld3D::UpdatePowder(int32 x, int32 y, int32 z)
 {
-    if (TryMove(x, y, z, x, y+1, z)) return;  // 垂直落下（Y+ = 向下）
+    // Phase 1-B: Scale < 1 → 機率跳幀（低重力粉末慢落）
+    const float GScale = WorldScale::GlobalGravityScale;
+    if (GScale < 1.f && Rng.FRand() >= GScale) return;
+
+    // 垂直落下（Scale ≥ 1 → 多步，模擬更快落速）
+    const int32 FallSteps = FMath::Max(1, FMath::RoundToInt(GScale));
+    for (int32 s = 0; s < FallSteps; ++s)
+        if (!TryMove(x, y, z, x, y+1, z)) break;
 
     // 對角落下（隨機起始方向防偏斜）
     static const int32 Dx[] = {-1,  1,  0,  0};
@@ -532,15 +540,23 @@ void FTileWorld3D::UpdateLiquid(int32 x, int32 y, int32 z)
     int32 SkipN = FMath::Max(1, FMath::RoundToInt(1.f / FMath::Max(0.001f, D.LiquidFlowSpeed)));
     if (SkipN > 1 && Frame % SkipN != 0) return;
 
-    if (TryMove(x, y, z, x, y+1, z)) return;
-
-    static const int32 Dx[] = {-1,  1,  0,  0};
-    static const int32 Dz[] = { 0,  0, -1,  1};
-    int32 Start = Rng.RandHelper(4);
-    for (int32 i = 0; i < 4; ++i)
+    // Phase 1-B: 低重力 → 液體垂直落下機率跳幀（橫向擴散不受影響）
+    const float GScaleLiq = WorldScale::GlobalGravityScale;
+    const bool bDoVerticalFall = (GScaleLiq >= 1.f || Rng.FRand() < GScaleLiq);
+    if (bDoVerticalFall)
     {
-        int32 j = (Start + i) % 4;
-        if (TryMove(x, y, z, x + Dx[j], y+1, z + Dz[j])) return;
+        const int32 FallSteps = FMath::Max(1, FMath::RoundToInt(GScaleLiq));
+        for (int32 s = 0; s < FallSteps; ++s)
+            if (!TryMove(x, y, z, x, y+1, z)) break;
+
+        static const int32 Dx[] = {-1,  1,  0,  0};
+        static const int32 Dz[] = { 0,  0, -1,  1};
+        int32 Start = Rng.RandHelper(4);
+        for (int32 i = 0; i < 4; ++i)
+        {
+            int32 j = (Start + i) % 4;
+            if (TryMove(x, y, z, x + Dx[j], y+1, z + Dz[j])) return;
+        }
     }
 
     // P-6+P-7: Spread = FlowSpeed×3×(1-Viscosity)（Water→3, Lava 0.333×3×0.1≈1，對齊 G-3a）
@@ -586,8 +602,16 @@ void FTileWorld3D::UpdateGas(int32 x, int32 y, int32 z)
     // P-9: GasHorizontalSpeed — 斜向/橫向擴散機率（<1.0 = 不一定擴散）
     const float HorizChance = FMath::Min(1.f, GD.GasHorizontalSpeed);
 
-    // 上浮（Y- = 向上）
-    if (Rng.FRand() < UpChance && TryMove(x, y, z, x, y-1, z)) return;
+    // 上浮（Y- = 向上）；Phase 1-B: 低重力 → 氣體上浮更慢（機率跳幀）
+    const float GScaleGas = WorldScale::GlobalGravityScale;
+    const float EffectiveUpChance = UpChance * FMath::Clamp(GScaleGas, 0.1f, 3.f);
+    if (Rng.FRand() < EffectiveUpChance)
+    {
+        const int32 UpSteps = FMath::Max(1, FMath::RoundToInt(GScaleGas));
+        for (int32 s = 0; s < UpSteps; ++s)
+            if (!TryMove(x, y, z, x, y-1, z)) break;
+        return;
+    }
 
     static const int32 Dx[] = {-1,  1,  0,  0};
     static const int32 Dz[] = { 0,  0, -1,  1};
