@@ -47,7 +47,7 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
         for (TActorIterator<AEnemyManager> It(W); It; ++It) { EnemyMgr = *It; break; }
         AVoxelWorldActor* VoxelWorld = AVoxelWorldActor::FindInWorld(W);
 
-        if (EnemyMgr && VoxelWorld)
+        if (VoxelWorld)
         {
             FVector Dir = FVector(PPos.X - EPos.X, PPos.Y - EPos.Y, PPos.Z - EPos.Z);
             if (!Dir.IsNearlyZero())
@@ -67,8 +67,8 @@ EBTNodeResult::Type UBTTask_AttackPlayer::ExecuteTask(UBehaviorTreeComponent& Ow
                 Proj->AttackerStats    = Enemy->Stats;               // C-1: 值拷貝，避免 Enemy 死亡後懸空
                 Proj->bUseAttackerStats = true;
                 Proj->OriginEnemy      = Enemy;                      // C-2: S-4 彈反凍結真正的敵人
-                Proj->Init(EPos, Dir, EnemyMgr, VoxelWorld);
-                EnemyMgr->EnemyProjectiles.Add(Proj);
+                Proj->Init(EPos, Dir, VoxelWorld);
+                if (EnemyMgr) EnemyMgr->EnemyProjectiles.Add(Proj);
             }
         }
     }

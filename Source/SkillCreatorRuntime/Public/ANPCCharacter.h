@@ -4,6 +4,7 @@
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "ISnapshottable.h"
+#include "ICombatant.h"
 #include "GridPos.h"
 #include "SnapshotTypes.h"
 #include "CharacterStats.h"
@@ -35,6 +36,7 @@ UCLASS()
 class SKILLCREATORRUNTIME_API ANPCCharacter
     : public APawn
     , public ICreature
+    , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
 {
@@ -109,18 +111,27 @@ public:
     // 傷害攔截管線（與 AEnemy::ActionBus 同一套，讓傷害護盾類效果也能保護 NPC）
     FActionBus ActionBus;
 
-    // B-3 管線（命中/閃避/防禦/暴擊）；額外行為：傷害 > 0 → Disposition=Hostile
-    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
-    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
+    // ── ICombatant ────────────────────────────────────────────────
+    virtual FCharacterStats&       GetStats()       override { return Stats; }
+    virtual const FCharacterStats& GetStats() const override { return Stats; }
+    virtual ECreatureKind          GetCreatureKind() const override { return ECreatureKind::NPC; }
+    virtual bool                   IsHostile()       const override { return Disposition == ENPCDisposition::Hostile; }
+    virtual UElementalAuraComponent* GetAuraComp()   const override;
+    virtual AActor*                AsActor()                override { return this; }
+    virtual IElementalTarget*      AsElementalTarget()      override { return this; }
+    virtual void                   ApplyFinalDamage(float FinalDmg) override { TakeDamageAmount(FinalDmg); }
+
+    // B-3 管線（ICombatant override，FCombatResolver 統一公式）；命中敵人 → Disposition=Hostile
+    virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;
+    virtual void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk = nullptr) override;
+    virtual void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* Atk = nullptr) override;
     void TakeDamageAmount(float Amount);
+
+    bool IsEnemy() const { return Disposition == ENPCDisposition::Hostile; }
 
     virtual void Tick(float DeltaTime) override;
 
-    // ── 生物分類（plan-creature-redesign）────────────────────────
-    ECreatureKind GetCreatureKind() const { return ECreatureKind::NPC; }
-    bool          IsEnemy()        const { return Disposition == ENPCDisposition::Hostile; }
-
-    // ── ICreature ─────────────────────────────────────────────────
+    // ── ICreature + ICombatant（同名 override 同時滿足兩介面）───────
     virtual int32    GetCreatureId() const override { return UniqueId; }
     virtual FGridPos GetPosition()   const override { return GridPosition; }
     virtual float    GetHp()         const override { return Hp; }

@@ -1,4 +1,6 @@
 #include "ASkillCreatorCharacter.h"
+#include "FCombatResolver.h"
+#include "UCombatantRegistrySubsystem.h"
 #include "UCharacterStateComponent.h"
 #include "UElementalAuraComponent.h"
 #include "USpellCaster.h"
@@ -122,6 +124,16 @@ void ASkillCreatorCharacter::BeginPlay()
     // 速率單位為「/秒」（Godot CharacterStats.cs），所以每跳應用 rate * 0.5f
     GetWorldTimerManager().SetTimer(RegenTimerHandle, this,
         &ASkillCreatorCharacter::TickRegen, 0.5f, /*bLoop=*/true);
+
+    if (UCombatantRegistrySubsystem* Reg = GetWorld()->GetSubsystem<UCombatantRegistrySubsystem>())
+        Reg->Register(this);
+}
+
+void ASkillCreatorCharacter::EndPlay(EEndPlayReason::Type Reason)
+{
+    if (UCombatantRegistrySubsystem* Reg = GetWorld() ? GetWorld()->GetSubsystem<UCombatantRegistrySubsystem>() : nullptr)
+        Reg->Unregister(this);
+    Super::EndPlay(Reason);
 }
 
 void ASkillCreatorCharacter::RebindWorldSystems()
@@ -486,6 +498,12 @@ float ASkillCreatorCharacter::TakeDamage(float DamageAmount, struct FDamageEvent
 
 // B-3：物理傷害管線（S-4 彈反/防禦 → 防禦/減傷 → 暴擊判定 → 命中/閃避）
 // 對應 Godot 設計文件 base value system.txt 第 24-29 行物理 2 步公式
+// ── ICombatant 方法 ─────────────────────────────────────────────────────────
+
+UElementalAuraComponent* ASkillCreatorCharacter::GetAuraComp() const { return AuraComp; }
+
+void ASkillCreatorCharacter::ApplyFinalDamage(float FinalDmg) { TakeDirectDamage(FinalDmg); }
+
 void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk, AActor* Attacker)
 {
     // S-4 防禦/彈反判定（先於命中/閃避計算）
@@ -496,9 +514,9 @@ void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterS
             // 彈反成功：完全無傷 + 震暈近戰攻擊者 3 秒
             bInParryWindow = false;
             GetWorldTimerManager().ClearTimer(ParryWindowTimer);
-            if (AEnemy* EnemyAtk = Cast<AEnemy>(Attacker))
-                if (EnemyAtk->AuraComp)
-                    EnemyAtk->AuraComp->ApplyFreeze(3.f, EnemyAtk);
+            if (ABeastCharacter* BeastAtk = Cast<ABeastCharacter>(Attacker))
+                if (BeastAtk->AuraComp)
+                    BeastAtk->AuraComp->ApplyFreeze(3.f, BeastAtk);
             OnParrySuccess.Broadcast(Attacker);
             return;
         }
@@ -506,9 +524,8 @@ void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterS
         PhysAtk *= 0.5f;
     }
 
-    const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
-    if (Final < 0.f) return;
-    TakeDirectDamage(Final);
+    if (!FCombatResolver::TakePhysicalDamage(*this, PhysAtk, Atk))
+        return;  // miss / dodge：跳過元素接觸（未命中不接觸）
 
     // 元素接觸：攻擊者 NativeElement → 玩家；玩家防具 Element → 攻擊者
     if (AuraComp)
@@ -547,86 +564,14 @@ void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterS
     }
 }
 
-// B-3：能量傷害管線（特定MP防禦 → 通用能量防禦 → 特定MP減傷 → 通用能量減傷 → 暴擊/閃避）
-// 對應設計文件 base value system.txt 第 29 行能量 4 步公式
 void ASkillCreatorCharacter::TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk)
 {
-    // 命中/閃避判定
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit  = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge   = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    // 能量 4 步防禦
-    float Step1 = FMath::Max(0.f, EnergyAtk  - Stats.GetMpDefense(ManaTypeKey));   // 特定MP防禦
-    float Step2 = FMath::Max(0.f, Step1       - Stats.EnergyDefense);               // 通用能量防禦
-    float Step3 = FMath::Max(0.f, Step2       - Stats.GetMpDamageReduction(ManaTypeKey)); // 特定MP減傷
-    float Final = FMath::Max(0.f, Step3       - Stats.EnergyDamageReduction);       // 通用能量減傷
-
-    // 暴擊判定
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
-    TakeDirectDamage(Final);
+    FCombatResolver::TakeEnergyDamage(*this, EnergyAtk, ManaTypeKey, Atk);
 }
 
-// 元素傷害管線：不受物理/能量防禦影響，元素抗性比例減傷
-// bEnergyDefenseApplies = true 時才套用能量防禦/減傷（供未來效果使用）
 void ASkillCreatorCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies, const FCharacterStats* Atk)
 {
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    float Resistance = FMath::Clamp(Stats.GetElemResistance(Element), 0.f, 1.f);
-    float Step1 = ElemAtk * (1.f - Resistance);
-
-    float Step2 = Step1;
-    if (bEnergyDefenseApplies)
-    {
-        Step2 = FMath::Max(0.f, Step1 - Stats.EnergyDefense);
-        Step2 = FMath::Max(0.f, Step2 - Stats.EnergyDamageReduction);
-    }
-
-    float Final = FMath::Max(0.f, Step2);
-
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
-    TakeDirectDamage(Final);
+    FCombatResolver::TakeElementalDamage(*this, ElemAtk, Element, bEnergyDefenseApplies, Atk);
 }
 
 // B-4：HP/MP 0.5s regen（速率單位為「/秒」，每跳 × 0.5f）

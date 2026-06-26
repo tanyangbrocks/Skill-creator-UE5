@@ -1,4 +1,5 @@
 #include "USpellCaster.h"
+#include "ICombatant.h"
 #include "ASkillCreatorCharacter.h"
 #include "AEnemy.h"
 #include "UEquipmentComponent.h"
@@ -202,16 +203,16 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
         const int32 SX = (Fwd.X > 0.01f) ? 1 : ((Fwd.X < -0.01f) ? -1 : 0);
         const int32 SZ = (Fwd.Z > 0.01f) ? 1 : ((Fwd.Z < -0.01f) ? -1 : 0);
         FGridPos ProjStart(CPos.X + SX * (HalfW + 1), CPos.Y + HalfH, CPos.Z + SZ * (HalfW + 1));
-            Proj->Init(ProjStart, Fwd, CachedEnemyMgr, CachedVoxelWorld);
+            Proj->Init(ProjStart, Fwd, CachedVoxelWorld);
 
             float Dmg = Proj->BaseDamage;
             const ESkillElementType Elem = Spell.PrimaryElement();
             TWeakObjectPtr<USpellCaster> WeakThis(this);
-            Proj->OnHitEnemy = [WeakThis, Dmg, Elem](AEnemy* Enemy, FGridPos HitPos)
+            Proj->OnHitEnemy = [WeakThis, Dmg, Elem](ICombatant* Enemy, FGridPos HitPos)
             {
-                if (!WeakThis.IsValid() || !Enemy) return;
+                if (!WeakThis.IsValid() || !Enemy || !Enemy->IsAlive()) return;
                 float HpBefore = Enemy->GetHp();
-                Enemy->TakeDamageAmount(Dmg);
+                Enemy->ApplyFinalDamage(Dmg);
                 UWorld* W = WeakThis->GetWorld();
                 if (W)
                 if (auto* GI = W->GetGameInstance())
@@ -224,21 +225,21 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                 }
                 if (Elem != ESkillElementType::None)
                 {
-                    if (Enemy->AuraComp)
-                        Enemy->AuraComp->ApplyImmediate(Elem, UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                    if (UElementalAuraComponent* AC = Enemy->GetAuraComp())
+                        AC->ApplyImmediate(Elem, UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
                     if (AVoxelWorldActor* VW = WeakThis->CachedVoxelWorld.Get())
                     if (FTileWorld3D* TW = VW->GetTileWorld())
                         TW->ApplyElementalImpact(HitPos.X, HitPos.Y, HitPos.Z, Elem);
                 }
                 // 施法者接觸元素：NativeElement + 裝備武器 Element → 目標
-                if (WeakThis.IsValid() && Enemy->AuraComp)
+                if (WeakThis.IsValid() && Enemy->GetAuraComp())
                 {
                     ASkillCreatorCharacter* Char = WeakThis->GetOwnerCharacter();
                     if (Char)
                     {
                         if (Char->AuraComp && Char->AuraComp->NativeElement != ESkillElementType::None)
-                            Enemy->AuraComp->ApplyImmediate(Char->AuraComp->NativeElement,
-                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                            Enemy->GetAuraComp()->ApplyImmediate(Char->AuraComp->NativeElement,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
                         if (Char->EquipmentComp)
                         {
                             EItemId WepId = Char->EquipmentComp->GetEquipped(FName("Weapon"));
@@ -246,8 +247,8 @@ bool USpellCaster::TryCast(const FSpellArray& Spell, const TArray<FInstruction>&
                             {
                                 ESkillElementType WepElem = FItemRegistry::Get(WepId).Element;
                                 if (WepElem != ESkillElementType::None)
-                                    Enemy->AuraComp->ApplyImmediate(WepElem,
-                                        UElementalAuraComponent::DefaultAuraDuration, Enemy);
+                                    Enemy->GetAuraComp()->ApplyImmediate(WepElem,
+                                        UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
                             }
                         }
                     }
@@ -804,29 +805,29 @@ void USpellCaster::ExecuteProjectileTotem(const FSpellSlot& Slot, FGridPos Origi
     if (!Proj) return;
 
     FVector Fwd = Char->GetActorForwardVector();
-    Proj->Init(Origin, Fwd, CachedEnemyMgr, VW ? VW : CachedVoxelWorld.Get());
+    Proj->Init(Origin, Fwd, VW ? VW : CachedVoxelWorld.Get());
 
     const FSpellMods M = ReadMods(Slot);
     float Dmg = Proj->BaseDamage * (1.f + M.DmgBonus);
     TWeakObjectPtr<AVoxelWorldActor> WeakVW2(VW);
     TWeakObjectPtr<USpellCaster>     WeakSelf(this);
-    Proj->OnHitEnemy = [Dmg, M, WeakVW2, WeakSelf](AEnemy* Enemy, FGridPos HitPos)
+    Proj->OnHitEnemy = [Dmg, M, WeakVW2, WeakSelf](ICombatant* Enemy, FGridPos HitPos)
     {
-        if (!Enemy) return;
-        Enemy->TakeDamageAmount(Dmg);
+        if (!Enemy || !Enemy->IsAlive()) return;
+        Enemy->ApplyFinalDamage(Dmg);
         AVoxelWorldActor* VW2 = WeakVW2.Get();
         if (M.bFire)    USpellCaster::SpawnEffectTiles(VW2, "fire",  HitPos, 1);
         if (M.bWater)   USpellCaster::SpawnEffectTiles(VW2, "water", HitPos, 1);
-        if (Enemy->AuraComp)
+        if (UElementalAuraComponent* AC = Enemy->GetAuraComp())
         {
-            if (M.bFire)    Enemy->AuraComp->ApplyImmediate(ESkillElementType::Fire,
-                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
-            if (M.bWater)   Enemy->AuraComp->ApplyImmediate(ESkillElementType::Water,
-                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
-            if (M.bIce)     Enemy->AuraComp->ApplyImmediate(ESkillElementType::Ice,
-                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
-            if (M.bThunder) Enemy->AuraComp->ApplyImmediate(ESkillElementType::Thunder,
-                                UElementalAuraComponent::DefaultAuraDuration, Enemy);
+            if (M.bFire)    AC->ApplyImmediate(ESkillElementType::Fire,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
+            if (M.bWater)   AC->ApplyImmediate(ESkillElementType::Water,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
+            if (M.bIce)     AC->ApplyImmediate(ESkillElementType::Ice,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
+            if (M.bThunder) AC->ApplyImmediate(ESkillElementType::Thunder,
+                                UElementalAuraComponent::DefaultAuraDuration, Enemy->AsElementalTarget());
         }
         // B-11 修正：命中時觸發 AoE 爆炸 + 刻印位移效果
         // 對應 Godot SpellProjectile.cs:114-116（runner.Submit 在命中點執行整個 spell）

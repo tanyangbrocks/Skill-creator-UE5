@@ -4,6 +4,7 @@
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "ISnapshottable.h"
+#include "ICombatant.h"
 #include "GridPos.h"
 #include "SnapshotTypes.h"
 #include "ActionBus.h"
@@ -53,6 +54,7 @@ UCLASS()
 class SKILLCREATORRUNTIME_API ABeastCharacter
     : public APawn
     , public ICreature
+    , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
 {
@@ -69,7 +71,7 @@ public:
     EHostility Hostility = EHostility::Hostile;
 
     bool IsEnemy() const { return Hostility == EHostility::Hostile; }
-    ECreatureKind GetCreatureKind() const { return ECreatureKind::Beast; }
+    virtual ECreatureKind GetCreatureKind() const override { return ECreatureKind::Beast; }
 
     // ── 戰鬥型態 ──────────────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Beast")
@@ -126,10 +128,20 @@ public:
     int32 GetDetectRange()      const;
     float GetXpReward()         const;
 
-    // ── 傷害管線（B-3）──────────────────────────────────────────
-    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr);
-    void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
-    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
+    // ── ICombatant ────────────────────────────────────────────────
+    virtual FCharacterStats&       GetStats()       override { return Stats; }
+    virtual const FCharacterStats& GetStats() const override { return Stats; }
+    virtual bool                   IsHostile()      const override { return Hostility == EHostility::Hostile; }
+    virtual bool                   OccupiesTile(FGridPos Pos) const override;
+    virtual UElementalAuraComponent* GetAuraComp()  const override;
+    virtual AActor*                AsActor()               override { return this; }
+    virtual IElementalTarget*      AsElementalTarget()     override { return this; }
+    virtual void                   ApplyFinalDamage(float FinalDmg) override { TakeDamageAmount(FinalDmg); }
+
+    // ── 傷害管線（B-3；ICombatant override，FCombatResolver 統一公式）──
+    virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;
+    virtual void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk = nullptr) override;
+    virtual void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* Atk = nullptr) override;
 
     // ── 生命週期 ──────────────────────────────────────────────────
     void TakeDamageAmount(float Amount);
@@ -149,7 +161,7 @@ public:
     virtual FEntitySnapshot TakeSnapshot()                              const override;
     virtual void            RestoreFromSnapshot(const FEntitySnapshot&)       override;
 
-    // ── ICreature ─────────────────────────────────────────────────
+    // ── ICreature + ICombatant（同名 override 同時滿足兩介面）───────
     virtual int32    GetCreatureId() const override { return UniqueId; }
     virtual FGridPos GetPosition()   const override { return GridPosition; }
     virtual float    GetHp()         const override { return Hp; }
@@ -165,6 +177,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(EEndPlayReason::Type Reason) override;
 
 private:
     int32         UniqueId        = 0;

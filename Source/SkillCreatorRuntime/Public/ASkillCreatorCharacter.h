@@ -7,6 +7,7 @@ struct FInputActionValue;
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "ISnapshottable.h"
+#include "ICombatant.h"
 #include "CharacterStats.h"
 #include "ActionBus.h"
 #include "SkillCameraTypes.h"
@@ -57,6 +58,7 @@ UCLASS()
 class SKILLCREATORRUNTIME_API ASkillCreatorCharacter
     : public ACharacter
     , public ICreature
+    , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
 {
@@ -248,26 +250,30 @@ public:
     // 寫回 OutData。OutData 的 Id/CharacterName 由呼叫方事先填好（這裡不改動）。
     void FillSaveData(FCharacterSaveData& OutData) const;
 
-    // ── 生物分類（plan-creature-redesign）────────────────────────
-    ECreatureKind GetCreatureKind() const { return ECreatureKind::Player; }
-    bool          IsEnemy()        const { return false; }
+    // ── ICombatant ────────────────────────────────────────────────
+    virtual FCharacterStats&       GetStats()       override { return Stats; }
+    virtual const FCharacterStats& GetStats() const override { return Stats; }
+    virtual ECreatureKind          GetCreatureKind() const override { return ECreatureKind::Player; }
+    virtual bool                   IsHostile()       const override { return false; }
+    virtual UElementalAuraComponent* GetAuraComp()   const override;
+    virtual AActor*                AsActor()                override { return this; }
+    virtual IElementalTarget*      AsElementalTarget()      override { return this; }
+    virtual void                   ApplyFinalDamage(float FinalDmg) override;
 
-    // ── ICreature ─────────────────────────────────────────────────
+    bool IsEnemy() const { return false; }
+
+    // ── ICreature + ICombatant（同名 override 同時滿足兩介面）───────
     virtual int32    GetCreatureId() const override { return -1; }
     virtual FGridPos GetPosition()   const override;
     virtual float    GetHp()         const override { return CurrentHp; }
     virtual float    GetMaxHp()      const override { return Stats.MaxHpBase; }
     virtual bool     IsAlive()       const override { return CurrentHp > 0.f; }
 
-    // ── 傷害管線（B-3：帶完整 stats 的物理/能量傷害）─────────────
-    // 包含：S-4 彈反/防禦判定 → 防禦/減傷 → 暴擊判定 → 命中/閃避判定 → TakeDirectDamage
-    // AttackerStats 為 nullptr 時跳過暴擊/閃避判定（純防禦計算）
-    // Attacker 為非 nullptr 時，彈反成功可凍結攻擊者（AEnemy 有 AuraComp）
-    void TakePhysicalDamage(float PhysAtk, const FCharacterStats* AttackerStats = nullptr, AActor* Attacker = nullptr);
-    void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* AttackerStats = nullptr);
-    // 元素傷害管線：不受物理/能量防禦影響，元素抗性按比例減傷
-    // bEnergyDefenseApplies：預設 false；未來「能量防禦影響元素」效果可傳 true
-    void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* AttackerStats = nullptr);
+    // ── 傷害管線（B-3；ICombatant override）──────────────────────
+    // TakePhysicalDamage：加 S-4 彈反/元素接觸 pre/post；其餘靠 FCombatResolver
+    virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;
+    virtual void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk = nullptr) override;
+    virtual void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* Atk = nullptr) override;
 
     // ── IElementalTarget ──────────────────────────────────────────
     virtual int32 GetEntityId()              const override { return -1; }
@@ -283,6 +289,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(EEndPlayReason::Type Reason) override;
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(UInputComponent* Input) override;
     virtual void Landed(const FHitResult& Hit) override;

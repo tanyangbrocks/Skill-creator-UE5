@@ -10,6 +10,8 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "ASkillCreatorCharacter.h"
+#include "FCombatResolver.h"
+#include "UCombatantRegistrySubsystem.h"
 
 int32 ABeastCharacter::NextId = 0;
 
@@ -93,6 +95,9 @@ void ABeastCharacter::BeginPlay()
 
     SpawnGridPos = GridPosition;
 
+    if (UCombatantRegistrySubsystem* Reg = GetWorld()->GetSubsystem<UCombatantRegistrySubsystem>())
+        Reg->Register(this);
+
     Stats.MaxHpBase = MaxHp;
     switch (Type)
     {
@@ -115,86 +120,39 @@ void ABeastCharacter::BeginPlay()
     }
 }
 
-void ABeastCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk)
+// ── ICombatant 方法 ─────────────────────────────────────────────────────────
+
+UElementalAuraComponent* ABeastCharacter::GetAuraComp() const { return AuraComp; }
+
+bool ABeastCharacter::OccupiesTile(FGridPos Pos) const
 {
-    const float Final = FCharacterStats::ResolvePhysicalDmg(PhysAtk, Stats, Atk);
-    if (Final < 0.f) return;
-    TakeDamageAmount(Final);
+    if (GetPosition() == Pos) return true;
+    if (Type == EEnemyType::Heavy)
+    {
+        const FGridPos EP = GetPosition();
+        if (Pos.Y == EP.Y)
+            for (int32 DX = 0; DX <= 1; ++DX)
+                for (int32 DZ = 0; DZ <= 1; ++DZ)
+                    if (EP.X + DX == Pos.X && EP.Z + DZ == Pos.Z)
+                        return true;
+    }
+    return false;
+}
+
+// B-3 管線：FCombatResolver 統一公式 → ApplyFinalDamage → TakeDamageAmount
+void ABeastCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk, AActor* /*Attacker*/)
+{
+    FCombatResolver::TakePhysicalDamage(*this, PhysAtk, Atk);
 }
 
 void ABeastCharacter::TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk)
 {
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    float Step1 = FMath::Max(0.f, EnergyAtk - Stats.GetMpDefense(ManaTypeKey));
-    float Step2 = FMath::Max(0.f, Step1      - Stats.EnergyDefense);
-    float Step3 = FMath::Max(0.f, Step2      - Stats.GetMpDamageReduction(ManaTypeKey));
-    float Final = FMath::Max(0.f, Step3      - Stats.EnergyDamageReduction);
-
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
-    TakeDamageAmount(Final);
+    FCombatResolver::TakeEnergyDamage(*this, EnergyAtk, ManaTypeKey, Atk);
 }
 
 void ABeastCharacter::TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies, const FCharacterStats* Atk)
 {
-    if (Atk)
-    {
-        if (Atk->HitRate < 1.f && FMath::FRand() > Atk->HitRate) return;
-        float ExcessHit = FMath::Max(0.f, Atk->HitRate - 1.f);
-        float EffDodge  = FMath::Max(0.f, Stats.DodgeRate - ExcessHit);
-        if (FMath::FRand() < EffDodge) return;
-    }
-
-    float Resistance = FMath::Clamp(Stats.GetElemResistance(Element), 0.f, 1.f);
-    float Step1 = ElemAtk * (1.f - Resistance);
-
-    float Step2 = Step1;
-    if (bEnergyDefenseApplies)
-    {
-        Step2 = FMath::Max(0.f, Step1 - Stats.EnergyDefense);
-        Step2 = FMath::Max(0.f, Step2 - Stats.EnergyDamageReduction);
-    }
-
-    float Final = FMath::Max(0.f, Step2);
-
-    if (Atk && Final > 0.f)
-    {
-        float EffCritRate = FMath::Max(0.f, Atk->CritRate - Stats.AntiCrit);
-        if (FMath::FRand() < EffCritRate)
-        {
-            float EffCritMult = FMath::Max(1.f, Atk->CritDmgMult - Stats.AntiCritDmgReduction);
-            Final *= EffCritMult;
-            float EffSuperRate = FMath::Max(0.f, Atk->SuperCritRate - Stats.AntiSuperCritRate);
-            if (FMath::FRand() < EffSuperRate)
-            {
-                float EffSuperMult = FMath::Max(1.f, Atk->SuperCritDmgMult - Stats.AntiSuperCritDmgReduction);
-                Final *= EffSuperMult;
-            }
-        }
-    }
-
-    TakeDamageAmount(Final);
+    FCombatResolver::TakeElementalDamage(*this, ElemAtk, Element, bEnergyDefenseApplies, Atk);
 }
 
 void ABeastCharacter::TakeDamageAmount(float Amount)
@@ -206,6 +164,13 @@ void ABeastCharacter::TakeDamageAmount(float Amount)
     if (Modified > 0.f)
         AFloatingDamageActor::Spawn(GetWorld(),
             GetActorLocation() + FVector(0.f, 0.f, 50.f), Modified);
+}
+
+void ABeastCharacter::EndPlay(EEndPlayReason::Type Reason)
+{
+    if (UCombatantRegistrySubsystem* Reg = GetWorld() ? GetWorld()->GetSubsystem<UCombatantRegistrySubsystem>() : nullptr)
+        Reg->Unregister(this);
+    Super::EndPlay(Reason);
 }
 
 void ABeastCharacter::Respawn()
