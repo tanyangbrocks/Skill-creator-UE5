@@ -2,68 +2,27 @@
 #include "AEnemy.h"
 #include "AEnemyManager.h"
 #include "AVoxelWorldActor.h"
-#include "MaterialType.h"
 #include "ASkillCreatorCharacter.h"
 
 ASpellProjectile::ASpellProjectile()
 {
-    PrimaryActorTick.bCanEverTick = true;
+    // ABaseProjectile constructor 已設 PrimaryActorTick.bCanEverTick = true
 }
 
 void ASpellProjectile::Init(FGridPos InOrigin, FVector InDir,
                              AEnemyManager* InEnemyMgr, AVoxelWorldActor* InVoxelWorld)
 {
-    CurrentPos = InOrigin;
-    TileDir    = InDir.GetSafeNormal();  // 正規化；零向量時回傳 (0,0,0) → 不移動
-    FloatPos   = FVector((float)InOrigin.X, (float)InOrigin.Y, (float)InOrigin.Z);
-    EnemyMgr   = InEnemyMgr;
-    VoxelWorld = InVoxelWorld;
-    SetActorLocation(FloatPos);
+    EnemyMgr = InEnemyMgr;
+    InitBase(InOrigin, InDir, InVoxelWorld);
 }
 
-void ASpellProjectile::Tick(float DeltaTime)
+void ASpellProjectile::OnTileEntered(FGridPos NewTile)
 {
-    Super::Tick(DeltaTime);
-
-    MoveTimer += DeltaTime;
-    while (MoveTimer >= MoveInterval)
-    {
-        MoveTimer -= MoveInterval;
-        AdvanceOneTile();
-        if (!IsValid(this)) return;  // destroyed inside AdvanceOneTile
-    }
-}
-
-void ASpellProjectile::AdvanceOneTile()
-{
-    if (TilesTravelled >= MaxRange)
-    {
-        Destroy();
-        return;
-    }
-
-    // 累積浮點位置：每步沿正規化方向前進一個單位長度
-    FloatPos += TileDir;
-
-    // 四捨五入得到當前所在的 tile 格座標（支援對角線投射）
-    FGridPos NextPos(
-        FMath::RoundToInt(FloatPos.X),
-        FMath::RoundToInt(FloatPos.Y),
-        FMath::RoundToInt(FloatPos.Z)
-    );
-
-    if (NextPos == CurrentPos)
-    {
-        // 對角線移動時可能未跨格，繼續累積直到整格
-        ++TilesTravelled;
-        return;
-    }
-
     // 敵人投射物：命中玩家 tile → 走 B-3 物理傷害管線（含 S-4 彈反）
     if (PlayerTarget.IsValid() && PlayerTarget->IsAlive()
-        && PlayerTarget->GetPosition() == NextPos)
+        && PlayerTarget->GetPosition() == NewTile)
     {
-        // C-2: 傳 OriginEnemy（投射物發射者）而非 this（投射物），S-4 彈反才能凍結正確目標
+        // C-2: 傳 OriginEnemy（投射物發射者）而非 this，S-4 彈反才能凍結正確目標
         PlayerTarget->TakePhysicalDamage(BaseDamage,
             bUseAttackerStats ? &AttackerStats : nullptr,
             OriginEnemy.Get());
@@ -71,32 +30,13 @@ void ASpellProjectile::AdvanceOneTile()
         return;
     }
 
-    // 先檢查是否命中敵人（優先於 tile 碰撞）
-    if (AEnemy* Hit = FindEnemyAt(NextPos))
+    // 玩家技能：命中敵人 → OnHitEnemy 回調
+    if (AEnemy* Hit = FindEnemyAt(NewTile))
     {
-        if (OnHitEnemy) OnHitEnemy(Hit, NextPos);
+        if (OnHitEnemy) OnHitEnemy(Hit, NewTile);
         Destroy();
         return;
     }
-
-    // 檢查 tile 是否實心（非 Air）
-    if (VoxelWorld)
-    {
-        FTileWorld3D* TW = VoxelWorld->GetTileWorld();
-        if (TW)
-        {
-            EMaterialType Mat = TW->GetTile(NextPos.X, NextPos.Y, NextPos.Z);
-            if (Mat != EMaterialType::Air)
-            {
-                Destroy();
-                return;
-            }
-        }
-    }
-
-    CurrentPos = NextPos;
-    ++TilesTravelled;
-    SetActorLocation(FloatPos);  // 使用連續浮點位置讓視覺移動平滑
 }
 
 AEnemy* ASpellProjectile::FindEnemyAt(const FGridPos& Pos) const
@@ -106,7 +46,7 @@ AEnemy* ASpellProjectile::FindEnemyAt(const FGridPos& Pos) const
     {
         if (!E || !E->IsAlive()) continue;
         if (E->GetPosition() == Pos) return E;
-        // Heavy 佔 2×2 footprint（X/Z 各延伸 1 格），投射物命中任一佔用格即觸發
+        // Heavy 佔 2×2 footprint（X/Z 各延伸 1 格），命中任一佔用格即觸發
         if (E->Type == EEnemyType::Heavy)
         {
             const FGridPos EP = E->GetPosition();
