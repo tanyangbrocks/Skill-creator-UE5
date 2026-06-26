@@ -442,8 +442,13 @@ void ASkillCreatorPlayerController::OnDropPressed()
 {
     FHoldStart = GetWorld()->GetTimeSeconds();
 
+    // 攜帶中或持有物品欄物品時都預先啟動力量條，讓長按路徑（含 G-9 非攜帶投擲）能拿到正確 PowerPct
     ASkillCreatorCharacter* Char = GetPawn() ? Cast<ASkillCreatorCharacter>(GetPawn()) : nullptr;
-    if (Char && Char->bIsCarrying)
+    if (!Char) return;
+    const bool bHasHotbarItem = Char->InventoryComp
+        && Char->InventoryComp->Slots.IsValidIndex(Char->InventoryComp->ActiveHotbarIndex)
+        && !Char->InventoryComp->Slots[Char->InventoryComp->ActiveHotbarIndex].IsEmpty();
+    if (Char->bIsCarrying || bHasHotbarItem)
         if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
             HUD->StartThrowCharge();
 }

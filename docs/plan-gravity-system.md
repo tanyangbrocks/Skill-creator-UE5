@@ -1,8 +1,17 @@
 # 重力系統計畫
 
 > 建立日期：2026-06-25
-> 狀態：📋 計畫中
+> 狀態：🔄 部分完成（Phase 1-A + 1-D 已完成）
 > 關聯：`plan-material-physics.md`（GravityScale 影響 Mass / JumpFactor / Restitution 計算）
+
+---
+
+> **2026-06-26 更新**：Phase 1-A（GlobalGravityScale）與 Phase 1-D（APhysicalItemActor）已由
+> `plan-physical-item.md` G-1/G-3 完成。剩餘項目排期順序建議：
+> - Phase 1-B（CA 落速讀 GlobalGravityScale）：獨立排期，不依賴其他系統
+> - Phase 1-C（玩家跳躍/墜落傷害接入）：可在下輪角色動作補強時一起做
+> - Phase 2（FGravityZone per-region）：需技能系統「重力領域積木」，較後期
+> - Phase 3（CA 方向向量）：長期目標，大改 CA 更新邏輯
 
 ---
 

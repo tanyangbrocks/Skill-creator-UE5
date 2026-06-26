@@ -192,7 +192,12 @@ Chaos Fracture 路徑最終也產生 `ADebrisActor`，撿起後一樣轉換成 `
          ↑ D-4 完成後，plan-voxelization V-4 才能接上
            （ADestructibleMeshActor::TriggerDestruction 依賴 SpawnDebris()，見 plan-voxelization §十五）
 ─────── Phase 2（建模導入後）───────
-[ ] D-6  Chaos Fracture 幾何集合設定
-[ ] D-7  Chaos 破壞事件 → ADebrisActor
-[ ] D-8  ADebrisActor Chaos 模式
+[ ] D-6  Chaos Fracture 幾何集合設定        ← 前置：3D 美術提供 Fracture Geometry Collection 資產
+[ ] D-7  Chaos 破壞事件 → ADebrisActor      ← 前置：D-6 完成
+[ ] D-8  ADebrisActor Chaos 模式            ← 前置：D-7 完成
 ```
+
+> **2026-06-26 更新**：G-10（`plan-physical-item.md`）已讓 `ADebrisActor` 實作 `IPhysicalPickable`，
+> 碎塊撿取→攜帶→投擲→存入物品欄的完整路徑已通。D-6~D-8 整合路徑（Chaos 模式下 `ADebrisActor`
+> 仍實作同一介面，`OnCarried`/`OnReleased` 邏輯保持不變）詳見 `plan-physical-item.md §十`。
+> D-6~D-8 排期的唯一前置是 3D 美術提供資產，C++ 無須另行修改介面層。

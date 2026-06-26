@@ -61,7 +61,7 @@ void APhysicalItemActor::OnReleased(FVector ThrowVelocityCms)
     bBeingCarried = false;
     Carrier       = nullptr;
     Velocity      = ThrowVelocityCms;
-    bLanded       = (ThrowVelocityCms.IsNearlyZero());
+    bLanded       = false;  // 放下後重新受重力，由 PhysicsTick 決定何時落地
     SetActorEnableCollision(true);
 }
 
@@ -132,7 +132,9 @@ bool APhysicalItemActor::IsSolidAt(int32 VoxX, int32 VoxY, int32 VoxZ) const
 {
     if (!CachedVoxelWorld.IsValid()) return false;
     FTileCell Cell = CachedVoxelWorld->GetTileWorld()->GetCell(VoxX, VoxY, VoxZ);
-    return Cell.MaterialID != 0;  // 0 = Air
+    if (Cell.MaterialID == 0) return false;  // Air
+    // 液體格可穿過（浮力由 PhysicsTick 在 else 分支處理）
+    return FMaterialRegistry::GetPhysics(Cell.MaterialID) != EPhysicsCategory::Liquid;
 }
 
 float APhysicalItemActor::GetBelowRestitution() const
