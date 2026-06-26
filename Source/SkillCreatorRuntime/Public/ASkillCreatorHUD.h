@@ -81,7 +81,7 @@ public:
     int32         PaintBrushRadius    = 2;
 
     // ── 面板開關 API（PlayerController 呼叫）────────────────────────
-    void TogglePlayerPanel();           // G 鍵
+    void TogglePlayerPanel();           // T 鍵（原 G 鍵，2026-06-26 改綁，見 plan-physical-item.md G-0）
     void ToggleInventoryAndEquipment(); // R 鍵：物品欄 + 裝備欄同時開關
     void ToggleShapeMenu();
     void ToggleSpellGroup();

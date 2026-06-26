@@ -641,7 +641,7 @@ G-3 + G-10 ───────────────────────
 ## 八、實作順序
 
 ```
-[ ] G-0  G→T 鍵位（5 分鐘，一行改動）
+[x] G-0  G→T 鍵位（2026-06-26 完成；OnPickupOrPanel stub 掛 G，G-5 填實作）
 [ ] G-1  WorldScale::GlobalGravityScale（同步完成 plan-gravity-system Phase 1-A）
 [ ] G-2  IPhysicalPickable.h 純介面
 [ ] G-3  APhysicalItemActor（手動物理 + PickupSphere）

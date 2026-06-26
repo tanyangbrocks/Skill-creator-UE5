@@ -55,6 +55,8 @@ private:
     void ToggleCraftingPanel();
     // V：展開/收起技能組切換面板（USpellGroupWidget）+ 顯示/隱藏游標（Godot InputBindings.cs:76）
     void OnOpenSpellGroupPanel();
+    // G：撿取實體物品 / 攜帶中存入物品欄 / 無物時開玩家面板（plan-physical-item.md G-0/G-5）
+    void OnPickupOrPanel();
 
     UPROPERTY()
     TObjectPtr<class UBlockEditorWidget> BlockEditorWidget;
@@ -70,7 +72,7 @@ private:
     void OnOpenInventoryAndEquipment(); // R → 物品欄 + 裝備欄同時開關
     void OnOpenShapeMenu();             // N
     // OnOpenEditor 保留供 SpellList 綁定邏輯使用（Stage 3 移入 UPlayerPanelWidget 後刪除）
-    // B / T 已無預設鍵位；V = OnOpenSpellGroupPanel
+    // B 已無預設鍵位；G = OnPickupOrPanel；T = OnOpenPlayerPanel；V = OnOpenSpellGroupPanel
 
     // 動作快捷鍵（plan-player-actions.md）
     void OnUsePotion();           // Q — S-6 服用所有藥水袋（PotionBagComp->UseAllBags）

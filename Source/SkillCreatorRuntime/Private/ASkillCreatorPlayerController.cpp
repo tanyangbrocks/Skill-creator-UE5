@@ -118,14 +118,16 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Nine,  &ASkillCreatorPlayerController::OnHotbar9);
     Bind(EKeys::Zero,  &ASkillCreatorPlayerController::OnHotbar0);
 
-    // 面板開關（2026-06-25 玩家面板整合）
-    // G → 玩家個人面板（含 Stats / 職業能力 / 技能創建空間 / 內部空間 四 Tab）
-    Bind(EKeys::G, &ASkillCreatorPlayerController::OnOpenPlayerPanel);
+    // 面板開關（2026-06-25 玩家面板整合；2026-06-26 G→T 見 plan-physical-item.md G-0）
+    // T → 玩家個人面板（含 Stats / 職業能力 / 技能創建空間 / 內部空間 四 Tab）
+    Bind(EKeys::T, &ASkillCreatorPlayerController::OnOpenPlayerPanel);
+    // G → 撿取實體物品 / 攜帶中存入物品欄 / 無物時退回開玩家面板（plan-physical-item.md G-5 填實作）
+    Bind(EKeys::G, &ASkillCreatorPlayerController::OnPickupOrPanel);
     // R → 物品欄 + 裝備欄同時開關
     Bind(EKeys::R, &ASkillCreatorPlayerController::OnOpenInventoryAndEquipment);
     // N → 形狀選單
     Bind(EKeys::N, &ASkillCreatorPlayerController::OnOpenShapeMenu);
-    // V / B / T 已無預設鍵位（移除綁定）
+    // V / B 已無預設鍵位（移除綁定）；G = OnPickupOrPanel；T = OnOpenPlayerPanel
 
     // 動作快捷鍵
     Bind(EKeys::Q,   &ASkillCreatorPlayerController::OnUsePotion);        // S-6 服用藥水袋
@@ -306,6 +308,13 @@ void ASkillCreatorPlayerController::ToggleCraftingPanel()
 {
     if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
         HUD->ToggleCraftingPanel();
+}
+
+void ASkillCreatorPlayerController::OnPickupOrPanel()
+{
+    // G-0 stub：G-5（plan-physical-item.md）實作後替換為脈絡感知版本
+    // （撿取實體物品 / 攜帶中收入物品欄 / 無物時開玩家面板）
+    OnOpenPlayerPanel();
 }
 
 void ASkillCreatorPlayerController::OnOpenSpellGroupPanel()
