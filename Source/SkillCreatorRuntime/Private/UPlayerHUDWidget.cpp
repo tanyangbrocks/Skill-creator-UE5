@@ -1,7 +1,5 @@
 #include "UPlayerHUDWidget.h"
 #include "UGameClockSubsystem.h"
-#include "ASkillCreatorHUD.h"
-#include "ASkillCreatorCharacter.h"
 #include "UInventoryComponent.h"
 #include "UCharacterStateComponent.h"
 #include "ItemStack.h"
@@ -269,7 +267,6 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
     ItemIconBorders.Reserve(Count);
     ItemCountLabels.Reserve(Count);
     ItemKeyLabels.Reserve(Count);
-    ItemSlotHoverButtons.Reserve(Count);
 
     for (int32 i = 0; i < Count; ++i)
     {
@@ -296,25 +293,6 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
             BS->SetHorizontalAlignment(HAlign_Fill);
             BS->SetVerticalAlignment(VAlign_Fill);
         }
-
-        // 透明疊圖按鈕，純粹拿來用 Slate 原生 OnHovered/OnUnhovered 偵測游標是否在這格上
-        // （見 .h ItemSlotHoverButtons 註解）——4 個狀態的 brush 全設透明，不影響視覺，
-        // 只用來吃 hover 事件；加在 SlotCanvas 最後一個子節點，疊在 Icon/Count/Key 最上層。
-        UButton* HoverBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-        {
-            FButtonStyle Style = HoverBtn->GetStyle();
-            Style.Normal = Style.Hovered = Style.Pressed = Style.Disabled = FSlateBrush();
-            HoverBtn->SetStyle(Style);
-        }
-        HoverBtn->OnHovered.AddDynamic(this, &UPlayerHUDWidget::OnHotbarHoverChanged);
-        HoverBtn->OnUnhovered.AddDynamic(this, &UPlayerHUDWidget::OnHotbarHoverChanged);
-        SlotCanvas->AddChild(HoverBtn);
-        if (UCanvasPanelSlot* HBS = Cast<UCanvasPanelSlot>(HoverBtn->Slot))
-        {
-            HBS->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-            HBS->SetOffsets(FMargin(0.f));
-        }
-        ItemSlotHoverButtons.Add(HoverBtn);
 
         // 物品色塊圖示（左上）
         UBorder* Icon = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
@@ -632,9 +610,6 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
             BreakthroughLabel->SetVisibility(ESlateVisibility::Hidden);
     }
 
-    // K-22 + hover tooltip 偵測已改成 ItemSlotHoverButtons 的原生 OnHovered/OnUnhovered
-    // 事件驅動（見 OnHotbarHoverChanged()），不再需要每幀手動讀座標比對。
-
     // 時鐘：每遊戲分鐘更新一次（TicksPerMinute=20，1 分鐘=1 現實秒，每幀幾乎都要比對，
     // 但 SetText 代價高，用 LastClockMinute 只在分鐘跳動時才呼叫）
     if (ClockText)
@@ -650,43 +625,6 @@ void UPlayerHUDWidget::NativeTick(const FGeometry& Geo, float Delta)
             }
         }
     }
-}
-
-// 對應 Godot Main.cs:831-836 panel.MouseEntered/MouseExited → _mouseOverHotbar + ShowTooltip(idx)。
-// 2026-06-23 修復：原本每幀手動讀 PC->GetMousePosition() 比對熱鍵欄格子的螢幕座標——
-// 熱鍵欄位置/大小一改就要重新調這段邏輯，而且 FInputModeGameOnly()（一般遊玩時的模式，
-// 滑鼠被攝影機環視鎖住、游標隱藏）下 GetMousePosition() 沒有真正的「游標位置」可回報，
-// 曾經回傳卡死在熱鍵欄範圍內的值，導致 bMouseOverHotbar 永久卡 true、整個採掘系統被擋死。
-// 改用 ItemSlotHoverButtons（10 個透明疊圖 UButton）的 OnHovered/OnUnhovered 原生事件，
-// 全部綁同一個函式，靠 IsHovered() 重新掃一次找出目前是哪一格——FInputModeGameOnly 下
-// UMG 完全不會收到滑鼠路由，兩個事件自然都不會觸發，不需要額外判斷游標是否顯示。
-void UPlayerHUDWidget::OnHotbarHoverChanged()
-{
-    APlayerController* PC = GetOwningPlayer();
-    if (!PC) return;
-    ASkillCreatorHUD* HUD = PC->GetHUD<ASkillCreatorHUD>();
-    if (!HUD) return;
-
-    int32 HoveredIdx = -1;
-    for (int32 i = 0; i < ItemSlotHoverButtons.Num(); ++i)
-        if (ItemSlotHoverButtons[i] && ItemSlotHoverButtons[i]->IsHovered())
-        { HoveredIdx = i; break; }
-
-    HUD->bMouseOverHotbar = (HoveredIdx >= 0);
-
-    if (HoveredIdx < 0) { HideFloatTooltip(); return; }
-
-    ASkillCreatorCharacter* Char = Cast<ASkillCreatorCharacter>(PC->GetPawn());
-    const bool bHasItem = Char && Char->InventoryComp
-        && Char->InventoryComp->Slots.IsValidIndex(HoveredIdx)
-        && !Char->InventoryComp->Slots[HoveredIdx].IsEmpty();
-    if (!bHasItem) { HideFloatTooltip(); return; }
-
-    float MX, MY;
-    PC->GetMousePosition(MX, MY);
-    ShowFloatTooltip(
-        FItemRegistry::Get(Char->InventoryComp->Slots[HoveredIdx].ItemId).DisplayName.ToString(),
-        FVector2D(MX, MY));
 }
 
 // ══════════════════════════════════════════════════════════════════════════

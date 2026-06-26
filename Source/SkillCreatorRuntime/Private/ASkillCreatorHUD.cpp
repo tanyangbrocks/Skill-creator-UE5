@@ -14,6 +14,7 @@
 #include "UDebugPaintWidget.h"
 #include "UChestWidget.h"
 #include "UCraftingPanelWidget.h"
+#include "UCraftingHintCardWidget.h"
 #include "UCraftingStationSubsystem.h"
 #include "APlacedFixtureActor.h"
 #include "ItemRegistry.h"
@@ -72,8 +73,6 @@ void ASkillCreatorHUD::TogglePlayerPanel()
         PlayerPanel->SetVisibility(ESlateVisibility::Collapsed);
         if (APlayerController* PC = GetOwningPlayerController())
         {
-            // 關閉後恢復遊戲輸入（PlayerController 的 bCursorMode 由 ToggleCursorMode 管理，
-            // 這裡只確保 GameAndUI 模式讓 HUD 滑鼠事件不殘留）
             PC->SetShowMouseCursor(false);
             PC->SetInputMode(FInputModeGameAndUI());
         }
@@ -112,6 +111,27 @@ void ASkillCreatorHUD::ToggleSpellGroup()      { TogglePanel(SpellGroupPanel);  
 void ASkillCreatorHUD::ToggleInventory()       { TogglePanel(InventoryPanel);      }
 void ASkillCreatorHUD::ToggleEquipment()       { TogglePanel(EquipmentPanel);      }
 void ASkillCreatorHUD::ToggleDebugPaint()      { TogglePanel(DebugPaintPanel);     }
+
+void ASkillCreatorHUD::ToggleCraftingPanel()
+{
+    if (!CraftingPanel) return;
+    APlayerController* PC = GetOwningPlayerController();
+    const bool bCurrentlyVisible = CraftingPanel->GetVisibility() == ESlateVisibility::Visible;
+    if (bCurrentlyVisible)
+    {
+        CraftingPanel->SetVisibility(ESlateVisibility::Collapsed);
+        if (PC) PC->SetShowMouseCursor(false);
+    }
+    else
+    {
+        CraftingPanel->SetVisibility(ESlateVisibility::Visible);
+        if (PC)
+        {
+            PC->SetShowMouseCursor(true);
+            PC->SetInputMode(FInputModeGameAndUI());
+        }
+    }
+}
 
 void ASkillCreatorHUD::OpenChest(AChestActor* Chest)
 {
@@ -286,10 +306,12 @@ void ASkillCreatorHUD::BeginPlay()
     // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六；非常駐 Toggle，由 OpenChest() 帶資料開啟）
     ChestPanel = CreatePanel<UChestWidget>();
 
-    // 加工選單面板（docs/plan-item-crafting-system.md §八）：規格「玩家左側中央立刻出現」，
-    // 是常駐可見的 HUD 一部分，不是按鍵開關面板，CreatePanel() 預設 Collapsed 後立刻改回 Visible。
+    // 加工選單提示圖卡（常駐左側，不按鍵開關）
+    CraftingHintCard = CreatePanel<UCraftingHintCardWidget>();
+    if (CraftingHintCard) CraftingHintCard->SetVisibility(ESlateVisibility::Visible);
+
+    // 加工選單完整面板（Shift 展開/收起，預設 Collapsed）
     CraftingPanel = CreatePanel<UCraftingPanelWidget>();
-    if (CraftingPanel) CraftingPanel->SetVisibility(ESlateVisibility::Visible);
 }
 
 // ── DrawHUD：每幀餵資料 ───────────────────────────────────────────────────
@@ -341,6 +363,8 @@ void ASkillCreatorHUD::DrawHUD()
             Char->InventoryComp,
             NearbyChest ? NearbyChest->InventoryComp : nullptr,
             bHasWorkbench);
+        if (CraftingHintCard)
+            CraftingHintCard->UpdateCount(CraftingPanel->GetCraftableCount());
     }
 
     // ── 生存條 ───────────────────────────────────────────────────────

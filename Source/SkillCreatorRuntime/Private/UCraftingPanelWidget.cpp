@@ -18,11 +18,9 @@ void UCraftingPanelWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
 
-    // 2026-06-23 修復：使用者實機回報這個面板顯示成一大塊鮮綠色方塊（不是設計的深綠半透明
-    // 背景）——根因跟 Bug H-4 同一個：SetBrushColor() 依賴的 T_DefaultDiffuse_D 在 UE5.7
-    // 失效，沒有套用上面的 MakeSolidBrush() 修法就會顯示成引擎 fallback 外觀。同時把面板尺寸
-    // 縮小到原本 1/4（沒有可加工項目時不該佔掉螢幕左側一大塊空間）。
-    constexpr float PanelW = (5.f * 44.f + 16.f) * 0.25f, PanelH = 220.f * 0.25f;
+    // Shift 展開的完整加工面板：可捲動圖卡列表，預設 Collapsed，由 ASkillCreatorHUD::ToggleCraftingPanel 控制。
+    // 位置在提示圖卡（x=10, 44px 寬）右側（x=60），垂直置中。
+    constexpr float PanelW = 200.f, PanelH = 280.f;
 
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
     WidgetTree->RootWidget = Root;
@@ -33,9 +31,8 @@ void UCraftingPanelWidget::NativeOnInitialized()
     Root->AddChild(Panel);
     if (UCanvasPanelSlot* S = Cast<UCanvasPanelSlot>(Panel->Slot))
     {
-        // 規格「玩家左側中央立刻出現」
         S->SetAnchors(FAnchors(0.f, 0.5f, 0.f, 0.5f));
-        S->SetPosition(FVector2D(10.f, -PanelH * 0.5f));
+        S->SetPosition(FVector2D(60.f, -PanelH * 0.5f));
         S->SetSize(FVector2D(PanelW, PanelH));
         S->SetAlignment(FVector2D::ZeroVector);
     }

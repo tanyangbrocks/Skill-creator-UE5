@@ -16,6 +16,7 @@ class UDebugPaintWidget;
 class UChestWidget;
 class AChestActor;
 class UCraftingPanelWidget;
+class UCraftingHintCardWidget;
 
 // 玩家 HUD 生命週期管理 + 每幀資料餵送。
 // 所有面板 widget 在 BeginPlay() 建立，預設隱藏；各 Toggle*() 切換顯示狀態。
@@ -61,7 +62,11 @@ public:
     void OpenChest(AChestActor* Chest);
     void CloseChest();
 
-    // 加工選單面板（docs/plan-item-crafting-system.md §八）：常駐顯示，DrawHUD() 每幀餵資料
+    // 加工選單提示圖卡（常駐左側，顯示可加工數量）
+    UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
+    TObjectPtr<UCraftingHintCardWidget> CraftingHintCard;
+
+    // 加工選單完整面板（Shift 展開/收起，可捲動圖卡列表）
     UPROPERTY(BlueprintReadOnly, Category="HUD|Panels")
     TObjectPtr<UCraftingPanelWidget> CraftingPanel;
 
@@ -75,10 +80,6 @@ public:
     EMaterialType ActivePaintMaterial = EMaterialType::Sand;
     int32         PaintBrushRadius    = 2;
 
-    // K-22：游標懸在熱鍵欄格上時阻斷採掘/放置（Godot Main.cs:1198-1199 _mouseOverHotbar）
-    // 由 UPlayerHUDWidget::NativeTick 每幀寫入
-    bool bMouseOverHotbar = false;
-
     // ── 面板開關 API（PlayerController 呼叫）────────────────────────
     void TogglePlayerPanel();           // G 鍵
     void ToggleInventoryAndEquipment(); // R 鍵：物品欄 + 裝備欄同時開關
@@ -87,6 +88,7 @@ public:
     void ToggleInventory();
     void ToggleEquipment();
     void ToggleDebugPaint();
+    void ToggleCraftingPanel();  // Shift 鍵：展開/收起加工選單 + 顯示/隱藏游標
 
     virtual void BeginPlay() override;
     virtual void DrawHUD() override;

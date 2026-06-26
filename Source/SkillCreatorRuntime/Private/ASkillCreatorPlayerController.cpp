@@ -147,8 +147,8 @@ void ASkillCreatorPlayerController::SetupInputComponent()
     Bind(EKeys::Y,   &ASkillCreatorPlayerController::OnOpenPotionPanel);   // S-6 藥水袋面板 stub
     Bind(EKeys::M,   &ASkillCreatorPlayerController::OnOpenMap);           // S-7 地圖 stub
 
-    // Shift 游標模式（按一下顯示系統游標且鏡頭凍結，再按切回準心操控）
-    Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCursorMode);
+    // Shift：展開/收起加工選單面板
+    Bind(EKeys::LeftShift, &ASkillCreatorPlayerController::ToggleCraftingPanel);
 
     // Ctrl / U / I / O / P：由 ASkillCreatorCharacter Enhanced Input 負責，不重複綁定
     // Ctrl（短按 Tap ≤0.2s）→ CycleCameraMode（長按不觸發，解決 Ctrl+滾輪縮放衝突）
@@ -296,17 +296,14 @@ void ASkillCreatorPlayerController::OnBlockEditorClosed()
                 HUD->PlayerPanel->SetVisibility(ESlateVisibility::Visible);
     }
 
-    SetShowMouseCursor(bCursorMode);
+    SetShowMouseCursor(false);
     SetInputMode(FInputModeGameAndUI());
 }
 
-void ASkillCreatorPlayerController::ToggleCursorMode()
+void ASkillCreatorPlayerController::ToggleCraftingPanel()
 {
-    bCursorMode = !bCursorMode;
-    SetShowMouseCursor(bCursorMode);
-    // SetIgnoreLookInput 是計數器（+1/-1）而非布林值：
-    // true → counter++（鏡頭凍結），false → counter--（鏡頭恢復）
-    SetIgnoreLookInput(bCursorMode);
+    if (ASkillCreatorHUD* HUD = GetHUD<ASkillCreatorHUD>())
+        HUD->ToggleCraftingPanel();
 }
 
 void ASkillCreatorPlayerController::OnBlockEditorSave(const FString& SpellName, int32 SlotIndex)

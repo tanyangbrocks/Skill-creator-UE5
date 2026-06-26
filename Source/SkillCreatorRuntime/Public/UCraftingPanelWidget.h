@@ -22,6 +22,9 @@ public:
     // 每幀（或物品欄變動時）呼叫；內部比對可加工清單是否改變，沒變就不重建 widget tree
     void RefreshCraftable(UInventoryComponent* InPlayerInv, UInventoryComponent* InChestInv, bool bHasWorkbench);
 
+    // 供 UCraftingHintCardWidget 讀取可加工物總數
+    int32 GetCraftableCount() const { return CachedCraftable.Num(); }
+
 protected:
     virtual void NativeOnInitialized() override;
     virtual void NativeTick(const FGeometry& Geo, float Delta) override;
