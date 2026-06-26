@@ -354,20 +354,32 @@ void ASkillCreatorCharacter::Tick(float DeltaTime)
     }
 
     float SurvivalDamage = StateComp->TickState(DeltaTime, bInCombat);
-    if (SurvivalDamage > 0.f)
-        TakeDirectDamage(SurvivalDamage);
 
     // Phase C-5：氧氣歸零 → 套用 FSuffocationStatus（週期傷害 MaxHP×15%/0.5s，不停止瀕死，可致命）
-    // 回復後移除。FSuffocationStatus::OnProcess 自行計時，StateComp 的 OxygenCriticalDamage 仍生效作備援。
+    // FSuffocationStatus::OnProcess 接管傷害後，StateComp 的 OxygenCriticalDamage 貢獻需從
+    // SurvivalDamage 裡扣除，避免雙重傷害（兩個路徑不能同時生效）。
     if (SpecialStatusComp)
     {
         const bool bSuffocating = StateComp->IsSuffocating();
         const bool bHasSuff     = SpecialStatusComp->HasStatus(AbnormalStatusId::Suffocation);
         if (bSuffocating && !bHasSuff)
+        {
             SpecialStatusComp->ApplyStatus(MakeUnique<FSuffocationStatus>());
+        }
         else if (!bSuffocating && bHasSuff)
+        {
             SpecialStatusComp->RemoveStatus(AbnormalStatusId::Suffocation);
+        }
+        else if (bSuffocating && bHasSuff)
+        {
+            // FSuffocationStatus 已接管：從 SurvivalDamage 扣除 StateComp 的氧氣危急傷害貢獻
+            SurvivalDamage = FMath::Max(0.f,
+                SurvivalDamage - UCharacterStateComponent::OxygenCriticalDamage * DeltaTime);
+        }
     }
+
+    if (SurvivalDamage > 0.f)
+        TakeDirectDamage(SurvivalDamage);
 
     // AuraComp->Process 已由 UElementalAuraComponent::TickComponent 自動呼叫（Bug 1 fix）
     ActionBus.Update(DeltaTime);
