@@ -48,6 +48,7 @@ ANPCCharacter::ANPCCharacter()
 void ANPCCharacter::BeginPlay()
 {
     Super::BeginPlay();
+    if (SpecialStatusComp) SpecialStatusComp->SetOwnerTarget(this);
 
     CachedVoxelWorld = AVoxelWorldActor::FindInWorld(GetWorld());
     for (TActorIterator<AEnemyManager> It(GetWorld()); It; ++It) { CachedEnemyMgr = *It; break; }
@@ -131,6 +132,11 @@ float ANPCCharacter::GetStatusDefensePenalty()   const
 float ANPCCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
+void ANPCCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
+{
+    if (AuraComp) AuraComp->ApplyImmediate(Elem, Duration, this);
 }
 
 void ANPCCharacter::TakeDamageAmount(float Amount)

@@ -108,6 +108,7 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
 void ASkillCreatorCharacter::BeginPlay()
 {
     Super::BeginPlay();
+    if (SpecialStatusComp) SpecialStatusComp->SetOwnerTarget(this);
     CurrentHp = Stats.MaxHpBase;
     CurrentMp = Stats.MaxMpBase;
 
@@ -515,6 +516,11 @@ float ASkillCreatorCharacter::GetStatusDefensePenalty()   const
 float ASkillCreatorCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
+void ASkillCreatorCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
+{
+    if (AuraComp) AuraComp->ApplyImmediate(Elem, Duration, this);
 }
 
 void ASkillCreatorCharacter::TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk, AActor* Attacker)

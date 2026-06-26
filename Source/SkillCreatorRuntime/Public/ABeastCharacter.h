@@ -148,6 +148,7 @@ public:
     virtual void TakePhysicalDamage(float PhysAtk, const FCharacterStats* Atk = nullptr, AActor* Attacker = nullptr) override;
     virtual void TakeEnergyDamage(float EnergyAtk, FName ManaTypeKey, const FCharacterStats* Atk = nullptr) override;
     virtual void TakeElementalDamage(float ElemAtk, ESkillElementType Element, bool bEnergyDefenseApplies = false, const FCharacterStats* Atk = nullptr) override;
+    virtual void ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration) override;
 
     // ── 生命週期 ──────────────────────────────────────────────────
     void TakeDamageAmount(float Amount);

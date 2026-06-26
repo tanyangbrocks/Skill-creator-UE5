@@ -297,6 +297,7 @@ public:
     // ── IElementalTarget ──────────────────────────────────────────
     virtual int32 GetEntityId()              const override { return -1; }
     virtual void  TakeDirectDamage(float Amount)   override;
+    virtual void  ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration) override;
 
     // ── ISnapshottable ────────────────────────────────────────────
     virtual FEntitySnapshot TakeSnapshot()                              const override;

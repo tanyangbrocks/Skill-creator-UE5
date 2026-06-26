@@ -72,6 +72,7 @@ void ABeastCharacter::ApplyBodyColor()
 void ABeastCharacter::BeginPlay()
 {
     Super::BeginPlay();
+    if (SpecialStatusComp) SpecialStatusComp->SetOwnerTarget(this);
 
     ApplyBodyColor();
 
@@ -164,6 +165,11 @@ float ABeastCharacter::GetStatusDefensePenalty()   const
 float ABeastCharacter::GetStatusDamageTakenBonus() const
 {
     return SpecialStatusComp ? SpecialStatusComp->TotalDamageTakenBonus : AuraComp->DamageTakenBonus;
+}
+
+void ABeastCharacter::ApplyElementalAuraImmediate(ESkillElementType Elem, float Duration)
+{
+    if (AuraComp) AuraComp->ApplyImmediate(Elem, Duration, this);
 }
 
 void ABeastCharacter::TakeDamageAmount(float Amount)
