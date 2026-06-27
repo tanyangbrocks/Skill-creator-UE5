@@ -188,6 +188,42 @@ SkillCreatorUE5/
 🔴 **絕對不要在 `NativeConstruct()` 裡呼叫 `BuildLayout()`**：引擎原始碼 `UserWidget.cpp:1203` `RebuildWidget()` 會在 `WidgetTree->RootWidget` 為 null 時回退成空的 `SNew(SSpacer)`，而這個檢查發生在第一次 `AddToViewport()` 觸發的 `TakeWidget_Private()` 裡，順序是「先呼叫 `RebuildWidget()`（這時候抓到 null）→ 結果定型快取 → 才呼叫 `OnWidgetRebuilt()` → `NativeConstruct()`」。也就是說在 `NativeConstruct()` 裡才設定 `RootWidget` 永遠太晚，第一次顯示必定是空畫面，而且因為 `MyWidget` 一旦快取就不會重建，這個空白是永久性的（GameFlowWidget 2026-06-21 踩過，詳見 `docs/開發血汗錄.md` 第 1 案）。`NativeOnInitialized()` 在 `Initialize()`（`CreateWidget()` 當下、早於 `AddToViewport()`）執行，已確認 `CreateWidget<T>(PC, Class)` 一定會先 `SetPlayerContext()` 才 `Initialize()`，保證 `NativeOnInitialized()` 會被呼叫。
 ⚠️ 專案內舊有用 `NativeConstruct()` 寫的 widget（Inventory/Equipment/Settings/ShapeMenu/SpellGroup/Stats/InputSettings/SpellList/DebugPaint/BlockEditor）可能都中同一個 bug，待逐一稽核改用 `NativeOnInitialized()`。
 
+### 替換 / 新增實體物品 3D Mesh（2026-06-27）
+
+`APhysicalItemActor::Init()` 查找 Mesh 的三層順序：
+1. `FItemData::MeshPath`（`ItemRegistry.cpp` 手動設定的精確路徑）
+2. `/Game/Items/SM_{EItemId 值名稱}`（慣例路徑，`generate_placeholders.py` 批次建立佔位）
+3. Engine BasicShape（Cube / Cylinder / Sphere，依 bIsPlaceable / bIsWeapon / bIsTool / bIsConsumable 自動選取）
+
+**情境 A：替換現有佔位（普通物品）**
+
+使用者提供任意格式資產（FBX / OBJ / MagicaVoxel .vox 匯出的 OBJ）：
+
+1. 確認目標 `EItemId` 的 enum 值名稱（`ItemId.h`），例如 `ToolBasicAxe`
+2. 在 `import_assets.py` 加一個 `AssetImportTask`，`destination_path='/Game/Items'`，`destination_name='SM_ToolBasicAxe'`，`replace_existing=True`
+3. 在 Editor Python Console 執行 `import_assets.py`（或單獨執行新加的那段）
+4. 無需改任何 C++，無需 Rebuild（只是換資產，沒有 .h 變動）
+
+**情境 B：替換主要道具（精確指定路徑）**
+
+道具有自己的專屬資料夾（例如 `/Game/Weapons/DemonSword/SM_DemonSword`）或資產格式特殊：
+
+1. 先把資產匯入到目標路徑（同 import_assets.py 的模式）
+2. 在 `ItemRegistry.cpp` 對應 `Set()` 行設定 `D.MeshPath = FSoftObjectPath(TEXT("/Game/.../SM_Xxx.SM_Xxx"))`
+3. Build（`ItemRegistry.cpp` 是 .cpp，可 Live Coding）
+
+**情境 C：新增 EItemId 並給它 Mesh**
+
+1. `ItemId.h` 加新值（`.h` 變動 → 必須關 Editor + Rebuild）
+2. `ItemRegistry.cpp` 在 `Init()` 用對應 `MakeXxx()` helper 建立 `FItemData`，若有精確路徑設 `D.MeshPath`
+3. `generate_placeholders.py` 的 `ALL_ITEMS` 清單補上新名稱
+4. Rebuild → 執行 `generate_placeholders.py` 建立佔位（若未設 MeshPath 才需要）
+
+**`generate_placeholders.py` 執行時機**：
+- 第一次設定環境，或新增 EItemId 後，在 Editor Python Console 執行一次
+- 已存在的資產自動跳過（不會覆蓋手動改過的精緻版本）
+- 執行路徑：Output Log → Cmd → `py "C:\SkillCreatorUE5\generate_placeholders.py"`
+
 ### 世界尺度說明（給未來 AI）
 
 - **Tile 大小**：`TileSizeCm = 100.f / GrainCurrent`（`WorldScale.h:31`），**不是固定常數**。目前 `GrainCurrent = 16` → `TileSizeCm = 6.25 cm`。改 tile 大小只需改 `GrainCurrent`，`TileSizeCm` 及所有衍生值（CapsuleRadius/CapsuleHalfHeight/WalkSpeedCm/JumpZVelocityCm/GravityScaleMult）自動跟進；不需要全局 OriginX/Z，tile 座標 × TileSizeCm 即 UE5 世界座標
