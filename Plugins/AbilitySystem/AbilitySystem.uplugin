@@ -6,10 +6,8 @@
     "Description": "Spell VM, SpellRunner, SpellCaster",
     "Category": "SkillCreator",
     "Plugins": [
-        {
-            "Name": "StructUtils",
-            "Enabled": true
-        }
+        { "Name": "StructUtils",         "Enabled": true },
+        { "Name": "GameplayAbilities",   "Enabled": true }
     ],
     "Modules": [
         {

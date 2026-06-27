@@ -1,6 +1,39 @@
 #include "USpecialStatusComponent.h"
 #include "UElementalAuraComponent.h"
 #include "AbnormalStatusEffects.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
+
+// GAS-5: map C++ StatusId → GAS loose tag
+// Handles naming mismatches between FAbnormalStatusEffect::GetStatusId() and GE asset leaf names.
+static FGameplayTag ResolveLooseTag(FName StatusId, EAbnormalPolarity Polarity)
+{
+    static const TMap<FName, FName> LeafOverrides
+    {
+        {TEXT("Frostbite"),       TEXT("Frost")},
+        {TEXT("Petrification"),   TEXT("Petrify")},
+        {TEXT("Dizzy"),           TEXT("Stun")},
+        {TEXT("ExtremeFear"),     TEXT("Terror")},
+        {TEXT("BadLuck"),         TEXT("Misfortune")},
+        {TEXT("Ethereal"),        TEXT("Phase")},
+        {TEXT("BasicElemResist"), TEXT("ElemResBasic")},
+        {TEXT("AdvElemResist"),   TEXT("ElemResAdvanced")},
+    };
+    const FName* Override = LeafOverrides.Find(StatusId);
+    const FName  Leaf     = Override ? *Override : StatusId;
+    const FString FullTag = (Polarity == EAbnormalPolarity::Positive)
+        ? FString(TEXT("Status.Buff."))   + Leaf.ToString()
+        : FString(TEXT("Status.Debuff.")) + Leaf.ToString();
+    return FGameplayTag::RequestGameplayTag(FName(*FullTag), /*bErrorIfNotFound=*/false);
+}
+
+static UAbilitySystemComponent* FindASC(AActor* Owner)
+{
+    if (!Owner) return nullptr;
+    IAbilitySystemInterface* ASCOwner = Cast<IAbilitySystemInterface>(Owner);
+    return ASCOwner ? ASCOwner->GetAbilitySystemComponent() : nullptr;
+}
 
 USpecialStatusComponent::USpecialStatusComponent()
 {
@@ -57,6 +90,14 @@ void USpecialStatusComponent::ApplyStatus(TUniquePtr<FAbnormalStatusEffect> Effe
         if (Count >= MaxStack) return;
     }
 
+    // GAS-5: forward to ASC loose tag before Effect may be consumed by MoveTemp
+    const EAbnormalPolarity Polarity = Effect->GetPolarity();
+    FGameplayTag LooseTag = ResolveLooseTag(Id, Polarity);
+    if (UAbilitySystemComponent* ASC = FindASC(GetOwner()))
+    {
+        if (LooseTag.IsValid()) ASC->AddLooseGameplayTag(LooseTag);
+    }
+
     Effect->OnApply(T);
     // RemainingDuration <= 0 means the effect is instant (e.g. FInstantDeathStatus);
     // damage/side effects already happened in OnApply, no need to track it.
@@ -68,6 +109,12 @@ void USpecialStatusComponent::ApplyStatus(TUniquePtr<FAbnormalStatusEffect> Effe
 void USpecialStatusComponent::RemoveStatus(FName StatusId, IElementalTarget* Target)
 {
     IElementalTarget* T = Target ? Target : CachedTarget;
+
+    // GAS-5: determine polarity before removing (any surviving stack tells us)
+    EAbnormalPolarity Polarity = EAbnormalPolarity::Negative;
+    for (const auto& E : ActiveEffects)
+        if (E->GetStatusId() == StatusId) { Polarity = E->GetPolarity(); break; }
+
     for (int32 i = ActiveEffects.Num() - 1; i >= 0; --i)
     {
         if (ActiveEffects[i]->GetStatusId() == StatusId)
@@ -76,6 +123,15 @@ void USpecialStatusComponent::RemoveStatus(FName StatusId, IElementalTarget* Tar
             ActiveEffects.RemoveAt(i);
         }
     }
+
+    // GAS-5: remove loose tag from ASC (only if no stacks remain)
+    if (!HasStatus(StatusId))
+    {
+        FGameplayTag LooseTag = ResolveLooseTag(StatusId, Polarity);
+        if (UAbilitySystemComponent* ASC = FindASC(GetOwner()))
+            if (LooseTag.IsValid()) ASC->RemoveLooseGameplayTag(LooseTag);
+    }
+
     RecalcAggregates();
 }
 
@@ -261,6 +317,7 @@ void USpecialStatusComponent::GetStatusSnapshots(TArray<FStatusDisplaySnapshot>&
         {
             FStatusDisplaySnapshot S;
             S.StatusId          = Id;
+            S.StatusTag         = ResolveLooseTag(Id, E->GetPolarity());  // GAS-5
             S.DisplayName       = E->GetDisplayName();
             S.Polarity          = E->GetPolarity();
             S.RemainingDuration = E->RemainingDuration;

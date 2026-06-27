@@ -1,5 +1,6 @@
 #include "UGasEffectRegistry.h"
 #include "Engine/GameInstance.h"
+#include "GameplayTagContainer.h"
 
 // All 24 leaf names matching the GE_ asset names created in GAS-3.
 static const FName GAllStatusLeaves[] = {
@@ -45,6 +46,24 @@ TSubclassOf<UGameplayEffect> UGasEffectRegistry::Find(FName StatusTagLeaf) const
 {
     const TSubclassOf<UGameplayEffect>* Found = Registry.Find(StatusTagLeaf);
     return Found ? *Found : nullptr;
+}
+
+bool UGasEffectRegistry::CanApply(FName StatusTagLeaf, UAbilitySystemComponent& TargetASC) const
+{
+    // GAS-6: C++ predicate table — replaces GAS ApplicationRequirement Blueprints.
+    // Only tag-based prerequisites listed here (no cross-module AttributeSet access).
+
+    // Frozen requires Frost (frostbite stacks must be present)
+    if (StatusTagLeaf == TEXT("Frozen"))
+        return TargetASC.HasMatchingGameplayTag(
+            FGameplayTag::RequestGameplayTag(TEXT("Status.Debuff.Frost"), false));
+
+    // Terror requires Fear (fear stacks max out before terror triggers)
+    if (StatusTagLeaf == TEXT("Terror"))
+        return TargetASC.HasMatchingGameplayTag(
+            FGameplayTag::RequestGameplayTag(TEXT("Status.Debuff.Fear"), false));
+
+    return true;
 }
 
 UGasEffectRegistry* UGasEffectRegistry::Get(const UObject* WorldCtx)

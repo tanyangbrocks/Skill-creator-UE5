@@ -1120,8 +1120,6 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
         {
             UGasEffectRegistry* Reg = WeakReg.Get();
             if (!Reg) return;
-            TSubclassOf<UGameplayEffect> GEClass = Reg->Find(TagLeaf);
-            if (!GEClass) return;
 
             UAbilitySystemComponent* TargetASC = nullptr;
             if (EntityId < 0)
@@ -1132,6 +1130,12 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
             }
             // EntityId >= 0 (ForEach entity) — TODO: GAS-5.5 when ICombatant gets GetEntityId()
             if (!TargetASC) return;
+
+            // GAS-6: check C++ application conditions before looking up the class
+            if (!Reg->CanApply(TagLeaf, *TargetASC)) return;
+
+            TSubclassOf<UGameplayEffect> GEClass = Reg->Find(TagLeaf);
+            if (!GEClass) return;
 
             FGameplayEffectContextHandle EffCtx = TargetASC->MakeEffectContext();
             TargetASC->ApplyGameplayEffectToSelf(GEClass.GetDefaultObject(), Level, EffCtx);
