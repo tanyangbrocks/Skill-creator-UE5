@@ -224,6 +224,33 @@ SkillCreatorUE5/
 - 已存在的資產自動跳過（不會覆蓋手動改過的精緻版本）
 - 執行路徑：Output Log → Cmd → `py "C:\SkillCreatorUE5\generate_placeholders.py"`
 
+### 替換 / 新增物品圖示（2026-06-27）
+
+圖示走**純慣例路徑**，不需要 `FItemData::IconPath`，比 Mesh 替換更簡單。
+
+慣例路徑：`/Game/Icons/ICO_{EItemId 值名稱}`（Texture2D）
+來源目錄：`C:\SkillCreatorUE5\asset\icons\ICO_{name}.png`
+
+**情境 A：替換現有圖示**（最常見）
+1. 設計新 PNG（64×64 或其他尺寸，推薦 64×64）
+2. 命名為 `ICO_{EItemId名稱}.png`（例如 `ICO_WeaponWoodSword.png`）
+3. 放進 `asset/icons/`
+4. 在 UE5 Editor Python Console 執行：`py "C:\SkillCreatorUE5\import_icons.py"`
+5. `replace_existing=True` 自動覆蓋 → 完成，C++ 不用改
+
+**情境 B：新增 EItemId 的圖示**
+1. `generate_icons.py` 的 `generate_all()` 裡呼叫對應的 `icon_xxx()` 函式
+2. 執行 `python generate_icons.py` 生成佔位圖示
+3. 有精緻版本時走情境 A 替換
+
+**重新生成所有佔位圖示**（設計大改或新加 EItemId 後）：
+```powershell
+# 刪除要重生的圖示（或刪全部）
+Remove-Item C:\SkillCreatorUE5\asset\icons\ICO_*.png
+python generate_icons.py
+py "C:\SkillCreatorUE5\import_icons.py"   # 在 UE5 Editor 執行
+```
+
 ### 用 Blender 程式化產生 Item Mesh（2026-06-27）
 
 `generate_models.py` 是 Blender 5.1 headless 腳本，為所有 EItemId 產生具識別度的低多邊形 FBX：
