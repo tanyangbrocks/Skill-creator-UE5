@@ -101,6 +101,24 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ---
 
+### B-3 Godot 預設值核對（數值未移植 / 移植錯誤）
+
+**風險**：攻擊倍率、狀態持續時間、MP 消耗係數、堆疊閾值等數值在 docs/plan-*.md 描述時可能已被簡化；實際 UE5 值只有對照 Godot `.cs` 原始碼才算正確。
+
+**高風險欄位**（依過往踩坑頻率排序）：
+
+| 系統 | Godot 檔案 | UE5 對應位置 | 確認重點 |
+|------|-----------|------------|---------|
+| 狀態持續時間 | `AbnormalEffect.cs` / 各 `XXXEffect.cs` | `UGasEffectRegistry::Initialize()` | `RemainingDuration` 預設值 |
+| Frostbite→Frozen 堆疊閾值 | `FrostbiteEffect.cs` | `USpecialStatusComponent::ProcessEffects()` | `FrostbiteToFrozenThreshold` |
+| MP 消耗係數 | `AbilityPointCalculator.cs` | `FAbilityPointCalculator::CalculateCost()` | 各 block 類型的係數 |
+| 攻擊倍率 | `ItemData.cs` / `EntityStats.cs` | `ItemRegistry.cpp` / `ASkillCreatorCharacter` | `AtkMult` / `BaseDamage` |
+| 重力加速度 | `WorldPhysics.cs` | `ASkillCreatorCharacter::ApplyGravity()` | `GravityAccel` tiles/s² |
+
+**確認方式**：對照 `C:\skill-creator\Scripts\` 對應 `.cs` 檔案，用 Read 工具逐行比對有號數和係數，不能只看 docs/plan-*.md（可能已簡化）。
+
+---
+
 ## 類別 C：UE5 特有語意陷阱（需要了解 UE5 內部機制）
 
 ### C-1 Build.cs 模組依賴遺漏（Unity Build 掩蓋）
@@ -258,4 +276,61 @@ grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/
 
 ---
 
-*最後更新：2026-06-28（A-1~A-4 全掃修復 A-3；B-1 掃描修復 SurfaceWaterPool WaterFill 符號錯誤；B-2 掃描 delegate 全部正常；GAS-0~6 整合；D-1~D-3 GAS Loose Tag 陷阱新增）*
+## 類別 E：多執行緒與生命週期（需要讀實作細節）
+
+### E-1 GPU async readback 時序（CaGpuSimulator）
+
+**風險**：`CaGpuSimulator::AsyncCells`（普通 `TArray`，非 atomic）由 render thread 填充，game thread 在 `TryCollectAsync()` 裡讀取。兩者之間只靠 `AsyncReadbackInFlight` atomic pointer 同步。若 game thread 在 render thread 填完之前就讀，資料不完整（partial read）。
+
+**確認方式**：
+```cpp
+// CaGpuSimulator.cpp 裡 TryCollectAsync()
+// 確認在讀 AsyncCells 之前有 FlushRenderingCommands() 或等效 fence
+// 預期序列：AsyncReadbackInFlight->IsReady() → FlushRenderingCommands() → read AsyncCells
+```
+`AsyncReadbackInFlight->IsReady()` 只確認 GPU 完成，不保證 render thread 已把資料寫入 `AsyncCells`。需確認中間有 flush 或 CPU fence。
+
+---
+
+### E-2 背景 chunk 生成 lambda 的閉包生命週期
+
+**風險**：`MapGenerator3D::EnsureChunksAround()` 的背景 lambda 閉包需捕獲地形生成所需的全部資料。若閉包裡有任何對 `MapGenerator3D` 成員的隱式 `this` 依賴（透過 `[&]` 或 member function call），而 `MapGenerator3D` 在 lambda 執行中被摧毀，會 use-after-free。
+
+**確認方式**：
+```cpp
+// MapGenerator3D.cpp EnsureChunksAround() 的 Async lambda
+// 確認捕獲清單：只有值拷貝（TSharedRef / TArray copy / POD value）
+// 不可以有 [this] 或 [&] 捕獲 MapGenerator3D 成員
+```
+
+---
+
+## 類別 F：已 runtime 實測確認的已知問題（2026-06-28）
+
+### F-1 GE Blueprint 資產未被 cook（已修）
+
+**根本原因**：`UGasEffectRegistry::Initialize()` 用 `FString::Printf + StaticLoadClass` 構造執行期路徑，`MaterialRegistry` 用 macro 構造 `FSoftObjectPath` — 兩者都是 runtime string，cooker 無法追蹤 dependency graph，`Content/Abilities/` 和 `Content/PhysicalMaterials/` 整個目錄不會被 cook。
+
+**修法（2026-06-28 已修）**：在 `Config/DefaultGame.ini` 加：
+```ini
+[/Script/UnrealEd.ProjectPackagingSettings]
++DirectoriesToAlwaysCook=(Path="/Game/Abilities")
++DirectoriesToAlwaysCook=(Path="/Game/PhysicalMaterials")
++DirectoriesToAlwaysCook=(Path="/Game/Data")
+```
+
+**preflight 13ah** 現在自動偵測同行 `LoadObject<T>(nullptr, TEXT("/Game/...")`)` 類型，並對照 `DefaultGame.ini` 的 `DirectoriesToAlwaysCook`。
+跨行路徑構造（`FString::Printf → StaticLoadClass(nullptr, *Path)`）無法靜態偵測，需人工審查。
+
+### C-9 SoftObjectPath / StaticLoadClass 在 Packaged 執行檔的可達性
+
+**風險**：任何透過 runtime string 載入資產的位置，若目標目錄不在 `DirectoriesToAlwaysCook`，Packaged 版本必定失敗（Editor/PIE 因有 AssetRegistry 全量可見所以不報錯，給人「在 Editor 正常」的假象）。
+
+**掃法**：
+1. `preflight 13ah` 自動偵測同行路徑（PASS = 已涵蓋）
+2. 手動審查多行路徑構造（`FString::Printf`/macro 拼字串→ LoadClass/LoadObject）
+3. 確認 `DefaultGame.ini` `DirectoriesToAlwaysCook` 涵蓋所有這類目錄
+
+---
+
+*最後更新：2026-06-28（B-3 Godot 數值核對；C-9 AlwaysCook 可達性；E-1/E-2 多執行緒生命週期；F-1 GE Blueprint cook 缺失根本原因與修法；preflight 13af/13ag/13ah 新增；PASS 53 / FAIL 0）*

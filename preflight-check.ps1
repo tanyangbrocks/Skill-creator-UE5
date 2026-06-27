@@ -834,6 +834,84 @@ if ($badCtorGetWorld.Count -eq 0) {
 }
 
 # ==================================================================
+Head "13af. [Tier1] UObject 函式體內可變 static 局部變數（C-2 CDO 跨呼叫狀態汙染）"
+# 排除第三方 plugin（VibeUE、RealtimeMeshComponent）
+# WARN 不 FAIL：Meyers singleton 模式（static Table; if Empty() Init()）和 rate-limiter 是合法的
+$firstPartyCpp = $projectCpp | Where-Object { $_.FullName -notmatch '\\RealtimeMeshComponent' }
+$badStaticLocals = @()
+foreach ($f in $firstPartyCpp) {
+    $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        # static 非 const 容器或累積計數器（排除 static const 和註解行）
+        if ($line -match '^\s+static\s+(?!const\s)(TArray|TMap|TSet|int32|int64)\b' -and
+            $line -notmatch '^\s*//' -and $line -notmatch 'static\s+const') {
+            $badStaticLocals += "$($f.Name):$($i+1): $($line.Trim())"
+        }
+    }
+}
+if ($badStaticLocals.Count -eq 0) {
+    Pass "未發現一等製品 UObject 函式體內可變 static 容器（CDO 安全）"
+} else {
+    Warn "發現可變 static 局部容器（確認是 Meyers singleton/rate-limiter 才安全，否則 PIE 跨 session 狀態汙染）：`n    $($badStaticLocals -join "`n    ")"
+}
+
+# ==================================================================
+Head "13ag. [Tier1] FSoftObjectPath 字串格式驗證（缺少 '.' 分隔符導致 TryLoad 靜默失敗）"
+# 有效格式：/Game/Path/AssetName.AssetName；macro 前綴（結尾 /）排除
+$badSoftPaths = @()
+foreach ($f in $firstPartyCpp) {
+    $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match 'FSoftObjectPath\s*\(\s*TEXT\s*\(\s*"(/[^"]+)"') {
+            $path = $Matches[1]
+            # 結尾 / 是 macro 前綴，排除；其他缺 . 的是格式錯誤
+            if ($path -notmatch '\.\w+$' -and $path -notmatch '/$') {
+                $badSoftPaths += "$($f.Name):$($i+1): $path"
+            }
+        }
+    }
+}
+if ($badSoftPaths.Count -eq 0) {
+    Pass "所有 FSoftObjectPath 字串格式正確（含 '.' 資產名稱分隔符）"
+} else {
+    Fail "FSoftObjectPath 格式錯誤（缺 '.' 分隔符，TryLoad 必定回 null）：`n    $($badSoftPaths -join "`n    ")"
+}
+
+# ==================================================================
+Head "13ah. [Tier1] StaticLoadClass / LoadObject runtime 字串路徑 → cooker 無法追蹤依賴（需 AlwaysCook）"
+# 掃 StaticLoadClass / LoadObject<> 使用的路徑前綴，對照 DefaultGame.ini DirectoriesToAlwaysCook
+$alwaysCookIni = "$root\Config\DefaultGame.ini"
+$alwaysCookPaths = @()
+if (Test-Path $alwaysCookIni) {
+    [System.IO.File]::ReadAllLines($alwaysCookIni, [System.Text.Encoding]::UTF8) | ForEach-Object {
+        if ($_ -match 'DirectoriesToAlwaysCook=\(Path="(/Game/[^"]+)"') {
+            $alwaysCookPaths += $Matches[1].TrimEnd('/')
+        }
+    }
+}
+$badRuntimeLoad = @()
+$opts13ah = [System.Text.RegularExpressions.RegexOptions]::None
+foreach ($f in $firstPartyCpp) {
+    $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        # 找 StaticLoadClass 或 LoadObject 使用 /Game/ 路徑的行
+        if ($lines[$i] -match 'StaticLoadClass|LoadObject\s*<' -and $lines[$i] -match '"/Game/([^/"]+)') {
+            $dir = "/Game/" + $Matches[1]
+            $covered = $alwaysCookPaths | Where-Object { $dir.StartsWith($_) }
+            if (-not $covered) {
+                $badRuntimeLoad += "$($f.Name):$($i+1): dir=$dir  [AlwaysCook 未涵蓋]"
+            }
+        }
+    }
+}
+if ($badRuntimeLoad.Count -eq 0) {
+    Pass "所有 StaticLoadClass/LoadObject 路徑均在 DefaultGame.ini DirectoriesToAlwaysCook 涵蓋範圍內"
+} else {
+    Fail "發現 runtime 字串路徑未在 AlwaysCook（Packaged 版資產不會被 cook，runtime load 必定失敗）：`n    $($badRuntimeLoad -join "`n    ")"
+}
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"
