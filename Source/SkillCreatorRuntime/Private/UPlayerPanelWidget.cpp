@@ -107,13 +107,6 @@ void UPlayerPanelWidget::BuildNormalHeader(UVerticalBox* Root)
 
     // ── 4 個 Tab 按鈕 ────────────────────────────────────────────────────
     static const TCHAR* TabNames[] = { TEXT("個人資訊面板"), TEXT("職業能力"), TEXT("技能創建空間"), TEXT("內部空間") };
-    void (UPlayerPanelWidget::* TabCallbacks[])() = {
-        &UPlayerPanelWidget::OnTabStats,
-        &UPlayerPanelWidget::OnTabOccupation,
-        &UPlayerPanelWidget::OnTabSpellEditor,
-        &UPlayerPanelWidget::OnTabInnerWorld,
-    };
-
     for (int32 i = 0; i < 4; ++i)
     {
         // 每個 Tab = VBox（按鈕 + 底線）
@@ -130,7 +123,14 @@ void UPlayerPanelWidget::BuildNormalHeader(UVerticalBox* Root)
         BtnStyle.Hovered.DrawAs  = ESlateBrushDrawType::NoDrawType;
         BtnStyle.Pressed.DrawAs  = ESlateBrushDrawType::NoDrawType;
         Btn->SetStyle(BtnStyle);
-        Btn->OnClicked.AddDynamic(this, TabCallbacks[i]);
+        // AddDynamic 是巨集，必須在編譯期字串化函式名，不能用陣列索引
+        switch (i)
+        {
+            case 0: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnTabStats);       break;
+            case 1: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnTabOccupation);  break;
+            case 2: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnTabSpellEditor); break;
+            case 3: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnTabInnerWorld);  break;
+        }
         {
             auto* VS = Cast<UVerticalBoxSlot>(TabVBox->AddChild(Btn));
             if (VS) { VS->SetSize(FSlateChildSize(ESlateSizeRule::Automatic)); VS->SetPadding(FMargin(24.f, 14.f, 24.f, 10.f)); }
