@@ -33,6 +33,12 @@ private:
     TArray<TObjectPtr<UTextBlock>> StackLabels;
     TArray<TObjectPtr<UTextBlock>> TimerLabels;
 
+    // 狀態圖示快取：key=StatusId FName，value=貼圖（nullptr=查過沒有）
+    UPROPERTY()
+    TMap<FName, TObjectPtr<UTexture2D>> StatusIconCache;
+
+    UTexture2D* GetOrLoadStatusIcon(const FName& StatusId);
+
     static FLinearColor BorderColor(EAbnormalPolarity Polarity);
     static FLinearColor FillColor  (EAbnormalPolarity Polarity);
 };

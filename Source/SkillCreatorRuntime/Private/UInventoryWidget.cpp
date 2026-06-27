@@ -14,18 +14,25 @@
 #include "Engine/Texture2D.h"
 #include "UObject/Class.h"
 
-// ── 圖示貼圖載入（慣例路徑 /Game/Icons/ICO_{EnumName}）─────────────────────
+// ── 圖示貼圖快取（慣例路徑 /Game/Icons/ICO_{EnumName}）──────────────────────
+// 首次呼叫觸發 LoadObject；後續直接回傳快取（包含 nullptr=確認不存在），不再呼叫 LoadObject
 
-static UTexture2D* LoadItemIcon(EItemId Id)
+UTexture2D* UInventoryWidget::GetOrLoadIcon(EItemId Id)
 {
     if (Id == EItemId::None) return nullptr;
+
+    if (TObjectPtr<UTexture2D>* Hit = IconCache.Find(Id))
+        return Hit->Get();  // 快取命中（nullptr 代表上次查過也沒有）
+
+    UTexture2D* Tex = nullptr;
     if (const UEnum* E = StaticEnum<EItemId>())
     {
         const FString Name = E->GetNameStringByValue((int64)Id);
         const FString Path = FString::Printf(TEXT("/Game/Icons/ICO_%s.ICO_%s"), *Name, *Name);
-        return LoadObject<UTexture2D>(nullptr, *Path);
+        Tex = LoadObject<UTexture2D>(nullptr, *Path);
     }
-    return nullptr;
+    IconCache.Add(Id, Tex);  // 存入快取（nullptr 亦快取，避免反覆查詢）
+    return Tex;
 }
 
 // ── 顏色查詢（fallback：圖示不存在時使用）──────────────────────────────────
@@ -269,7 +276,7 @@ FReply UInventoryWidget::NativeOnMouseButtonDown(const FGeometry& Geo, const FPo
                 const FItemStack& Stack = CachedSlots[Src];
                 if (!Stack.IsEmpty())
                 {
-                    UTexture2D* Icon = LoadItemIcon(Stack.ItemId);
+                    UTexture2D* Icon = GetOrLoadIcon(Stack.ItemId);
                     if (Icon)
                     {
                         FSlateBrush B;
@@ -347,7 +354,7 @@ void UInventoryWidget::RefreshSlot(int32 Idx)
     }
     else
     {
-        UTexture2D* Icon = LoadItemIcon(Stack.ItemId);
+        UTexture2D* Icon = GetOrLoadIcon(Stack.ItemId);
         if (Icon)
         {
             FSlateBrush B;

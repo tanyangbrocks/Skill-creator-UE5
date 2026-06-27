@@ -8,6 +8,7 @@ class UBorder;
 class UTextBlock;
 class UCanvasPanel;
 class UInventoryComponent;
+class UTexture2D;
 
 // 物品欄面板（Z 鍵開關）：10 熱鍵欄 + 20 背包格，支援拖曳交換
 UCLASS()
@@ -63,6 +64,11 @@ private:
 
     TWeakObjectPtr<UInventoryWidget> PairedWidget;
 
+    // 圖示貼圖快取：首次載入後保存結果（含 nullptr=查過沒找到），避免每幀 LoadObject
+    UPROPERTY()
+    TMap<EItemId, TObjectPtr<UTexture2D>> IconCache;
+
     FLinearColor GetItemColor(EItemId Id) const;
+    UTexture2D*  GetOrLoadIcon(EItemId Id);
     void RefreshSlot(int32 Idx);
 };

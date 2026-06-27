@@ -43,6 +43,7 @@ void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVe
     // 3. Engine BasicShape（Cube/Cylinder/Sphere，依物品分類，確保絕對不空）
     const FItemData& Data = FItemRegistry::Get(InItemId);
     UStaticMesh* Mesh = nullptr;
+    bool bNeedBasicShapeScale = false;
 
     if (!Data.MeshPath.IsNull())
         Mesh = Cast<UStaticMesh>(Data.MeshPath.TryLoad());
@@ -67,9 +68,13 @@ void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVe
             FallbackPath = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
 
         Mesh = LoadObject<UStaticMesh>(nullptr, FallbackPath);
-        if (Mesh)
-            MeshComp->SetRelativeScale3D(FVector(WorldScale::TileSizeCm * 1.5f / 100.f));
+        bNeedBasicShapeScale = (Mesh != nullptr);
     }
+
+    // 縮放必須在 SetStaticMesh 前決定，確保 Init() 重複呼叫時不殘留舊縮放
+    MeshComp->SetRelativeScale3D(bNeedBasicShapeScale
+        ? FVector(WorldScale::TileSizeCm * 1.5f / 100.f)
+        : FVector(1.f));
 
     if (Mesh)
         MeshComp->SetStaticMesh(Mesh);

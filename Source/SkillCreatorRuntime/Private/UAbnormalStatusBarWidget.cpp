@@ -9,11 +9,18 @@
 #include "Engine/Texture2D.h"
 #include "SlateBrushHelpers.h"
 
-static UTexture2D* LoadStatusIcon(const FName& StatusId)
+UTexture2D* UAbnormalStatusBarWidget::GetOrLoadStatusIcon(const FName& StatusId)
 {
+    if (StatusId.IsNone()) return nullptr;
+
+    if (TObjectPtr<UTexture2D>* Hit = StatusIconCache.Find(StatusId))
+        return Hit->Get();
+
     const FString S = StatusId.ToString();
     const FString Path = FString::Printf(TEXT("/Game/Icons/STA_%s.STA_%s"), *S, *S);
-    return LoadObject<UTexture2D>(nullptr, *Path);
+    UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, *Path);
+    StatusIconCache.Add(StatusId, Tex);
+    return Tex;
 }
 
 static void PinIcon(UWidget* W, float X, float Y, float W2, float H)
@@ -119,7 +126,7 @@ void UAbnormalStatusBarWidget::UpdateStatuses(const TArray<FStatusDisplaySnapsho
         PinIcon(B, i * (IconSize + 2.f), 0.f, IconSize, IconSize);
 
         // 圖示（有 /Game/Icons/STA_{StatusId} 時顯示圖示，否則 fallback 到文字縮寫）
-        UTexture2D* Tex = LoadStatusIcon(S.StatusId);
+        UTexture2D* Tex = GetOrLoadStatusIcon(S.StatusId);
         if (IconImages.IsValidIndex(i) && IconImages[i])
         {
             if (Tex)

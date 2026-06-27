@@ -31,8 +31,14 @@ else:
         t.set_editor_property('automated',        True)
         t.set_editor_property('save',             True)
 
-        # Texture import settings: UI icon (no mipmaps, no sRGB compression)
+        # UI icon：不壓縮（TC_EditorIcon=RGBA8）、不串流、不生成 mip
         tex_opts = unreal.TextureFactory()
+        tex_opts.set_editor_property('compression_settings',
+            unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+        tex_opts.set_editor_property('lod_group',
+            unreal.TextureGroup.TEXTUREGROUP_UI)
+        tex_opts.set_editor_property('mip_gen_settings',
+            unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
         t.set_editor_property('factory', tex_opts)
 
         tasks.append(t)
