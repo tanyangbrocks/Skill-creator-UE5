@@ -127,6 +127,7 @@ void AVoxelWorldActor::ReinitializeForWorld(int32 NewWorldSeed, const FString& N
     PlacedRegistry = FPlacedObjectRegistry();
     CreatedMegaChunks.Empty();
     CreatedPassthroughChunks.Empty(); // P-18
+    PrevActiveChunks.Empty();         // DECO-2: 清除 chunk 快照，避免換世界後誤廣播
     HideHighlight();
     ClearAllChunkLights(); // P-5: 清除舊世界所有發光格點光源
 
@@ -231,6 +232,27 @@ void AVoxelWorldActor::Tick(float DeltaTime)
     // 每 128 幀執行一次（每幀跑 EvictFarChunks O(N) 太浪費；128 幀≈2s@60fps）
     if ((GFrameCounter & 0x7F) == 0)
         Streaming.SaveAndEvict(TileWorld, PCX, PCY, PCZ, /*KeepRadius=*/4);
+
+    // DECO-2：偵測新增/淘汰 chunk，廣播裝飾系統用的 delegate
+    // Set diff O(N)，N = active chunk 數（StreamRadius=2 → 最多 5³=125 個），開銷可接受
+    if (OnChunkApplied.IsBound() || OnChunkEvicted.IsBound())
+    {
+        TSet<FIntVector> CurrentKeys;
+        const TMap<FIntVector, FChunk3D*>& Active = TileWorld.GetActiveChunks();
+        CurrentKeys.Reserve(Active.Num());
+        for (const auto& Pair : Active)
+            CurrentKeys.Add(Pair.Key);
+
+        for (const FIntVector& CC : CurrentKeys)
+            if (!PrevActiveChunks.Contains(CC))
+                OnChunkApplied.Broadcast(CC);
+
+        for (const FIntVector& CC : PrevActiveChunks)
+            if (!CurrentKeys.Contains(CC))
+                OnChunkEvicted.Broadcast(CC);
+
+        PrevActiveChunks = MoveTemp(CurrentKeys);
+    }
 
     // ── M-6: rebuild dirty mega-chunks ─────────────────────────
     if (!RMCMesh) return;

@@ -25,6 +25,10 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnExplosionCompleteDelegate,
 DECLARE_MULTICAST_DELEGATE_FiveParams(FOnVoxelDestructionCompleteDelegate,
     FIntVector, const FMaterialCountMap&, EDestroyReason, float, FVector);
 
+// DECO-2：chunk 生成/淘汰通知（UDecorationSubsystem 訂閱後管理 ISMC 裝飾）
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnChunkAppliedDelegate, FIntVector);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnChunkEvictedDelegate, FIntVector);
+
 // UE Actor wrapper for FTileWorld3D + RMC rendering.
 // M-6: Greedy-mesh RMC rendering per Mega-Chunk.
 // M-7: ChunkStreamingManager handles disk-load-first + save-on-eviction.
@@ -88,6 +92,10 @@ public:
     // V-4：Route B 體素注入後銷毀事件（UDroppedItemManager 在 OnWorldBeginPlay 訂閱）
     FOnVoxelDestructionCompleteDelegate OnVoxelDestructionComplete;
 
+    // DECO-2：chunk 事件（UDecorationSubsystem 在 OnWorldBeginPlay 訂閱）
+    FOnChunkAppliedDelegate OnChunkApplied;
+    FOnChunkEvictedDelegate OnChunkEvicted;
+
     // V-4：體素注入後的 tile 銷毀（由 ADestructibleMeshActor::TriggerDestruction 呼叫）
     void TriggerVoxelDestruction(FIntVector BoundsMin, FIntVector BoundsMax,
                                  EDestroyReason Reason, float Intensity, FVector SlashDir);
@@ -135,6 +143,9 @@ private:
     // P-18: passthrough mesh state
     TObjectPtr<URealtimeMeshSimple> RMCPassthroughMesh;
     TSet<FIntVector> CreatedPassthroughChunks;
+
+    // DECO-2：上幀 active chunk 快照，用 set diff 偵測新增/淘汰 chunk 並廣播 delegate
+    TSet<FIntVector> PrevActiveChunks;
 
     void RebuildMegaChunk(FIntVector MegaChunkCoord);
     static int32 MegaFloorDiv(int32 a, int32 b);
