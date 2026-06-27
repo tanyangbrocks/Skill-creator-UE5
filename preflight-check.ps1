@@ -92,7 +92,12 @@ $ABeastHFile       = "$root\Source\SkillCreatorRuntime\Public\ABeastCharacter.h"
 $ABeastCppFile     = "$root\Source\SkillCreatorRuntime\Private\ABeastCharacter.cpp"
 $CreatureTypesFile = "$root\Source\SkillCreatorCore\Public\CreatureTypes.h"
 $CaGpuSimHFile     = "$root\Plugins\VoxelWorld\Source\VoxelWorld\Public\CaGpuSimulator.h"
-$NpcAICtrlCppFile  = "$root\Source\SkillCreatorRuntime\Private\ANPCAIController.cpp"
+$NpcAICtrlCppFile    = "$root\Source\SkillCreatorRuntime\Private\ANPCAIController.cpp"
+$GasEffectRegHFile   = "$root\Plugins\AbilitySystem\Source\AbilitySystem\Public\UGasEffectRegistry.h"
+$GasEffectRegCppFile = "$root\Plugins\AbilitySystem\Source\AbilitySystem\Private\UGasEffectRegistry.cpp"
+$GasAttrSetHFile     = "$root\Source\SkillCreatorRuntime\Public\SkillCreatorAttributeSet.h"
+$AbilitySystemUplugin = "$root\Plugins\AbilitySystem\AbilitySystem.uplugin"
+$DefaultGTFile       = "$root\Config\DefaultGameplayTags.ini"
 
 # ==================================================================
 # TIER 1 — 資料層 / VM 完整性（設計上要求逐一對應，差異即 bug）
@@ -200,15 +205,19 @@ if (Test-Path $ABeastCppFile) {
     }
 } else { Warn "ABeastCharacter.cpp 未找到 -- 跳過 7c" }
 
-# 7d（新發現，對應 Godot Check 16f：投射物命中需處理 Heavy 2x2 碰撞箱）
-if (Test-Path $ProjectileCppFile) {
-    $t = Read-UTF8 $ProjectileCppFile
-    if ($t -match 'EEnemyType::Heavy') {
-        Pass "ASpellProjectile 命中判定有處理 Heavy 碰撞箱"
+# 7d（Heavy 2x2 碰撞箱：邏輯在 ABeastCharacter::OccupiesTile，透過 ICombatant 介面供所有系統使用）
+# ASpellProjectile 呼叫 UCombatantRegistrySubsystem::FindHostileAt → ICombatant::OccupiesTile，
+# 所以正確位置是 ABeastCharacter::OccupiesTile，不是 ASpellProjectile 直接引用 EEnemyType::Heavy。
+if (Test-Path $ABeastCppFile) {
+    $t = Read-UTF8 $ABeastCppFile
+    $opts7d = [System.Text.RegularExpressions.RegexOptions]::Singleline
+    $m = [System.Text.RegularExpressions.Regex]::Match($t, 'OccupiesTile[^{]*\{(.+?)\n\}', $opts7d)
+    if ($m.Success -and $m.Groups[1].Value -match 'EEnemyType::Heavy') {
+        Pass "ABeastCharacter::OccupiesTile 含 Heavy 2x2 碰撞箱（透過 ICombatant 介面供 ASpellProjectile/AOE/MeleeHit 統一使用）"
     } else {
-        Fail "ASpellProjectile::FindEnemyAt 只比對單一 tile，沒有 EEnemyType::Heavy 2x2 碰撞箱 -- 投射物可能穿過 Heavy 敵人不觸發命中（對應 Godot Check 16f 同類錯誤）"
+        Fail "ABeastCharacter::OccupiesTile 沒有 EEnemyType::Heavy 2x2 碰撞箱 -- 所有透過 FindHostileAt()/OccupiesTile() 的命中判定都會穿透 Heavy 敵人（對應 Godot Check 16f 同類錯誤）"
     }
-} else { Warn "ASpellProjectile.cpp 未找到 -- 跳過 7d" }
+} else { Warn "ABeastCharacter.cpp 未找到 -- 跳過 7d" }
 
 # 7e（新發現，對應 Godot Check 17b：載入 chunk 後必須清 dirty flag）
 if (Test-Path $TileWorldCppFile) {
@@ -396,7 +405,9 @@ $coreCppFiles = Get-ChildItem -Recurse -Include "*.h" "$root\Source", "$root\Plu
     Where-Object { $_.FullName -ne $WorldScaleFile -and $_.FullName -notmatch 'RealtimeMeshComponent' }
 foreach ($f in $coreCppFiles) {
     $t = Read-UTF8 $f.FullName
-    if ($t -match '(?<!Oxygen|Stamina|Mental|Mood|Hunger|Thirst|Regen)\s*=\s*30\.f\s*;.*[Tt]ile') {
+    # 排除坡度角度值（如 MaxSlopeDeg = 30.f），只抓 TileSize 語境的硬寫數字
+    if ($t -match '(?<!Oxygen|Stamina|Mental|Mood|Hunger|Thirst|Regen)\s*=\s*30\.f\s*;.*[Tt]ile' -and
+        $t -notmatch 'SlopeDeg\s*=\s*30\.f') {
         $tileSizeDupes += $f.Name
     }
 }
@@ -608,6 +619,105 @@ if ($hasPrimaryElem -and -not $hasOldField) {
 } else {
     Fail "SpellArray 同時有 PrimaryElement() 和舊 SpellElement 欄位（殘留欄位未清除）"
 }
+
+# ==================================================================
+# TIER 1 — GAS-0~6 整合完整性
+# ==================================================================
+Head "13u. [Tier1] AbilitySystem.uplugin — GameplayAbilities 依賴宣告"
+if (Test-Path $AbilitySystemUplugin) {
+    $t = Read-UTF8 $AbilitySystemUplugin
+    if ($t -match '"GameplayAbilities"') {
+        Pass "AbilitySystem.uplugin 有 GameplayAbilities 依賴宣告（避免 UBT 漏掉連結）"
+    } else {
+        Fail "AbilitySystem.uplugin 缺 GameplayAbilities 依賴 -- Build.cs 有依賴但 .uplugin 未宣告，UBT 會警告且可能遺漏 DLL 連結"
+    }
+} else { Warn "AbilitySystem.uplugin 未找到 -- 跳過 13u" }
+
+Head "13v. [Tier1] USkillCreatorAttributeSet — GAS-1 四屬性完整性"
+if (Test-Path $GasAttrSetHFile) {
+    $t = Read-UTF8 $GasAttrSetHFile
+    $missingAttrs = @()
+    foreach ($attr in @('Health', 'MaxHealth', 'Mana', 'MaxMana')) {
+        if ($t -notmatch "FGameplayAttributeData\s+$attr\b") { $missingAttrs += $attr }
+    }
+    if ($missingAttrs) {
+        Fail "USkillCreatorAttributeSet 缺少 GAS-1 屬性: $($missingAttrs -join ', ')"
+    } else {
+        Pass "USkillCreatorAttributeSet 含 Health/MaxHealth/Mana/MaxMana 四屬性（GAS-1）"
+    }
+} else { Warn "SkillCreatorAttributeSet.h 未找到 -- 跳過 13v" }
+
+Head "13w. [Tier1] UGasEffectRegistry — CanApply 鍊式條件（GAS-6）"
+if (Test-Path $GasEffectRegCppFile) {
+    $t = Read-UTF8 $GasEffectRegCppFile
+    $hasFrozen = $t -match 'StatusTagLeaf\s*==\s*TEXT\("Frozen"\)'
+    $hasTerror = $t -match 'StatusTagLeaf\s*==\s*TEXT\("Terror"\)'
+    $hasFrostTag = $t -match 'Status\.Debuff\.Frost'
+    $hasFearTag  = $t -match 'Status\.Debuff\.Fear'
+    if ($hasFrozen -and $hasTerror -and $hasFrostTag -and $hasFearTag) {
+        Pass "UGasEffectRegistry::CanApply() 含 Frozen/Terror 鍊式條件（GAS-6）"
+    } else {
+        $missing = @()
+        if (!$hasFrozen)   { $missing += 'Frozen 條件' }
+        if (!$hasTerror)   { $missing += 'Terror 條件' }
+        if (!$hasFrostTag) { $missing += 'Status.Debuff.Frost tag 引用' }
+        if (!$hasFearTag)  { $missing += 'Status.Debuff.Fear tag 引用' }
+        Fail "UGasEffectRegistry::CanApply() 缺少 GAS-6 鍊式條件: $($missing -join ', ')"
+    }
+} else { Warn "UGasEffectRegistry.cpp 未找到 -- 跳過 13w" }
+
+Head "13x. [Tier1] DefaultGameplayTags.ini — 24 個 Status 標籤完整性"
+if (Test-Path $DefaultGTFile) {
+    $t = Read-UTF8 $DefaultGTFile
+    $expectedLeaves = @(
+        'Burn', 'Suffocation', 'Wet', 'Frost', 'Frozen', 'Poison',
+        'DarkErosion', 'InstantDeath', 'Paralysis', 'EnergySeal', 'SkillSeal', 'Bleed',
+        'Petrify', 'Stun', 'Cripple', 'Fear', 'Terror', 'Misfortune', 'MiningFatigue',
+        'SuperArmor', 'Phase', 'Invincible', 'ElemResBasic', 'ElemResAdvanced'
+    )
+    $missingTags = $expectedLeaves | Where-Object { $t -notmatch "Status\.[^.]+\.$_" }
+    if ($missingTags) {
+        Fail "DefaultGameplayTags.ini 缺少 Status tag（GAS Loose Tag 查詢會靜默失敗）: $($missingTags -join ', ')"
+    } else {
+        Pass "DefaultGameplayTags.ini 包含全部 $($expectedLeaves.Count) 個 Status.* 標籤（GAS-2/GAS-5 Loose Tag 同步正確）"
+    }
+} else { Warn "DefaultGameplayTags.ini 未找到 -- 跳過 13x" }
+
+Head "13y. [Tier1] UGasEffectRegistry GAllStatusLeaves — 數量與 DefaultGameplayTags 一致"
+if (Test-Path $GasEffectRegCppFile) {
+    $t = Read-UTF8 $GasEffectRegCppFile
+    # 只數 GAllStatusLeaves 陣列內部的 TEXT("...") 項目（不含 CanApply/Log 字串）
+    $opts13y = [System.Text.RegularExpressions.RegexOptions]::Singleline
+    $arrMatch = [System.Text.RegularExpressions.Regex]::Match($t, 'GAllStatusLeaves\s*\[\s*\]\s*=\s*\{([^}]+)\}', $opts13y)
+    if ($arrMatch.Success) {
+        $leafCount = ([System.Text.RegularExpressions.Regex]::Matches($arrMatch.Groups[1].Value, 'TEXT\("[^"]+"\)')).Count
+        if ($leafCount -eq 24) {
+            Pass "GAllStatusLeaves 共 24 個 leaf name，與 DefaultGameplayTags.ini 一致（GAS-3/GAS-4）"
+        } else {
+            Fail "GAllStatusLeaves 有 $leafCount 個 leaf name，不等於 24（預期對應 24 個 GE 資產 + 24 個 tag）"
+        }
+    } else { Warn "找不到 GAllStatusLeaves 陣列定義 -- 跳過 13y" }
+} else { Warn "UGasEffectRegistry.cpp 未找到 -- 跳過 13y" }
+
+Head "13z. [Tier1] USpecialStatusComponent GAS-5 — Loose Tag 同步四點完整性"
+$specialStatusCppFile = "$root\Source\SkillCreatorRuntime\Private\USpecialStatusComponent.cpp"
+if (Test-Path $specialStatusCppFile) {
+    $t = Read-UTF8 $specialStatusCppFile
+    $hasAdd    = $t -match 'AddLooseGameplayTag'
+    $hasRemove = $t -match 'RemoveLooseGameplayTag'
+    $hasResolve = $t -match 'ResolveLooseTag'
+    $hasGetStackCount = $t -match 'GetStackCount.*==\s*0'  # 0→1 first-stack guard
+    if ($hasAdd -and $hasRemove -and $hasResolve -and $hasGetStackCount) {
+        Pass "USpecialStatusComponent GAS-5 Loose Tag 同步完整（Add/Remove/ResolveLooseTag/0→1 守衛）"
+    } else {
+        $missing = @()
+        if (!$hasAdd)          { $missing += 'AddLooseGameplayTag' }
+        if (!$hasRemove)       { $missing += 'RemoveLooseGameplayTag' }
+        if (!$hasResolve)      { $missing += 'ResolveLooseTag' }
+        if (!$hasGetStackCount){ $missing += '0→1 first-stack guard (GetStackCount==0)' }
+        Fail "USpecialStatusComponent GAS-5 Loose Tag 同步不完整: $($missing -join ', ')"
+    }
+} else { Warn "USpecialStatusComponent.cpp 未找到 -- 跳過 13z" }
 
 # ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」

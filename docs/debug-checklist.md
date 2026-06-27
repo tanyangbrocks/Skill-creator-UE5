@@ -119,4 +119,42 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ---
 
-*最後更新：2026-06-25（A-1~A-4 全掃修復 A-3；B-1 掃描修復 SurfaceWaterPool WaterFill 符號錯誤；B-2 掃描 delegate 全部正常）*
+---
+
+## 類別 D：GAS Loose Tag 特有陷阱（2026-06-28 新增）
+
+### D-1 Loose Tag 引用計數失衡（stackable 狀態）
+
+**風險**：`UAbilitySystemComponent::AddLooseGameplayTag()` 用引用計數追蹤 tag。若對同一個 StatusId 的每一層 stack 都 Add，而 Remove 只在最後一層消失時呼叫一次，計數就是 N-1≠0，tag 永遠殘留。
+
+**正確模式**：
+- **Add**：只在 0→1 transition（`GetStackCount(Id) == 0`）時 Add
+- **Remove**：只在最後一層消失（`HasStatus(Id)` 為 false）時 Remove
+
+**掃法**：
+```powershell
+# 確認 ApplyStatus 的 AddLooseGameplayTag 前面有 GetStackCount == 0 守衛
+grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/USpecialStatusComponent.cpp
+```
+
+### D-2 Loose Tag 殭屍殘留（自然到期 / 批量清除路徑）
+
+**風險**：狀態效果有多條移除路徑，每一條都要同步清除 ASC loose tag：
+1. `RemoveStatus()`（玩家 API）
+2. `ProcessEffects()`（每幀到期）
+3. `ClearAll()`（死亡/場景切換）
+4. `ClearCategory()`（特定類別強制清除）
+
+漏掉任何一條都會讓 tag 在效果結束後繼續殘留，導致 `CanApply("Frozen")` 永遠回傳 true。
+
+**確認方式**：確認以上四個函式都有 `RemoveLooseGameplayTag` 呼叫（可用 `-ShowDetails` 的 13z 項目確認）。
+
+### D-3 即時效果（RemainingDuration≤0）不應加 tag
+
+**風險**：即時效果（如 `InstantDeath`）在 `OnApply()` 觸發後不進 `ActiveEffects`，也不會觸發 `RemoveStatus()`。若在這之前就 Add tag，tag 永遠無法被 Remove。
+
+**正確模式**：`AddLooseGameplayTag` 必須在 `if (Effect->RemainingDuration <= 0.f) return;` 判斷之後。
+
+---
+
+*最後更新：2026-06-28（A-1~A-4 全掃修復 A-3；B-1 掃描修復 SurfaceWaterPool WaterFill 符號錯誤；B-2 掃描 delegate 全部正常；GAS-0~6 整合；D-1~D-3 GAS Loose Tag 陷阱新增）*
