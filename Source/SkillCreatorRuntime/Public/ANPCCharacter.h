@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "AbilitySystemInterface.h"
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "ISnapshottable.h"
@@ -14,6 +15,8 @@
 #include "CreatureTypes.h"
 #include "ANPCCharacter.generated.h"
 
+class UAbilitySystemComponent;
+class USkillCreatorAttributeSet;
 class USkeletalMeshComponent;
 class UNPCMemoryComponent;
 class UNPCPerceptionComponent;
@@ -40,10 +43,20 @@ class SKILLCREATORRUNTIME_API ANPCCharacter
     , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
+    , public IAbilitySystemInterface
 {
     GENERATED_BODY()
 public:
     ANPCCharacter();
+
+    // ── GAS ───────────────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<UAbilitySystemComponent> AbilitySystemComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<USkillCreatorAttributeSet> Attrs;
+
+    virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="NPC")
     FNPCIdentity Identity;
@@ -87,6 +100,12 @@ public:
     // 放在 Pawn 本身而不是 BT NodeMemory，跟 AEnemy::PatrolDir 同一個慣例。
     UPROPERTY() FGridPos WanderTarget;
     UPROPERTY() bool     bHasWanderTarget = false;
+
+    // NAV-2: 路徑快取（UBTTask_WanderRandomly / NPCFollow / NPCFlee 讀寫）
+    TArray<FGridPos> CachedPath;
+    int32            PathStep    = 0;
+    FGridPos         CachedGoal;
+    bool             bPathDirty  = true;
     UPROPERTY() float    WanderRetryTimer = 0.f;
 
     // M-NPC-4: last LLM inference result (M-NPC-5 dialogue UI reads these).

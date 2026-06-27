@@ -92,4 +92,7 @@ enum class EOpCode : uint8
     RollbackSnapshot,
     AlternateJump,
     SetActivationMode,
+
+    // GAS-4: apply GameplayEffect to a target
+    ApplyGasEffect,
 };

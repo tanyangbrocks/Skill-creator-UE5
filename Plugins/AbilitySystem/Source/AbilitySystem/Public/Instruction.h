@@ -402,6 +402,18 @@ struct FSnapshotArgs
     UPROPERTY() FNumRef Radius;
 };
 
+// ApplyGasEffect (GAS-4)
+USTRUCT()
+struct FApplyGasEffectArgs
+{
+    GENERATED_BODY()
+    // GE asset leaf name, e.g. "Burn" -> /Game/Abilities/GE_Burn
+    UPROPERTY() FName  StatusTagLeaf;
+    UPROPERTY() float  Level = 1.f;
+    // true = apply to caster; false = apply to current ForEach entity
+    UPROPERTY() bool   bSelf = true;
+};
+
 // EdgeRising / EdgeFalling / EdgeSinglePulse
 // TargetPC：SinglePulse 用（ThenBranch 結尾地址）；EdgeRising/Falling 忽略
 USTRUCT()

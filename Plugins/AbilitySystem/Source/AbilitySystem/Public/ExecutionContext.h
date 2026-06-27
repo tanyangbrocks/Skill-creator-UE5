@@ -80,6 +80,8 @@ public:
                                                                         RegisterFilterFn;
     // InvokeTotem 分派（TryCast 時按技能整構設定，捕捉 slot 對照表）
     TFunction<void(FExecutionContext&, FName TotemName)>                InvokeTotemFn;
+    // GAS-4: EntityId==-1 -> caster; >=0 -> ForEach current entity
+    TFunction<void(FName StatusTagLeaf, float Level, int32 EntityId)>  ApplyGasEffectFn;
 
     // ── ForEach 實體迭代 ──────────────────────────────────────────
     TArray<FEntityIterFrame> EntityIterators;

@@ -211,6 +211,37 @@ float FMaterialRegistry::GetBrittleness(EMaterialType Mat)
     return GMatData[ID].Brittleness;
 }
 
+// PHYS-1：EMaterialType → /Game/PhysicalMaterials/PM_{Name} 軟參照路徑
+// 命名對應 generate_physical_materials.py 建立的資產名稱
+// 液體/氣體材質保留路徑（PM 佔位），浮力仍由 APhysicalItemActor::Tick 處理
+FSoftObjectPath FMaterialRegistry::GetPhysicalMaterialPath(EMaterialType Mat)
+{
+#define PHYS_MAT_PATH(Name) FSoftObjectPath(TEXT("/Game/PhysicalMaterials/" Name "." Name))
+    switch (Mat)
+    {
+    case EMaterialType::Stone_Cobble:     return PHYS_MAT_PATH("PM_Stone_Cobble");
+    case EMaterialType::Dirt_Dry:         return PHYS_MAT_PATH("PM_Dirt_Dry");
+    case EMaterialType::Grass:            return PHYS_MAT_PATH("PM_Grass");
+    case EMaterialType::Sand:             return PHYS_MAT_PATH("PM_Sand");
+    case EMaterialType::Water:            return PHYS_MAT_PATH("PM_Water");
+    case EMaterialType::Lava:             return PHYS_MAT_PATH("PM_Lava");
+    case EMaterialType::Wood:             return PHYS_MAT_PATH("PM_Wood");
+    case EMaterialType::Leaves:           return PHYS_MAT_PATH("PM_Leaves");
+    case EMaterialType::Ore_Iron:         return PHYS_MAT_PATH("PM_Ore_Iron");
+    case EMaterialType::Ore_Gold:         return PHYS_MAT_PATH("PM_Ore_Gold");
+    case EMaterialType::Fire:             return PHYS_MAT_PATH("PM_Fire");
+    case EMaterialType::Steam:            return PHYS_MAT_PATH("PM_Steam");
+    case EMaterialType::Ash:              return PHYS_MAT_PATH("PM_Ash");
+    case EMaterialType::Ore_Coal:         return PHYS_MAT_PATH("PM_Ore_Coal");
+    case EMaterialType::Ore_Copper:       return PHYS_MAT_PATH("PM_Ore_Copper");
+    case EMaterialType::Ore_MagicCrystal: return PHYS_MAT_PATH("PM_Ore_MagicCrystal");
+    case EMaterialType::Fixture:          return PHYS_MAT_PATH("PM_Fixture");
+    case EMaterialType::FallenLeaf:       return PHYS_MAT_PATH("PM_FallenLeaf");
+    default:                              return PHYS_MAT_PATH("PM_Default");
+    }
+#undef PHYS_MAT_PATH
+}
+
 // ── 預設掉落查找（對應 Godot MaterialData.DefaultDrops）─────────────────
 TArray<FItemDrop> FMaterialRegistry::GetDefaultDrops(EMaterialType Mat)
 {

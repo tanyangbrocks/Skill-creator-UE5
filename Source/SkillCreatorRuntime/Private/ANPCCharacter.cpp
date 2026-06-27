@@ -1,4 +1,6 @@
 #include "ANPCCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "SkillCreatorAttributeSet.h"
 #include "FCombatResolver.h"
 #include "UCombatantRegistrySubsystem.h"
 #include "UElementalAuraComponent.h"
@@ -36,6 +38,9 @@ ANPCCharacter::ANPCCharacter()
     PerceptionComp    = CreateDefaultSubobject<UNPCPerceptionComponent>(TEXT("PerceptionComp"));
     AuraComp          = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     SpecialStatusComp = CreateDefaultSubobject<USpecialStatusComponent>(TEXT("SpecialStatusComp"));
+    AbilitySystemComp = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComp"));
+    AbilitySystemComp->SetIsReplicated(false);
+    Attrs             = CreateDefaultSubobject<USkillCreatorAttributeSet>(TEXT("AttributeSet"));
 
     // BP_NPCAIController.uasset 尚未建立（需在 Editor 手動建立後賦值），
     // Cook 時 ConstructorHelpers 找不到資產會觸發 CDO Error 使打包失敗。
@@ -43,6 +48,11 @@ ANPCCharacter::ANPCCharacter()
     AIControllerClass = ANPCAIController::StaticClass();
 
     UniqueId = NextId++;
+}
+
+UAbilitySystemComponent* ANPCCharacter::GetAbilitySystemComponent() const
+{
+    return AbilitySystemComp;
 }
 
 void ANPCCharacter::BeginPlay()

@@ -278,6 +278,15 @@ void FSpellCompiler::EmitBlock(const FBlockNode& Block,
             break;
         }
 
+        // GAS-4: ApplyStatus → ApplyGasEffect opcode
+        case EBlockType::ApplyStatus:
+        {
+            FApplyGasEffectArgs A;
+            ReadArgs(Block, A);
+            Code.Add(MakeI(EOpCode::ApplyGasEffect, A));
+            break;
+        }
+
         // ── 純 UI 積木（不產生指令）──────────────────────────────
         case EBlockType::Discard:
         case EBlockType::EffectLabel:

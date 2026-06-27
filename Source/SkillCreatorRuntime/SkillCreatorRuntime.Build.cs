@@ -6,8 +6,9 @@ public class SkillCreatorRuntime : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] {
-            "Core", "CoreUObject", "Engine", "InputCore", "GameplayTags",
-            "EnhancedInput", "AIModule", "NavigationSystem", "GameplayTasks",
+            "Core", "CoreUObject", "Engine", "InputCore",
+            "GameplayAbilities", "GameplayTags", "GameplayTasks",
+            "EnhancedInput", "AIModule", "NavigationSystem",
             "SkillCreatorCore", "AbilitySystem", "VoxelWorld", "NPCBrain",
             "Json", "JsonUtilities",
             "UMG", "SlateCore", "Slate"

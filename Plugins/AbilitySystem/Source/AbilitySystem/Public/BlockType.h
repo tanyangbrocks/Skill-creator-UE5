@@ -132,4 +132,7 @@ enum class EBlockType : uint8
     // ── 技能因子／刻印 ────────────────────────────────────
     Totem,
     Engraving,
+
+    // GAS-4: apply a status GameplayEffect
+    ApplyStatus,
 };

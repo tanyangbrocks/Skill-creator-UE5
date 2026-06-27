@@ -1,4 +1,6 @@
 #include "ABeastCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "SkillCreatorAttributeSet.h"
 #include "UElementalAuraComponent.h"
 #include "USpecialStatusComponent.h"
 #include "AEnemyAIController.h"
@@ -21,6 +23,9 @@ ABeastCharacter::ABeastCharacter()
     PrimaryActorTick.bCanEverTick = false;
     AuraComp          = CreateDefaultSubobject<UElementalAuraComponent>(TEXT("AuraComp"));
     SpecialStatusComp = CreateDefaultSubobject<USpecialStatusComponent>(TEXT("SpecialStatusComp"));
+    AbilitySystemComp = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComp"));
+    AbilitySystemComp->SetIsReplicated(false);
+    Attrs             = CreateDefaultSubobject<USkillCreatorAttributeSet>(TEXT("AttributeSet"));
     UniqueId = ++NextId;
 
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
@@ -67,6 +72,11 @@ void ABeastCharacter::ApplyBodyColor()
     MID->SetVectorParameterValue(TEXT("Color"),     Col);
     MID->SetVectorParameterValue(TEXT("BaseColor"), Col);
     MID->SetVectorParameterValue(TEXT("Tint"),      Col);
+}
+
+UAbilitySystemComponent* ABeastCharacter::GetAbilitySystemComponent() const
+{
+    return AbilitySystemComp;
 }
 
 void ABeastCharacter::BeginPlay()

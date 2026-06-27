@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemInterface.h"
 #include "AWeedEntity.h"
 
 struct FInputActionValue;
@@ -56,6 +57,9 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttackHit, EAttackType, AActor*);
 // 玩家角色（對應 Godot PlayerController.cs 角色層）。
 // EntityId 固定 -1；HP/MP 從 Stats 初始化。
 // 施法（SpellCaster）M-5；庫存 → M-7；生存系統 → M-7。
+class UAbilitySystemComponent;
+class USkillCreatorAttributeSet;
+
 UCLASS()
 class SKILLCREATORRUNTIME_API ASkillCreatorCharacter
     : public ACharacter
@@ -63,10 +67,20 @@ class SKILLCREATORRUNTIME_API ASkillCreatorCharacter
     , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
+    , public IAbilitySystemInterface
 {
     GENERATED_BODY()
 public:
     ASkillCreatorCharacter();
+
+    // ── GAS ───────────────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<UAbilitySystemComponent> AbilitySystemComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<USkillCreatorAttributeSet> Attrs;
+
+    virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
     // ── 基礎數值 ──────────────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats")

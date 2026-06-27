@@ -1,4 +1,6 @@
 #include "ASkillCreatorCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "SkillCreatorAttributeSet.h"
 #include "APhysicalItemActor.h"
 #include "ADebrisActor.h"
 #include "FCombatResolver.h"
@@ -83,6 +85,11 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
 
     // ACharacter 預設 Mesh Z = -88cm；修正為我們的 CapsuleHalfHeight（-100cm @ Grain=16）
     GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -WorldScale::CapsuleHalfHeight));
+
+    // GAS-1：掛載 ASC + AttributeSet（單機，不複製）
+    AbilitySystemComp = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComp"));
+    AbilitySystemComp->SetIsReplicated(false);
+    Attrs = CreateDefaultSubobject<USkillCreatorAttributeSet>(TEXT("AttributeSet"));
     // Yaw = -90 度（Mixamo +Y forward → UE5 +X forward）已由 ACharacter 設定，不須重複
     GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
 
@@ -111,6 +118,11 @@ ASkillCreatorCharacter::ASkillCreatorCharacter()
     PotionBagComp   = CreateDefaultSubobject<UPotionBagComponent>(TEXT("PotionBagComp"));
     MapComp         = CreateDefaultSubobject<UMapComponent>(TEXT("MapComp"));
     AfterimageComp  = CreateDefaultSubobject<UAfterimageFXComponent>(TEXT("AfterimageComp"));
+}
+
+UAbilitySystemComponent* ASkillCreatorCharacter::GetAbilitySystemComponent() const
+{
+    return AbilitySystemComp;
 }
 
 void ASkillCreatorCharacter::BeginPlay()

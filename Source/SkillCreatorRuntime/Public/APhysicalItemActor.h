@@ -41,12 +41,7 @@ private:
     int32   Count   = 1;
     bool    bBeingCarried = false;
 
-    // 手動物理狀態
-    FVector Velocity  = FVector::ZeroVector;  // cm/s
-    bool    bLanded   = false;
-
-    void PhysicsTick(float DeltaTime);
-    void HandleTileCollision(int32 VoxX, int32 VoxY, int32 VoxZ);
-    bool IsSolidAt(int32 VoxX, int32 VoxY, int32 VoxZ) const;
-    float GetBelowRestitution() const;
+    // PHYS-3: Chaos Physics 取代手動模擬（Velocity/bLanded 已移除）
+    // PHYS-4: 液體浮力狀態（Tick 查 tile → SetLinearDamping + AddForce）
+    bool bIsInLiquid = false;
 };

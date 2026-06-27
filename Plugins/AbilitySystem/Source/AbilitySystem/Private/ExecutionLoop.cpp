@@ -1090,6 +1090,21 @@ void FExecutionLoop::Execute(const FInstruction& Instr, FExecutionContext& Ctx)
             break;
         }
 
+        // GAS-4: apply a GameplayEffect via UGasEffectRegistry
+        case EOpCode::ApplyGasEffect:
+        {
+            const FApplyGasEffectArgs* A = Instr.Payload.GetPtr<FApplyGasEffectArgs>();
+            if (A && Ctx.ApplyGasEffectFn)
+            {
+                int32 EntityId = -1;  // -1 == caster (self)
+                if (!A->bSelf && Ctx.CurrentIterEntity.IsSet())
+                    EntityId = Ctx.CurrentIterEntity.GetValue().Id;
+                Ctx.ApplyGasEffectFn(A->StatusTagLeaf, A->Level, EntityId);
+            }
+            ++Ctx.PC;
+            break;
+        }
+
         default:
             UE_LOG(LogTemp, Warning, TEXT("[ExecutionLoop] Unknown OpCode %d at PC=%d — instruction skipped"),
                 (int32)Instr.OpCode, Ctx.PC);

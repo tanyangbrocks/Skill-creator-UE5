@@ -12,8 +12,15 @@ APhysicalItemActor::APhysicalItemActor()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    // PHYS-3: Chaos Physics 碰撞 + 模擬（取代舊 NoCollision + 手動 PhysicsTick）
     MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComp->SetCollisionObjectType(ECC_PhysicsBody);
+    MeshComp->SetCollisionResponseToAllChannels(ECR_Block);
+    MeshComp->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+    MeshComp->SetSimulatePhysics(true);
+    MeshComp->SetLinearDamping(0.5f);
+    MeshComp->SetAngularDamping(1.0f);
     RootComponent = MeshComp;
 
     // 撿取偵測用球形碰撞（Query Only，不做物理模擬）
@@ -32,10 +39,8 @@ void APhysicalItemActor::BeginPlay()
 
 void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVelocityCms)
 {
-    ItemId   = InItemId;
-    Count    = InCount;
-    Velocity = InitialVelocityCms;
-    bLanded  = false;
+    ItemId = InItemId;
+    Count  = InCount;
 
     // ── 展示 Mesh 三層 fallback ─────────────────────────────────────────
     // 1. FItemData::MeshPath（明確設定，最優先）
@@ -78,6 +83,10 @@ void APhysicalItemActor::Init(EItemId InItemId, int32 InCount, FVector InitialVe
 
     if (Mesh)
         MeshComp->SetStaticMesh(Mesh);
+
+    // PHYS-3: 初始速度由 Chaos 接管
+    if (!InitialVelocityCms.IsZero())
+        MeshComp->SetPhysicsLinearVelocity(InitialVelocityCms);
 }
 
 float APhysicalItemActor::GetMass() const
@@ -95,8 +104,9 @@ void APhysicalItemActor::OnCarried(ASkillCreatorCharacter* InCarrier)
 {
     bBeingCarried = true;
     Carrier       = InCarrier;
-    Velocity      = FVector::ZeroVector;
-    bLanded       = false;
+    // PHYS-3: 關閉 Chaos 模擬，物品跟隨角色手持位置
+    MeshComp->SetSimulatePhysics(false);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     SetActorEnableCollision(false);
 }
 
@@ -104,9 +114,12 @@ void APhysicalItemActor::OnReleased(FVector ThrowVelocityCms)
 {
     bBeingCarried = false;
     Carrier       = nullptr;
-    Velocity      = ThrowVelocityCms;
-    bLanded       = false;  // 放下後重新受重力，由 PhysicsTick 決定何時落地
+    // PHYS-3: 重啟 Chaos 模擬，施加投擲速度
     SetActorEnableCollision(true);
+    MeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    MeshComp->SetSimulatePhysics(true);
+    if (!ThrowVelocityCms.IsZero())
+        MeshComp->SetPhysicsLinearVelocity(ThrowVelocityCms);
 }
 
 void APhysicalItemActor::Tick(float DeltaTime)
@@ -126,67 +139,25 @@ void APhysicalItemActor::Tick(float DeltaTime)
         return;
     }
 
-    if (!bLanded)
-        PhysicsTick(DeltaTime);
-}
-
-void APhysicalItemActor::PhysicsTick(float DeltaTime)
-{
-    // 重力（UE5 Z=上，重力方向 -Z）
-    Velocity.Z -= WorldScale::GlobalGravityScale * 980.f * WorldScale::GravityScaleMult * DeltaTime;
-
-    FVector NewPos = GetActorLocation() + Velocity * DeltaTime;
-    FGridPos NewTile = WorldScale::WorldToTile(NewPos);
-
-    // 檢查目標格是否為實體
-    if (IsSolidAt(NewTile.X, NewTile.Y, NewTile.Z))
+    // PHYS-4: 液體浮力——查詢當前 tile，若為 Liquid 調高阻尼 + 施加向上力
+    if (CachedVoxelWorld.IsValid())
     {
-        HandleTileCollision(NewTile.X, NewTile.Y, NewTile.Z);
-    }
-    else
-    {
-        // 浮力：腳下是液體材質時施加向上力抵消重力
-        FGridPos BelowTile = WorldScale::WorldToTile(NewPos - FVector(0.f, 0.f, WorldScale::TileSizeCm * 0.5f));
-        if (CachedVoxelWorld.IsValid())
+        FGridPos CurTile = WorldScale::WorldToTile(GetActorLocation());
+        FTileCell Cell   = CachedVoxelWorld->GetTileWorld()->GetCell(CurTile.X, CurTile.Y, CurTile.Z);
+        bool bNowInLiquid = (FMaterialRegistry::GetPhysics(Cell.MaterialID) == EPhysicsCategory::Liquid);
+
+        if (bNowInLiquid != bIsInLiquid)
         {
-            FTileCell BelowCell = CachedVoxelWorld->GetTileWorld()->GetCell(BelowTile.X, BelowTile.Y, BelowTile.Z);
-            EPhysicsCategory PhysCat = FMaterialRegistry::GetPhysics(BelowCell.MaterialID);
-            if (PhysCat == EPhysicsCategory::Liquid)
-                Velocity.Z += WorldScale::GlobalGravityScale * 980.f * WorldScale::GravityScaleMult * DeltaTime * 1.5f;
+            bIsInLiquid = bNowInLiquid;
+            MeshComp->SetLinearDamping(bIsInLiquid  ? 3.0f : 0.5f);
+            MeshComp->SetAngularDamping(bIsInLiquid ? 3.0f : 1.0f);
         }
-        SetActorLocation(NewPos);
+
+        if (bIsInLiquid)
+        {
+            // 向上加速度 = 1.2× 重力 → 淨上浮 0.2g（bAccelChange=true 不乘質量）
+            float BuoyancyAccel = -GetWorld()->GetGravityZ() * 1.2f;
+            MeshComp->AddForce(FVector(0.f, 0.f, BuoyancyAccel), NAME_None, /*bAccelChange=*/true);
+        }
     }
-}
-
-void APhysicalItemActor::HandleTileCollision(int32 VoxX, int32 VoxY, int32 VoxZ)
-{
-    // 取腳下 tile 的 Restitution
-    float R = GetBelowRestitution();
-    Velocity.Z = -Velocity.Z * R;
-    Velocity.X *= 0.8f;
-    Velocity.Y *= 0.8f;
-    if (FMath::Abs(Velocity.Z) < 5.f)
-    {
-        Velocity = FVector::ZeroVector;
-        bLanded  = true;
-    }
-}
-
-bool APhysicalItemActor::IsSolidAt(int32 VoxX, int32 VoxY, int32 VoxZ) const
-{
-    if (!CachedVoxelWorld.IsValid()) return false;
-    FTileCell Cell = CachedVoxelWorld->GetTileWorld()->GetCell(VoxX, VoxY, VoxZ);
-    if (Cell.MaterialID == 0) return false;  // Air
-    // 液體格可穿過（浮力由 PhysicsTick 在 else 分支處理）
-    return FMaterialRegistry::GetPhysics(Cell.MaterialID) != EPhysicsCategory::Liquid;
-}
-
-float APhysicalItemActor::GetBelowRestitution() const
-{
-    if (!CachedVoxelWorld.IsValid()) return 0.f;
-    FVector BelowPos = GetActorLocation() - FVector(0.f, 0.f, WorldScale::TileSizeCm * 0.6f);
-    FGridPos BelowTile = WorldScale::WorldToTile(BelowPos);
-    FTileCell Cell = CachedVoxelWorld->GetTileWorld()->GetCell(BelowTile.X, BelowTile.Y, BelowTile.Z);
-    EMaterialType Mat = static_cast<EMaterialType>(Cell.MaterialID);
-    return FMaterialRegistry::Get(Mat).Restitution;
 }

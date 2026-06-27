@@ -1,6 +1,8 @@
 #include "USpellCaster.h"
 #include "ICombatant.h"
 #include "ASkillCreatorCharacter.h"
+#include "AbilitySystemComponent.h"
+#include "UGasEffectRegistry.h"
 #include "AEnemy.h"
 #include "UEquipmentComponent.h"
 #include "ItemRegistry.h"
@@ -1109,6 +1111,32 @@ TUniquePtr<FExecutionContext> USpellCaster::BuildContext(const FSpellArray& Spel
     {
         if (Char) Char->ActionBus.RegisterFilter(FilterType, Mode, bOneShot, Threshold, CapValue);
     };
+
+    // GAS-4: apply a GameplayEffect from the registry
+    {
+        TWeakObjectPtr<ASkillCreatorCharacter> WeakChar(Char);
+        TWeakObjectPtr<UGasEffectRegistry> WeakReg(UGasEffectRegistry::Get(this));
+        Ctx->ApplyGasEffectFn = [WeakChar, WeakReg](FName TagLeaf, float Level, int32 EntityId)
+        {
+            UGasEffectRegistry* Reg = WeakReg.Get();
+            if (!Reg) return;
+            TSubclassOf<UGameplayEffect> GEClass = Reg->Find(TagLeaf);
+            if (!GEClass) return;
+
+            UAbilitySystemComponent* TargetASC = nullptr;
+            if (EntityId < 0)
+            {
+                // Self: apply to caster
+                ASkillCreatorCharacter* C = WeakChar.Get();
+                if (C) TargetASC = C->GetAbilitySystemComponent();
+            }
+            // EntityId >= 0 (ForEach entity) — TODO: GAS-5.5 when ICombatant gets GetEntityId()
+            if (!TargetASC) return;
+
+            FGameplayEffectContextHandle EffCtx = TargetASC->MakeEffectContext();
+            TargetASC->ApplyGameplayEffectToSelf(GEClass.GetDefaultObject(), Level, EffCtx);
+        };
+    }
 
     {
         auto SlotLookup = MakeShared<TMap<FName, FSpellSlot>>();

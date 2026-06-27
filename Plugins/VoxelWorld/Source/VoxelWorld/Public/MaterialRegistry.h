@@ -99,4 +99,9 @@ public:
     static TArray<FItemDrop>      GetDefaultDrops(EMaterialType Mat);
     static EItemId                GetFragmentItem(EMaterialType Mat);
     static float                  GetBrittleness(EMaterialType Mat);
+
+    // PHYS-1：查 /Game/PhysicalMaterials/PM_{MatName} 資產的軟參照路徑
+    // 供 PHYS-2 GreedyMesher 為 RMC section 指定 Physical Material，
+    // 以及 PHYS-3 APhysicalItemActor 在攜帶/落地時查詢 Restitution
+    static FSoftObjectPath        GetPhysicalMaterialPath(EMaterialType Mat);
 };

@@ -1,11 +1,12 @@
 #include "UBTTask_MoveOnGrid.h"
 #include "BehaviorTree/BehaviorTreeComponent.h"
 #include "AIController.h"
-#include "AEnemy.h"
+#include "ABeastCharacter.h"
 #include "ASkillCreatorCharacter.h"
 #include "AVoxelWorldActor.h"
 #include "MaterialType.h"
-#include "Algo/Reverse.h"
+#include "WorldScale.h"
+#include "TilePathfinder.h"
 
 UBTTask_MoveOnGrid::UBTTask_MoveOnGrid()
 {
@@ -18,7 +19,7 @@ EBTNodeResult::Type UBTTask_MoveOnGrid::ExecuteTask(UBehaviorTreeComponent& Owne
     AAIController* AIC = OwnerComp.GetAIOwner();
     if (!AIC) return EBTNodeResult::Failed;
 
-    AEnemy* Enemy = Cast<AEnemy>(AIC->GetPawn());
+    ABeastCharacter* Enemy = Cast<ABeastCharacter>(AIC->GetPawn());
     if (!Enemy) return EBTNodeResult::Failed;
 
     UBlackboardComponent* BB = OwnerComp.GetBlackboardComponent();
@@ -33,8 +34,12 @@ EBTNodeResult::Type UBTTask_MoveOnGrid::ExecuteTask(UBehaviorTreeComponent& Owne
     if (Start == Goal) return EBTNodeResult::Succeeded;
 
     FTileWorld3D* TW = nullptr;
+    int32 WorldH = WorldScale::DefaultWorldHeight;
     if (AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(AIC->GetWorld()))
+    {
         TW = VW->GetTileWorld();
+        if (TW) WorldH = TW->Height;
+    }
 
     // I-9：四種 AI 行為分支（對應 Godot Enemy.cs:191-340 UpdateMelee/Ranged/Patrol/Heavy）。
     // Manhattan 距離 + AttackRange/DetectRange 門檻，對應 Enemy.cs:177-186 dist 計算
@@ -82,7 +87,7 @@ EBTNodeResult::Type UBTTask_MoveOnGrid::ExecuteTask(UBehaviorTreeComponent& Owne
         if (TryStepXZ(Enemy->PatrolDir, 0))
         {
             Enemy->GridPosition = Start;
-            Enemy->SetActorLocation(FVector((float)Start.X, (float)Start.Y, (float)Start.Z));
+            Enemy->SetActorLocation(WorldScale::TileToWorld(Start, WorldH));
             if (FMath::Abs(Start.X - Enemy->SpawnGridPos.X) >= PatrolRange)
                 Enemy->PatrolDir = -Enemy->PatrolDir;
         }
@@ -104,84 +109,43 @@ EBTNodeResult::Type UBTTask_MoveOnGrid::ExecuteTask(UBehaviorTreeComponent& Owne
             if (TryStepXZ(dx, dz))
             {
                 Enemy->GridPosition = Start;
-                Enemy->SetActorLocation(FVector((float)Start.X, (float)Start.Y, (float)Start.Z));
+                Enemy->SetActorLocation(WorldScale::TileToWorld(Start, WorldH));
             }
             return EBTNodeResult::Succeeded;
         }
     }
 
-    // ── 一般追擊：BFS（XZ 平面，固定 Y = 敵人當前高度）── Melee/Heavy 預設、
-    // Ranged 在 [RangedPreferredDist, DetectRange] 區間內走這條路（對應 Enemy.cs:248-264）
-    const int32 MaxIter = 512;
-    const int32 EY      = Start.Y;
-
-    // CameFrom: key = (X,Z), value = parent (X,Z)
-    // FIntPoint has GetTypeHash in CoreMinimal
-    TMap<FIntPoint, FIntPoint> CameFrom;
-    TArray<FGridPos>            Queue;
-    Queue.Reserve(MaxIter);
-    Queue.Add(Start);
-    CameFrom.Add(FIntPoint(Start.X, Start.Z), FIntPoint(Start.X, Start.Z));
-
-    bool  bFound = false;
-    int32 QHead  = 0;
-
-    const int32 DX[4] = { 1, -1, 0,  0 };
-    const int32 DZ[4] = { 0,  0, 1, -1 };
-
-    while (QHead < Queue.Num() && QHead < MaxIter)
+    // ── 一般追擊：3D A*（對應 Enemy.cs:248-264）────────────────────────────────
+    // 路徑快取：目標未變且路徑未失效時沿快取走，不重算
+    // 下一步 tile 不再可通行（玩家放置方塊或地形塌陷）→ 強制重算
+    const int32 NextStep = Enemy->PathStep + 1;
+    if (!Enemy->bPathDirty && TW && Enemy->CachedPath.IsValidIndex(NextStep))
     {
-        FGridPos Cur = Queue[QHead++];
-
-        if (Cur.X == Goal.X && Cur.Z == Goal.Z)
-        {
-            bFound = true;
-            break;
-        }
-
-        for (int32 i = 0; i < 4; ++i)
-        {
-            int32    NX  = Cur.X + DX[i];
-            int32    NZ  = Cur.Z + DZ[i];
-            FIntPoint NK(NX, NZ);
-
-            if (CameFrom.Contains(NK)) continue;
-
-            // 目標格一律可達；否則查 tile 是否為 Air（無 TileWorld 時忽略碰撞）
-            bool bPassable = (NX == Goal.X && NZ == Goal.Z)
-                          || (!TW)
-                          || (TW->GetTile(NX, EY, NZ) == EMaterialType::Air);
-            if (!bPassable) continue;
-
-            CameFrom.Add(NK, FIntPoint(Cur.X, Cur.Z));
-            Queue.Add(FGridPos(NX, EY, NZ));
-        }
+        const FGridPos& NS = Enemy->CachedPath[NextStep];
+        if (TW->GetTile(NS.X, NS.Y, NS.Z) != EMaterialType::Air)
+            Enemy->bPathDirty = true;
     }
 
-    if (!bFound) return EBTNodeResult::Succeeded;   // 找不到路徑，原地等待
-
-    // ── 從 CameFrom 反推路徑 ─────────────────────────────────────
-    TArray<FGridPos> Path;
+    const bool bGoalChanged = (Enemy->CachedGoal != Goal);
+    if (bGoalChanged || Enemy->bPathDirty || Enemy->PathStep >= Enemy->CachedPath.Num() - 1)
     {
-        int32 CX = Goal.X, CZ = Goal.Z;
-        while (!(CX == Start.X && CZ == Start.Z))
-        {
-            Path.Add(FGridPos(CX, EY, CZ));
-            FIntPoint Prev = CameFrom[FIntPoint(CX, CZ)];
-            CX = Prev.X;
-            CZ = Prev.Y;
-        }
-        Path.Add(Start);
-        Algo::Reverse(Path);
+        const FTilePathRequest Req{ Start, Goal, TW, 1024, /*JumpHeight=*/1, /*MaxFall=*/8 };
+        Enemy->CachedPath  = TW ? FTilePathfinder::FindPath(Req) : TArray<FGridPos>{};
+        Enemy->CachedGoal  = Goal;
+        Enemy->PathStep    = 0;
+        Enemy->bPathDirty  = false;
     }
 
-    // ── 沿路徑移動 StepsPerExecution 格 ──────────────────────────
-    int32 Steps = FMath::Min(StepsPerExecution, Path.Num() - 1);
+    if (Enemy->CachedPath.Num() < 2) return EBTNodeResult::Succeeded;  // 找不到路徑，原地等待
+
+    // ── 沿快取路徑移動 StepsPerExecution 格 ──────────────────────
+    const int32 Steps = FMath::Min(StepsPerExecution, Enemy->CachedPath.Num() - 1 - Enemy->PathStep);
     for (int32 s = 0; s < Steps; ++s)
     {
-        const FGridPos& NextPos = Path[s + 1];
+        ++Enemy->PathStep;
+        const FGridPos& NextPos = Enemy->CachedPath[Enemy->PathStep];
         Enemy->GridPosition = NextPos;
-        Enemy->SetActorLocation(FVector((float)NextPos.X, (float)NextPos.Y, (float)NextPos.Z));
+        Enemy->SetActorLocation(WorldScale::TileToWorld(NextPos, WorldH));
     }
 
     return EBTNodeResult::Succeeded;

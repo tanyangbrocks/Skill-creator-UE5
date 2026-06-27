@@ -6,7 +6,7 @@ public class SkillCreatorCore : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] {
-            "Core", "CoreUObject", "Engine", "StructUtils"
+            "Core", "CoreUObject", "Engine", "StructUtils", "GameplayTags"
         });
     }
 }

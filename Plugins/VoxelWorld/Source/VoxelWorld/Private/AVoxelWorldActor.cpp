@@ -13,6 +13,7 @@
 #include "MaterialType.h"
 #include "MaterialRegistry.h"
 #include "DrawDebugHelpers.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 // ============================================================
 // 構造
@@ -181,6 +182,15 @@ void AVoxelWorldActor::InitializeWorldState()
     // Registry 未建立或某 slot 為 null 時，fallback 到 VoxelMaterial。
     RMCMesh = RMCComp->InitializeRealtimeMesh<URealtimeMeshSimple>();
     RMCPassthroughMesh = RMCPassthroughComp->InitializeRealtimeMesh<URealtimeMeshSimple>();
+
+    // PHYS-2：為體素世界主碰撞 RMC 指定預設 Physical Material（PM_Stone_Cobble，R=0.30）。
+    // 不做 per-tile PM（RMC 無 per-section 物理材質 API）；液體浮力由 APhysicalItemActor::Tick 處理。
+    if (UPhysicalMaterial* VoxelDefaultPM = Cast<UPhysicalMaterial>(
+            StaticLoadObject(UPhysicalMaterial::StaticClass(), nullptr,
+                TEXT("/Game/PhysicalMaterials/PM_Stone_Cobble.PM_Stone_Cobble"))))
+    {
+        RMCComp->SetPhysMaterialOverride(VoxelDefaultPM);
+    }
     const int32 MatCount = static_cast<int32>(EMaterialType::Count);
     for (int32 i = 0; i < MatCount; ++i)
     {

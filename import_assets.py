@@ -77,10 +77,17 @@ else:
         t.set_editor_property('save',             True)
 
         o = unreal.FbxImportUI()
-        o.set_editor_property('import_mesh',       False)
-        o.set_editor_property('import_animations', True)
-        o.set_editor_property('import_as_skeletal',True)
-        o.set_editor_property('skeleton',          skeleton)
+        # Legacy FBX Importer（Interchange 已停用）直接支援此組合：
+        # import_as_skeletal=True + import_mesh=False + import_animations=True + skeleton
+        o.set_editor_property('import_mesh',        False)
+        o.set_editor_property('import_as_skeletal', True)
+        o.set_editor_property('import_animations',  True)
+        o.set_editor_property('skeleton',           skeleton)
+
+        anim_data = unreal.FbxAnimSequenceImportData()
+        anim_data.set_editor_property('remove_redundant_keys', True)
+        o.set_editor_property('anim_sequence_import_data', anim_data)
+
         t.set_editor_property('options', o)
         anim_tasks.append(t)
 

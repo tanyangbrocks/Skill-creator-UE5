@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "IElementalTarget.h"
 
 // ── 特殊狀態類別 ────────────────────────────────────────────────────────────
@@ -77,7 +78,8 @@ public:
 // UI 顯示用快照（由 USpecialStatusComponent::GetStatusSnapshots 生成）
 struct FStatusDisplaySnapshot
 {
-    FName             StatusId;
+    FName             StatusId;           // 圖示路徑 STA_{StatusId}，UI 讀這個
+    FGameplayTag      StatusTag;          // GAS-2：供未來 UI 查詢 ASC tag hierarchy
     FText             DisplayName;
     EAbnormalPolarity Polarity          = EAbnormalPolarity::Negative;
     float             RemainingDuration = 0.f;

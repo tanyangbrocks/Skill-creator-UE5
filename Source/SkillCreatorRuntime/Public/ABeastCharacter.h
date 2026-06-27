@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "AbilitySystemInterface.h"
 #include "ICreature.h"
 #include "IElementalTarget.h"
 #include "ISnapshottable.h"
@@ -13,6 +14,8 @@
 #include "CreatureTypes.h"
 #include "ABeastCharacter.generated.h"
 
+class UAbilitySystemComponent;
+class USkillCreatorAttributeSet;
 class UElementalAuraComponent;
 class USpecialStatusComponent;
 class AVoxelWorldActor;
@@ -58,10 +61,20 @@ class SKILLCREATORRUNTIME_API ABeastCharacter
     , public ICombatant
     , public IElementalTarget
     , public ISnapshottable
+    , public IAbilitySystemInterface
 {
     GENERATED_BODY()
 public:
     ABeastCharacter();
+
+    // ── GAS ───────────────────────────────────────────────────────
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<UAbilitySystemComponent> AbilitySystemComp;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="GAS")
+    TObjectPtr<USkillCreatorAttributeSet> Attrs;
+
+    virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
     // ── 種類標籤 ──────────────────────────────────────────────────
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Creature")
@@ -92,6 +105,12 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Beast")
     FGridPos SpawnGridPos;
+
+    // NAV-2: 路徑快取（UBTTask_MoveOnGrid 讀寫）
+    TArray<FGridPos> CachedPath;
+    int32            PathStep   = 0;
+    FGridPos         CachedGoal;
+    bool             bPathDirty = true;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Beast")
     EEnemyState AIState = EEnemyState::Idle;

@@ -8,6 +8,7 @@ public class AbilitySystem : ModuleRules
 
         PublicDependencyModuleNames.AddRange(new string[] {
             "Core", "CoreUObject", "Engine", "StructUtils",
+            "GameplayAbilities", "GameplayTags", "GameplayTasks",
             "SkillCreatorCore"
         });
     }
