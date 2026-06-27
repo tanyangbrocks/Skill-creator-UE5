@@ -90,18 +90,23 @@ void USpecialStatusComponent::ApplyStatus(TUniquePtr<FAbnormalStatusEffect> Effe
         if (Count >= MaxStack) return;
     }
 
-    // GAS-5: forward to ASC loose tag before Effect may be consumed by MoveTemp
     const EAbnormalPolarity Polarity = Effect->GetPolarity();
-    FGameplayTag LooseTag = ResolveLooseTag(Id, Polarity);
-    if (UAbilitySystemComponent* ASC = FindASC(GetOwner()))
-    {
-        if (LooseTag.IsValid()) ASC->AddLooseGameplayTag(LooseTag);
-    }
 
     Effect->OnApply(T);
     // RemainingDuration <= 0 means the effect is instant (e.g. FInstantDeathStatus);
     // damage/side effects already happened in OnApply, no need to track it.
     if (Effect->RemainingDuration <= 0.f) return;
+
+    // GAS-5: add loose tag only on the first persistent stack (0→1 transition).
+    // Checked AFTER the instant-effect early return so we never add a tag that can't be removed.
+    // For stackable statuses: each stack calls ApplyStatus, but GetStackCount(Id) is still 0
+    // the first time (effect not yet in ActiveEffects), so AddLooseGameplayTag fires exactly once.
+    if (GetStackCount(Id) == 0)
+    {
+        FGameplayTag LooseTag = ResolveLooseTag(Id, Polarity);
+        if (UAbilitySystemComponent* ASC = FindASC(GetOwner()))
+            if (LooseTag.IsValid()) ASC->AddLooseGameplayTag(LooseTag);
+    }
     ActiveEffects.Add(MoveTemp(Effect));
     RecalcAggregates();
 }
@@ -155,6 +160,21 @@ int32 USpecialStatusComponent::GetStackCount(FName StatusId) const
 void USpecialStatusComponent::ClearAll(IElementalTarget* Target)
 {
     IElementalTarget* T = Target ? Target : CachedTarget;
+    // GAS-5: remove all loose tags (deduplicated by StatusId) before wiping effects
+    if (UAbilitySystemComponent* ASC = FindASC(GetOwner()))
+    {
+        TSet<FName> Seen;
+        for (const auto& E : ActiveEffects)
+        {
+            bool bAlreadyIn = false;
+            Seen.Add(E->GetStatusId(), &bAlreadyIn);
+            if (!bAlreadyIn)
+            {
+                FGameplayTag LooseTag = ResolveLooseTag(E->GetStatusId(), E->GetPolarity());
+                if (LooseTag.IsValid()) ASC->RemoveLooseGameplayTag(LooseTag);
+            }
+        }
+    }
     for (auto& E : ActiveEffects) E->OnRemove(T);
     ActiveEffects.Reset();
     RecalcAggregates();
@@ -163,12 +183,21 @@ void USpecialStatusComponent::ClearAll(IElementalTarget* Target)
 void USpecialStatusComponent::ClearCategory(ESpecialStatusCategory Category, IElementalTarget* Target)
 {
     IElementalTarget* T = Target ? Target : CachedTarget;
+    UAbilitySystemComponent* ASC = FindASC(GetOwner());
     for (int32 i = ActiveEffects.Num() - 1; i >= 0; --i)
     {
         if (ActiveEffects[i]->GetCategory() == Category)
         {
+            const FName ClearedId      = ActiveEffects[i]->GetStatusId();
+            const EAbnormalPolarity Pol = ActiveEffects[i]->GetPolarity();
             ActiveEffects[i]->OnRemove(T);
             ActiveEffects.RemoveAt(i);
+            // GAS-5: remove loose tag only when last stack of this category's effect is gone
+            if (ASC && !HasStatus(ClearedId))
+            {
+                FGameplayTag LooseTag = ResolveLooseTag(ClearedId, Pol);
+                if (LooseTag.IsValid()) ASC->RemoveLooseGameplayTag(LooseTag);
+            }
         }
     }
     RecalcAggregates();
@@ -184,14 +213,23 @@ void USpecialStatusComponent::ClearOutOfCombat(IElementalTarget* Target)
 void USpecialStatusComponent::ProcessEffects(float DeltaTime)
 {
     bool bAnyRemoved = false;
+    UAbilitySystemComponent* ASC = FindASC(GetOwner());
     for (int32 i = ActiveEffects.Num() - 1; i >= 0; --i)
     {
         ActiveEffects[i]->OnProcess(DeltaTime, CachedTarget);
         ActiveEffects[i]->RemainingDuration -= DeltaTime;
         if (ActiveEffects[i]->RemainingDuration <= 0.f)
         {
+            const FName ExpiredId       = ActiveEffects[i]->GetStatusId();
+            const EAbnormalPolarity Pol = ActiveEffects[i]->GetPolarity();
             ActiveEffects[i]->OnRemove(CachedTarget);
             ActiveEffects.RemoveAt(i);
+            // GAS-5: remove loose tag only when the last stack of this status expires
+            if (ASC && !HasStatus(ExpiredId))
+            {
+                FGameplayTag LooseTag = ResolveLooseTag(ExpiredId, Pol);
+                if (LooseTag.IsValid()) ASC->RemoveLooseGameplayTag(LooseTag);
+            }
             bAnyRemoved = true;
         }
     }
