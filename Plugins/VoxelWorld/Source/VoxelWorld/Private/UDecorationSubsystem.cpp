@@ -164,9 +164,8 @@ UInstancedStaticMeshComponent* UDecorationSubsystem::GetOrCreateISMC(const FDeco
     }
 
     AVoxelWorldActor* VWA = CachedVWA.Get();
-    const FName CompName(*FString::Printf(TEXT("Deco_ISMC_%s"), *Def.PropId.ToString()));
 
-    UInstancedStaticMeshComponent* ISMC = NewObject<UInstancedStaticMeshComponent>(VWA, CompName);
+    UInstancedStaticMeshComponent* ISMC = NewObject<UInstancedStaticMeshComponent>(VWA);
     ISMC->SetStaticMesh(Mesh);
     ISMC->SetMobility(EComponentMobility::Movable);  // 允許動態增刪 instance
     ISMC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);

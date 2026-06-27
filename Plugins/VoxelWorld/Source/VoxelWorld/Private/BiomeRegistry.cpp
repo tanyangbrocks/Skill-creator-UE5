@@ -16,35 +16,37 @@ void FBiomeRegistry::Initialize()
     bInitialized = true;
     Biomes.Empty();
 
-    // 溫帶（temperate）：中溫中濕，草地標準地貌，樹木茂密
-    Biomes.Add({ "Temperate",
-        -0.1f, 0.6f,    // Temp: -0.1 ~ 0.6
-         0.2f, 0.8f,    // Humid: 0.2 ~ 0.8
-        EMaterialType::Grass, EMaterialType::Dirt_Dry, 1.0f });
+    // ── 特化群系先行（避免被 Temperate 大範圍吃掉）────────────────────────
 
     // 沙漠（desert）：高溫低濕，沙地，幾乎無樹木
     Biomes.Add({ "Desert",
-         0.5f, 1.0f,    // Temp: 0.5 ~ 1.0
-        -1.0f, 0.3f,    // Humid: -1.0 ~ 0.3
+         0.45f, 1.0f,   // Temp: 0.45 ~ 1.0
+        -1.0f, 0.35f,   // Humid: -1.0 ~ 0.35
         EMaterialType::Sand, EMaterialType::Sand, 0.05f });
 
     // 凍原（tundra）：低溫，卵石地表，幾乎無樹木
     Biomes.Add({ "Tundra",
-        -1.0f, 0.1f,    // Temp: -1.0 ~ 0.1
-        -1.0f, 0.6f,    // Humid: -1.0 ~ 0.6
+        -1.0f, 0.0f,    // Temp: -1.0 ~ 0.0
+        -1.0f, 0.7f,    // Humid: -1.0 ~ 0.7
         EMaterialType::Stone_Cobble, EMaterialType::Stone_Cobble, 0.1f });
 
     // 沼澤（swamp）：中溫高濕，草地，低矮稀疏樹木
     Biomes.Add({ "Swamp",
-         0.2f, 0.7f,    // Temp: 0.2 ~ 0.7
-         0.6f, 1.0f,    // Humid: 0.6 ~ 1.0
+         0.1f, 0.7f,    // Temp: 0.1 ~ 0.7
+         0.55f, 1.0f,   // Humid: 0.55 ~ 1.0
         EMaterialType::Grass, EMaterialType::Dirt_Dry, 0.6f });
 
     // 高地（highland）：中低溫中濕，灰燼地表，稀疏樹木
     Biomes.Add({ "Highland",
-        -0.2f, 0.4f,    // Temp: -0.2 ~ 0.4
-         0.1f, 0.7f,    // Humid: 0.1 ~ 0.7
+        -0.1f, 0.35f,   // Temp: -0.1 ~ 0.35
+         0.15f, 0.6f,   // Humid: 0.15 ~ 0.6
         EMaterialType::Ash, EMaterialType::Stone_Cobble, 0.2f });
+
+    // 溫帶（temperate）：最後作為 fallback，覆蓋其餘所有未匹配區域
+    Biomes.Add({ "Temperate",
+        -1.0f, 1.0f,    // Temp: 全範圍 fallback
+        -1.0f, 1.0f,    // Humid: 全範圍 fallback
+        EMaterialType::Grass, EMaterialType::Dirt_Dry, 1.0f });
 }
 
 // 查詢（const，thread-safe，無鎖）：遍歷找第一個 Temp/Humid 範圍都符合的群系
@@ -59,5 +61,5 @@ const FBiomeDef& FBiomeRegistry::Query(float T, float H)
 const FBiomeDef& FBiomeRegistry::GetDefault()
 {
     check(!Biomes.IsEmpty());
-    return Biomes[0];  // Temperate
+    return Biomes.Last();  // Temperate（最後一個，全範圍 fallback）
 }

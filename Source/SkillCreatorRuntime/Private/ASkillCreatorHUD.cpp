@@ -617,7 +617,7 @@ void ASkillCreatorHUD::DrawThrowArc()
     {
         DrawLine(ScreenPts[i  ].X, ScreenPts[i  ].Y,
                  ScreenPts[i+1].X, ScreenPts[i+1].Y,
-                 ArcColor.ToFColor(true), 2.f);
+                 ArcColor, 2.f);
     }
 
     // ── 落點十字標記（橘紅色）────────────────────────────────────────────
@@ -626,7 +626,7 @@ void ASkillCreatorHUD::DrawThrowArc()
         const FVector2D& Landing = ScreenPts.Last();
         static const FLinearColor LandColor(1.f, 0.3f, 0.1f, 1.f);
         constexpr float CR = 6.f;
-        DrawLine(Landing.X - CR, Landing.Y,      Landing.X + CR, Landing.Y,      LandColor.ToFColor(true), 2.f);
-        DrawLine(Landing.X,      Landing.Y - CR, Landing.X,      Landing.Y + CR, LandColor.ToFColor(true), 2.f);
+        DrawLine(Landing.X - CR, Landing.Y,      Landing.X + CR, Landing.Y,      LandColor, 2.f);
+        DrawLine(Landing.X,      Landing.Y - CR, Landing.X,      Landing.Y + CR, LandColor, 2.f);
     }
 }
