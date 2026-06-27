@@ -224,6 +224,30 @@ SkillCreatorUE5/
 - 已存在的資產自動跳過（不會覆蓋手動改過的精緻版本）
 - 執行路徑：Output Log → Cmd → `py "C:\SkillCreatorUE5\generate_placeholders.py"`
 
+### 用 Blender 程式化產生 Item Mesh（2026-06-27）
+
+`generate_models.py` 是 Blender 5.1 headless 腳本，為所有 EItemId 產生具識別度的低多邊形 FBX：
+- 劍→刀身+護手+握柄；斧→扇形頭+柄；鎬→雙爪+柄；鏟→槳形刀片+長柄
+- 頭盔→半球；鎧甲→扁圓柱；褲子→雙腿+腰帶；護符→圓盤+環
+- 方塊→倒角正方體；礦石→扁球；碎片→不規則 ico 球；木棍→細圓柱
+- 輸出到 `asset/3d/generated/SM_*.fbx`（1 Blender m = 100 UE5 cm，`apply_unit_scale=True`）
+- 已存在檔案自動跳過（刪除後重跑才重新生成）
+- SKIP 集合排除有真實資產的項目（WeaponWoodSword）
+
+**執行步驟**：
+
+```powershell
+# Step 1：Blender 生成模型（約 1~2 分鐘）
+& "C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python "C:\SkillCreatorUE5\generate_models.py"
+
+# Step 2：在 UE5 Editor Python Console 匯入（import_assets.py 的 Step 4 會自動掃 generated/ 目錄）
+py "C:\SkillCreatorUE5\import_assets.py"
+```
+
+**新增 EItemId 時同步清單**：
+在 `generate_models.py` 的 `ITEMS` dict 加一條 `'NewItemName': gen_xxx`，
+對應 generator 函式（`gen_block` / `gen_ore` / `gen_sword` 等），刪除 fbx 後重跑即可。
+
 ### 世界尺度說明（給未來 AI）
 
 - **Tile 大小**：`TileSizeCm = 100.f / GrainCurrent`（`WorldScale.h:31`），**不是固定常數**。目前 `GrainCurrent = 16` → `TileSizeCm = 6.25 cm`。改 tile 大小只需改 `GrainCurrent`，`TileSizeCm` 及所有衍生值（CapsuleRadius/CapsuleHalfHeight/WalkSpeedCm/JumpZVelocityCm/GravityScaleMult）自動跟進；不需要全局 OriginX/Z，tile 座標 × TileSizeCm 即 UE5 世界座標

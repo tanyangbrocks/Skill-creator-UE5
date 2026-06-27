@@ -112,10 +112,61 @@ sword_task.set_editor_property('options', sword_opts)
 tools.import_asset_tasks([sword_task])
 print('  ✓ SM_DemonSword done')
 
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4：匯入 generate_models.py 產生的 item 模型（/Game/Items/SM_*）
+# ─────────────────────────────────────────────────────────────────────────
+print('[4/4] Importing generated item models from asset/3d/generated/ ...')
+
+import os as _os
+
+gen_dir = BASE + r'\generated'
+if not _os.path.isdir(gen_dir):
+    print('  (generated/ folder not found — run generate_models.py first)')
+else:
+    # 同一個 stem 優先取 .fbx，沒有才取 .obj
+    by_stem = {}
+    for fname in _os.listdir(gen_dir):
+        if not fname.startswith('SM_'):
+            continue
+        ext  = fname.rsplit('.', 1)[-1].lower()
+        if ext not in ('fbx', 'obj'):
+            continue
+        stem = fname[3:].rsplit('.', 1)[0]      # 'SM_BlockDirt.fbx' → 'BlockDirt'
+        if stem not in by_stem or ext == 'fbx':  # FBX 優先
+            by_stem[stem] = fname
+
+    gen_tasks = []
+    for stem, fname in sorted(by_stem.items()):
+        ext = fname.rsplit('.', 1)[-1].lower()
+        t = unreal.AssetImportTask()
+        t.set_editor_property('filename',         _os.path.join(gen_dir, fname))
+        t.set_editor_property('destination_path', '/Game/Items')
+        t.set_editor_property('destination_name', f'SM_{stem}')
+        t.set_editor_property('replace_existing', True)
+        t.set_editor_property('automated',        True)
+        t.set_editor_property('save',             True)
+
+        if ext == 'fbx':
+            opts = unreal.FbxImportUI()
+            opts.set_editor_property('import_mesh',        True)
+            opts.set_editor_property('import_as_skeletal', False)
+            opts.set_editor_property('import_animations',  False)
+            opts.set_editor_property('import_materials',   False)
+            opts.set_editor_property('import_textures',    False)
+            t.set_editor_property('options', opts)
+
+        gen_tasks.append(t)
+
+    if gen_tasks:
+        tools.import_asset_tasks(gen_tasks)
+        print(f'  ✓ {len(gen_tasks)} models imported to /Game/Items/')
+    else:
+        print('  (no SM_*.fbx/obj files found — run generate_models.py first)')
+
 print()
 print('=== 匯入完成 ===')
 print('下一步：')
-print('  1. 在 Content Browser 確認三個資料夾都有內容')
-print('  2. 若骨架名稱不是 SK_Player_Skeleton，修改腳本中的 SKELETON_PATH 再跑一次 Step 2')
+print('  1. 在 Content Browser 確認各資料夾都有內容')
+print('  2. 若骨架名稱不是 SK_Player_Skeleton，修改 SKELETON_PATH 後重跑 Step 2')
 print('  3. 關 Editor → Rebuild → 重開 Editor → 執行 Standalone')
-print('  4. 角色應出現 Ch09 外觀，木劍掉落物顯示惡魔劍模型')
+print('  4. 角色應出現 Ch09 外觀；木劍掉落物顯示惡魔劍；其他物品顯示生成模型')
