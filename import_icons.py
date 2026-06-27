@@ -19,7 +19,7 @@ if not os.path.isdir(ICON_DIR):
 else:
     tasks = []
     for fname in sorted(os.listdir(ICON_DIR)):
-        if not (fname.startswith('ICO_') and fname.endswith('.png')):
+        if not ((fname.startswith('ICO_') or fname.startswith('STA_')) and fname.endswith('.png')):
             continue
         stem = fname[:-4]   # 'ICO_BlockDirt.png' -> 'ICO_BlockDirt'
 

@@ -11,8 +11,24 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "SlateBrushHelpers.h"
+#include "Engine/Texture2D.h"
+#include "UObject/Class.h"
 
-// ── 顏色查詢（和 Godot GetItemIconColor 對應）──────────────────────────────
+// ── 圖示貼圖載入（慣例路徑 /Game/Icons/ICO_{EnumName}）─────────────────────
+
+static UTexture2D* LoadItemIcon(EItemId Id)
+{
+    if (Id == EItemId::None) return nullptr;
+    if (const UEnum* E = StaticEnum<EItemId>())
+    {
+        const FString Name = E->GetNameStringByValue((int64)Id);
+        const FString Path = FString::Printf(TEXT("/Game/Icons/ICO_%s.ICO_%s"), *Name, *Name);
+        return LoadObject<UTexture2D>(nullptr, *Path);
+    }
+    return nullptr;
+}
+
+// ── 顏色查詢（fallback：圖示不存在時使用）──────────────────────────────────
 
 FLinearColor UInventoryWidget::GetItemColor(EItemId Id) const
 {
@@ -253,7 +269,19 @@ FReply UInventoryWidget::NativeOnMouseButtonDown(const FGeometry& Geo, const FPo
                 const FItemStack& Stack = CachedSlots[Src];
                 if (!Stack.IsEmpty())
                 {
-                    DragFloatIcon->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
+                    UTexture2D* Icon = LoadItemIcon(Stack.ItemId);
+                    if (Icon)
+                    {
+                        FSlateBrush B;
+                        B.SetResourceObject(Icon);
+                        B.DrawAs = ESlateBrushDrawType::Image;
+                        B.Tiling = ESlateBrushTileType::NoTile;
+                        DragFloatIcon->SetBrush(B);
+                    }
+                    else
+                    {
+                        DragFloatIcon->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
+                    }
                     DragFloatIcon->SetVisibility(ESlateVisibility::HitTestInvisible);
                 }
             }
@@ -319,7 +347,19 @@ void UInventoryWidget::RefreshSlot(int32 Idx)
     }
     else
     {
-        IconBorders[Idx]->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
+        UTexture2D* Icon = LoadItemIcon(Stack.ItemId);
+        if (Icon)
+        {
+            FSlateBrush B;
+            B.SetResourceObject(Icon);
+            B.DrawAs = ESlateBrushDrawType::Image;
+            B.Tiling = ESlateBrushTileType::NoTile;
+            IconBorders[Idx]->SetBrush(B);
+        }
+        else
+        {
+            IconBorders[Idx]->SetBrush(MakeSolidBrush(GetItemColor(Stack.ItemId)));
+        }
         CountLabels[Idx]->SetText(Stack.Count > 1
             ? FText::FromString(FString::Printf(TEXT("×%d"), Stack.Count))
             : FText::GetEmpty());

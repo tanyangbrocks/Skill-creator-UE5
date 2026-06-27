@@ -7,6 +7,7 @@
 class UBorder;
 class UTextBlock;
 class UHorizontalBox;
+class UImage;
 
 // Terraria 風格異常狀態圖示列（頂部中央，最多 15 個圖示）
 // 每格 20×20px，正面狀態藍色框，負面狀態橙色框。
@@ -27,6 +28,7 @@ private:
 
     TObjectPtr<UHorizontalBox>     IconBox;
     TArray<TObjectPtr<UBorder>>    IconBorders;
+    TArray<TObjectPtr<UImage>>     IconImages;
     TArray<TObjectPtr<UTextBlock>> IconLabels;
     TArray<TObjectPtr<UTextBlock>> StackLabels;
     TArray<TObjectPtr<UTextBlock>> TimerLabels;

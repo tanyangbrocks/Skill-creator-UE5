@@ -5,7 +5,16 @@
 #include "Components/Border.h"
 #include "Components/BorderSlot.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
 #include "SlateBrushHelpers.h"
+
+static UTexture2D* LoadStatusIcon(const FName& StatusId)
+{
+    const FString S = StatusId.ToString();
+    const FString Path = FString::Printf(TEXT("/Game/Icons/STA_%s.STA_%s"), *S, *S);
+    return LoadObject<UTexture2D>(nullptr, *Path);
+}
 
 static void PinIcon(UWidget* W, float X, float Y, float W2, float H)
 {
@@ -28,6 +37,7 @@ void UAbnormalStatusBarWidget::NativeOnInitialized()
     WidgetTree->RootWidget = Root;
 
     IconBorders.Reserve(MaxIcons);
+    IconImages.Reserve(MaxIcons);
     IconLabels.Reserve(MaxIcons);
     StackLabels.Reserve(MaxIcons);
     TimerLabels.Reserve(MaxIcons);
@@ -42,7 +52,7 @@ void UAbnormalStatusBarWidget::NativeOnInitialized()
         PinIcon(Border, i * (IconSize + 2.f), 0.f, IconSize, IconSize);
         IconBorders.Add(Border);
 
-        // 內層 Canvas 承載 3 個文字
+        // 內層 Canvas 承載圖示 + 3 個文字
         UCanvasPanel* Inner = WidgetTree->ConstructWidget<UCanvasPanel>();
         Border->AddChild(Inner);
         if (UBorderSlot* BS = Cast<UBorderSlot>(Inner->Slot))
@@ -50,6 +60,17 @@ void UAbnormalStatusBarWidget::NativeOnInitialized()
             BS->SetHorizontalAlignment(HAlign_Fill);
             BS->SetVerticalAlignment(VAlign_Fill);
         }
+
+        // 狀態圖示（最底層，有圖示時填滿；無圖示時 Collapsed，改顯示縮寫文字）
+        UImage* StatusImg = WidgetTree->ConstructWidget<UImage>();
+        Inner->AddChild(StatusImg);
+        if (UCanvasPanelSlot* IS = Cast<UCanvasPanelSlot>(StatusImg->Slot))
+        {
+            IS->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+            IS->SetOffsets(FMargin(2.f, 2.f, 2.f, 2.f));
+        }
+        StatusImg->SetVisibility(ESlateVisibility::Collapsed);
+        IconImages.Add(StatusImg);
 
         auto MkTxt = [&](FVector2D Pos, int32 Sz) -> UTextBlock*
         {
@@ -97,9 +118,27 @@ void UAbnormalStatusBarWidget::UpdateStatuses(const TArray<FStatusDisplaySnapsho
         // 位置：visible icon 位置可能因 Collapsed 前面項變化，需重新設
         PinIcon(B, i * (IconSize + 2.f), 0.f, IconSize, IconSize);
 
-        // 縮寫（最多 2 字元）
-        if (IconLabels.IsValidIndex(i) && IconLabels[i])
-            IconLabels[i]->SetText(FText::FromString(S.DisplayName.ToString().Left(2)));
+        // 圖示（有 /Game/Icons/STA_{StatusId} 時顯示圖示，否則 fallback 到文字縮寫）
+        UTexture2D* Tex = LoadStatusIcon(S.StatusId);
+        if (IconImages.IsValidIndex(i) && IconImages[i])
+        {
+            if (Tex)
+            {
+                IconImages[i]->SetBrushFromTexture(Tex, false);
+                IconImages[i]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+                if (IconLabels.IsValidIndex(i) && IconLabels[i])
+                    IconLabels[i]->SetVisibility(ESlateVisibility::Collapsed);
+            }
+            else
+            {
+                IconImages[i]->SetVisibility(ESlateVisibility::Collapsed);
+                if (IconLabels.IsValidIndex(i) && IconLabels[i])
+                {
+                    IconLabels[i]->SetText(FText::FromString(S.DisplayName.ToString().Left(2)));
+                    IconLabels[i]->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+                }
+            }
+        }
 
         // 疊加數
         if (StackLabels.IsValidIndex(i) && StackLabels[i])
