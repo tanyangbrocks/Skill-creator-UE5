@@ -17,6 +17,8 @@ public:
     void StartCharging();
     void StopCharging();
     float GetPowerPct() const;
+    // ARC-0：充電期間回傳當前指針位置（充電中從 CurrentT 計算；已鎖定回傳 LockedPct；未啟動回傳 0）
+    float GetCurrentChargePct() const;
     void  Reset();
 
 protected:

@@ -104,6 +104,10 @@ public:
     virtual void DrawHUD() override;
 
 private:
+    // ARC-1：投擲充電中旗標，StartThrowCharge 設 true，FinishThrowCharge 清 false
+    bool bIsChargingThrow = false;
+    void DrawThrowArc();  // ARC-2：DrawHUD() 呼叫，充電期間繪製拋物線預覽
+
     template<typename T>
     TObjectPtr<T> CreatePanel();
 };

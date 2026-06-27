@@ -24,6 +24,9 @@
 #include "ADebrisActor.h"
 #include "UPhysicalThrowWidget.h"
 #include "WorldScale.h"
+#include "AVoxelWorldActor.h"
+#include "TileWorld3D.h"
+#include "MaterialType.h"
 #include "Engine/Canvas.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
@@ -497,6 +500,9 @@ void ASkillCreatorHUD::DrawHUD()
             DrawText(Hint, FColor::White, CanvasW * 0.5f - 60.f, CanvasH * 0.72f, GEngine->GetSmallFont(), 1.2f);
         }
     }
+
+    // ARC-3：投擲瞄準弧線（充電期間顯示）
+    DrawThrowArc();
 }
 
 // ── G-7/G-8 投擲力量條 ────────────────────────────────────────────────────
@@ -505,10 +511,12 @@ void ASkillCreatorHUD::StartThrowCharge()
 {
     if (ThrowWidget)
         ThrowWidget->StartCharging();
+    bIsChargingThrow = true;  // ARC-1
 }
 
 void ASkillCreatorHUD::FinishThrowCharge(ASkillCreatorCharacter* Char)
 {
+    bIsChargingThrow = false;  // ARC-1
     if (!ThrowWidget || !Char) return;
 
     ThrowWidget->StopCharging();
@@ -531,4 +539,94 @@ void ASkillCreatorHUD::FinishThrowCharge(ASkillCreatorCharacter* Char)
         0.f, 5000.f);
 
     Char->EndCarry(AimDir * Speed);
+}
+
+// ── ARC-2：投擲瞄準弧線 ───────────────────────────────────────────────────────
+// 拋體模擬（60ms 步進），DrawLine 在 HUD 螢幕空間繪製折線 + 落點十字
+// 不使用 Niagara Ribbon（需 Editor .uasset），純 C++ 零 Editor 操作
+
+void ASkillCreatorHUD::DrawThrowArc()
+{
+    if (!bIsChargingThrow || !ThrowWidget) return;
+
+    APlayerController* PC = GetOwningPlayerController();
+    ASkillCreatorCharacter* Char = PC ? PC->GetPawn<ASkillCreatorCharacter>() : nullptr;
+    if (!Char || !Char->bIsCarrying) return;
+
+    const float ChargePct = ThrowWidget->GetCurrentChargePct();
+    if (ChargePct < 0.01f) return;  // 指針剛啟動，弧線無意義
+
+    IPhysicalPickable* Pick = Cast<APhysicalItemActor>(Char->CarriedActor.Get());
+    if (!Pick) Pick = Cast<ADebrisActor>(Char->CarriedActor.Get());
+    const float Mass     = Pick ? Pick->GetMass() : 1.f;
+    const float Strength = Char->Stats.Strength;
+
+    constexpr float BaseSpeed = 200.f * WorldScale::TileSizeCm;
+    const float Speed = FMath::Clamp(
+        BaseSpeed * ChargePct * Strength / FMath::Max(0.1f, Mass),
+        0.f, 5000.f);
+
+    FVector AimDir = PC->GetControlRotation().Vector();
+    FVector LaunchPos = Char->GetActorLocation()
+        + AimDir * WorldScale::TileSizeCm * 2.f
+        + FVector(0.f, 0.f, WorldScale::TileSizeCm);  // 略高於角色中心
+
+    // 拋體模擬（UE5 Z-up：GetGravityZ() ≈ -980 cm/s²）
+    const FVector Gravity(0.f, 0.f, GetWorld()->GetGravityZ());
+    constexpr float Dt      = 0.06f;
+    constexpr float MaxTime = 5.f;
+
+    TArray<FVector2D> ScreenPts;
+    ScreenPts.Reserve(static_cast<int32>(MaxTime / Dt) + 2);
+
+    AVoxelWorldActor* VWA = AVoxelWorldActor::FindInWorld(GetWorld());
+    FVector LastPos = LaunchPos;
+    bool bLanded = false;
+
+    for (float T = Dt; T <= MaxTime; T += Dt)
+    {
+        const FVector Pos = LaunchPos + AimDir * Speed * T + 0.5f * Gravity * T * T;
+
+        // 著地判斷：查 tile（非 Air、非 Water = 固體）
+        if (VWA)
+        {
+            const FGridPos GP = WorldScale::WorldToTile(Pos, VWA->WorldHeight);
+            const EMaterialType Mat = VWA->GetTileWorld()->GetTile(GP.X, GP.Y, GP.Z);
+            if (Mat != EMaterialType::Air && Mat != EMaterialType::Water)
+            {
+                FVector2D FinalSP;
+                if (PC->ProjectWorldLocationToScreen(LastPos, FinalSP, true))
+                    ScreenPts.Add(FinalSP);
+                bLanded = true;
+                break;
+            }
+        }
+
+        FVector2D SP;
+        if (PC->ProjectWorldLocationToScreen(Pos, SP, true))
+            ScreenPts.Add(SP);
+
+        LastPos = Pos;
+    }
+
+    if (ScreenPts.Num() < 2) return;
+
+    // ── 繪製弧線折線（黃色半透明）──────────────────────────────────────
+    static const FLinearColor ArcColor(1.f, 0.85f, 0.1f, 0.85f);
+    for (int32 i = 0; i + 1 < ScreenPts.Num(); ++i)
+    {
+        DrawLine(ScreenPts[i  ].X, ScreenPts[i  ].Y,
+                 ScreenPts[i+1].X, ScreenPts[i+1].Y,
+                 ArcColor.ToFColor(true), 2.f);
+    }
+
+    // ── 落點十字標記（橘紅色）────────────────────────────────────────────
+    if (bLanded)
+    {
+        const FVector2D& Landing = ScreenPts.Last();
+        static const FLinearColor LandColor(1.f, 0.3f, 0.1f, 1.f);
+        constexpr float CR = 6.f;
+        DrawLine(Landing.X - CR, Landing.Y,      Landing.X + CR, Landing.Y,      LandColor.ToFColor(true), 2.f);
+        DrawLine(Landing.X,      Landing.Y - CR, Landing.X,      Landing.Y + CR, LandColor.ToFColor(true), 2.f);
+    }
 }

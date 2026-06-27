@@ -93,6 +93,16 @@ float UPhysicalThrowWidget::GetPowerPct() const
     return bCharging ? 0.f : LockedPct;
 }
 
+float UPhysicalThrowWidget::GetCurrentChargePct() const
+{
+    if (bCharging)
+    {
+        const float NormT = CurrentT / (CycleTime * 0.5f);
+        return FMath::Clamp(NormT <= 1.f ? NormT : 2.f - NormT, 0.f, 1.f);
+    }
+    return LockedPct;
+}
+
 void UPhysicalThrowWidget::Reset()
 {
     bCharging = false;
