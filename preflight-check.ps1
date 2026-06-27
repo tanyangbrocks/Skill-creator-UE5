@@ -767,6 +767,73 @@ if ($bindRawMatches.Count -eq 0) {
 }
 
 # ==================================================================
+Head "13ac. [Tier1] Async 真執行緒 lambda 直接捕獲 UObject this（C-5）"
+# 只偵測真正開新執行緒的 UE5 API：Async(EAsync.../AsyncTask(ENamedThreads...
+# TryCollectAsync/sort/find_if 等同步呼叫 callback 的不在此列（誤報率太高）。
+$badAsyncLambda = @()
+$opts13ac = [System.Text.RegularExpressions.RegexOptions]::Singleline
+foreach ($f in $projectCpp) {
+    $t = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+    $ms = [System.Text.RegularExpressions.Regex]::Matches($t,
+        'Async\s*\(\s*EAsync[^;]{0,300}\[\s*(?:[^\]]*,\s*)?this\s*[,\]]|AsyncTask\s*\(\s*ENamedThreads[^;]{0,300}\[\s*(?:[^\]]*,\s*)?this\s*[,\]]',
+        $opts13ac)
+    foreach ($m in $ms) {
+        $start = [Math]::Max(0, $m.Index - 100)
+        $ctx   = $t.Substring($start, [Math]::Min(500, $t.Length - $start))
+        if ($ctx -notmatch 'TWeakObjectPtr|WeakThis|BindWeakLambda') {
+            $ln = ($t.Substring(0, $m.Index) -split '\n').Count
+            $badAsyncLambda += "$($f.Name):$ln"
+        }
+    }
+}
+if ($badAsyncLambda.Count -eq 0) {
+    Pass "未發現真執行緒 Async lambda 直接捕獲 UObject this"
+} else {
+    Fail "發現真執行緒 Async lambda 直接捕獲 this（應改 TWeakObjectPtr）：`n    $($badAsyncLambda -join "`n    ")"
+}
+
+# ==================================================================
+Head "13ad. [Tier1] 前進 TArray 迴圈內含 RemoveAt → 跳元素（C-6）"
+$badForwardRemove = @()
+$opts13ad = [System.Text.RegularExpressions.RegexOptions]::Singleline
+foreach ($f in $projectCpp) {
+    $t = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+    $ms = [System.Text.RegularExpressions.Regex]::Matches($t,
+        'for\s*\(\s*(?:int32?|auto)\s+\w+\s*=\s*0[^)]+\+\+[^)]*\)\s*\{[^{}]{0,800}\.RemoveAt\s*\(',
+        $opts13ad)
+    foreach ($m in $ms) {
+        $ln = ($t.Substring(0, $m.Index) -split '\n').Count
+        $badForwardRemove += "$($f.Name):$ln"
+    }
+}
+if ($badForwardRemove.Count -eq 0) {
+    Pass "未發現前進 TArray 迴圈 RemoveAt（全部使用反向迴圈或 RemoveAll）"
+} else {
+    Fail "發現前進迴圈 RemoveAt 將跳元素：`n    $($badForwardRemove -join "`n    ")"
+}
+
+# ==================================================================
+Head "13ae. [Tier1] GetWorld() 在 Constructor 內呼叫 → CDO 期返回 null（C-7）"
+# 用 backreference 確認 ClassName::ClassName（method 名 == class 名 才是 constructor）
+$badCtorGetWorld = @()
+$opts13ae = [System.Text.RegularExpressions.RegexOptions]::Singleline
+foreach ($f in $projectCpp) {
+    $t = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+    $ms = [System.Text.RegularExpressions.Regex]::Matches($t,
+        '([UA]\w+)::\1\s*\([^)]*\)[^{]{0,200}\{[^{}]{0,1000}GetWorld\s*\(\s*\)',
+        $opts13ae)
+    foreach ($m in $ms) {
+        $ln = ($t.Substring(0, $m.Index) -split '\n').Count
+        $badCtorGetWorld += "$($f.Name):$ln"
+    }
+}
+if ($badCtorGetWorld.Count -eq 0) {
+    Pass "未發現 Constructor 內 GetWorld() 呼叫（CDO 安全）"
+} else {
+    Fail "發現 Constructor 內 GetWorld()（CDO 期返回 null）：`n    $($badCtorGetWorld -join "`n    ")"
+}
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"
