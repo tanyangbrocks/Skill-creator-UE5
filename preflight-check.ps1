@@ -720,6 +720,33 @@ if (Test-Path $specialStatusCppFile) {
 } else { Warn "USpecialStatusComponent.cpp 未找到 -- 跳過 13z" }
 
 # ==================================================================
+Head "13aa. [Tier1] AddDynamic 誤用偵測 — 不可傳陣列索引/變數（巨集字串化限制）"
+# AddDynamic 是巨集，第二個參數被 #FuncName 字串化後必須是 ClassName::MethodName 格式。
+# 若傳入陣列元素（Callbacks[i]）或區域變數，字串化後不含 "::"，Runtime 炸 Delegate.h:474 Assertion。
+# 合法用法：AddDynamic(this, &UMyClass::MyMethod)
+# 非法用法：AddDynamic(this, Callbacks[i])  / AddDynamic(this, myFuncPtr)
+$allWidgetCpp = Get-ChildItem -Recurse -Include "*.cpp" "$root\Source", "$root\Plugins" -ErrorAction SilentlyContinue
+$badDynamic = @()
+foreach ($f in $allWidgetCpp) {
+    $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+    for ($li = 0; $li -lt $lines.Count; $li++) {
+        $line = $lines[$li]
+        # 找 AddDynamic( 的行，然後檢查第二個參數是否不是 &Class::Method 形式
+        if ($line -match 'AddDynamic\s*\(') {
+            # 合法：第二個參數以 & 開頭後接 ClassName::MethodName
+            if ($line -notmatch 'AddDynamic\s*\([^,]+,\s*&\w+::\w+\s*\)') {
+                $badDynamic += "$($f.Name):$($li+1): $($line.Trim())"
+            }
+        }
+    }
+}
+if ($badDynamic.Count -eq 0) {
+    Pass "所有 AddDynamic 呼叫均使用合法的 &ClassName::MethodName 字面量"
+} else {
+    Fail "偵測到非法 AddDynamic 用法（第二個參數非 &Class::Method）：`n    $($badDynamic -join "`n    ")"
+}
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"

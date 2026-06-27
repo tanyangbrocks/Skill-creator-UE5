@@ -227,20 +227,27 @@ void UInputSettingsWidget::BuildLayout()
     UHorizontalBox* BtnRow = WidgetTree->ConstructWidget<UHorizontalBox>();
     Root->AddChildToVerticalBox(BtnRow);
 
-    auto MakeBtn = [&](const FString& Label, void (UInputSettingsWidget::*Fn)())
+    // AddDynamic 是巨集，第二個參數不能傳 lambda 參數（字串化結果不是 ClassName::Method）
     {
         UButton* Btn = WidgetTree->ConstructWidget<UButton>();
         UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
-        Txt->SetText(FText::FromString(Label));
+        Txt->SetText(FText::FromString(TEXT("儲存")));
         Txt->SetColorAndOpacity(FSlateColor(FLinearColor(0.1f, 0.1f, 0.2f)));
         Btn->AddChild(Txt);
-        Btn->OnClicked.AddDynamic(this, Fn);
+        Btn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnSaveClicked);
         if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(BtnRow->AddChild(Btn)))
             HS->SetPadding(FMargin(4.f, 8.f));
-        return Btn;
-    };
-    MakeBtn(TEXT("儲存"), &UInputSettingsWidget::OnSaveClicked);
-    MakeBtn(TEXT("恢復預設"), &UInputSettingsWidget::OnResetClicked);
+    }
+    {
+        UButton* Btn = WidgetTree->ConstructWidget<UButton>();
+        UTextBlock* Txt = WidgetTree->ConstructWidget<UTextBlock>();
+        Txt->SetText(FText::FromString(TEXT("恢復預設")));
+        Txt->SetColorAndOpacity(FSlateColor(FLinearColor(0.1f, 0.1f, 0.2f)));
+        Btn->AddChild(Txt);
+        Btn->OnClicked.AddDynamic(this, &UInputSettingsWidget::OnResetClicked);
+        if (UHorizontalBoxSlot* HS = Cast<UHorizontalBoxSlot>(BtnRow->AddChild(Btn)))
+            HS->SetPadding(FMargin(4.f, 8.f));
+    }
 
     StatusText = WidgetTree->ConstructWidget<UTextBlock>();
     StatusText->SetText(FText::GetEmpty());

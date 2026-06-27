@@ -173,8 +173,9 @@ void UPlayerPanelWidget::BuildNormalHeader(UVerticalBox* Root)
         { TEXT("圖鑑"), &UPlayerPanelWidget::OnCompendiumClicked },
         { TEXT("設定"), &UPlayerPanelWidget::OnSettingsClicked   },
     };
-    for (auto& C : Circles)
+    for (int32 j = 0; j < 3; ++j)
     {
+        auto& C = Circles[j];
         auto* Btn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
         FButtonStyle BS = Btn->GetStyle();
         BS.Normal.DrawAs  = ESlateBrushDrawType::Box;
@@ -184,7 +185,12 @@ void UPlayerPanelWidget::BuildNormalHeader(UVerticalBox* Root)
         BS.Pressed.DrawAs = ESlateBrushDrawType::Box;
         BS.Pressed.TintColor = FSlateColor(FLinearColor(0.15f, 0.30f, 0.60f));
         Btn->SetStyle(BS);
-        Btn->OnClicked.AddDynamic(this, C.Fn);
+        switch (j)
+        {
+            case 0: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnGuideClicked);      break;
+            case 1: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnCompendiumClicked); break;
+            case 2: Btn->OnClicked.AddDynamic(this, &UPlayerPanelWidget::OnSettingsClicked);   break;
+        }
 
         auto* Lbl = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
         Lbl->SetText(FText::FromString(C.Label));

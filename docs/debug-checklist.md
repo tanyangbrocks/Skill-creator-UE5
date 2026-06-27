@@ -111,6 +111,22 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ---
 
+### C-3 AddDynamic 傳非字面量（Runtime Assertion 炸 Delegate.h:474）
+
+**風險**：`AddDynamic` 是 C++ 巨集，用 `#FuncName` 在預處理期字串化第二個參數。若傳入陣列元素（`Callbacks[i]`）或變數，字串化結果是 `"Callbacks[i]"` 而非 `"UMyClass::MyMethod"`，不含 `::`，Delegate.h:474 assertion `Result[2] != '0'` 爆炸，只在 Runtime 才崩潰，沒有 compile error。
+
+**正確用法**：`AddDynamic(this, &UMyClass::OnSomeEvent)` — 第二個參數必須是編譯期可見的成員函式指標字面量。
+
+**錯誤用法（不可做）**：
+```cpp
+void (UMyClass::* Callbacks[])() = { &UMyClass::OnA, &UMyClass::OnB };
+Btn->OnClicked.AddDynamic(this, Callbacks[i]);  // 炸 Assertion
+```
+
+**正確替換**：用 `switch(i)` 讓每個 case 直接傳字面量，或使用非動態 delegate（`AddWeakLambda`/`AddUObject`，但需確認 delegate 類型支援）。
+
+**preflight-check.ps1 13aa 已自動偵測此模式。**
+
 ### C-2 CDO 狀態污染（PIE vs Standalone 差異）
 
 **風險**：PIE 重複 Play 時，UObject 的 Class Default Object 可能保留上一次 Play 的狀態（靜態成員、單次初始化的 TArray 等），Standalone 每次都是全新進程，行為不同。
