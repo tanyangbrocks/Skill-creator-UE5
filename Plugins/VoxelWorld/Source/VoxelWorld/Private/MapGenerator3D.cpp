@@ -14,7 +14,10 @@ THIRD_PARTY_INCLUDES_END
 // 構造 / 解構
 // ============================================================
 
-FMapGenerator3D::FMapGenerator3D()  = default;
+FMapGenerator3D::FMapGenerator3D()
+    : ReadyQueue(MakeShared<TQueue<FPendingChunk, EQueueMode::Mpsc>>())
+{
+}
 FMapGenerator3D::~FMapGenerator3D() = default;
 
 void FMapGenerator3D::InitTerrainParams(int32 Width, int32 Height, int32 Depth, int32 Seed)
@@ -34,8 +37,9 @@ void FMapGenerator3D::ResetGenerationState()
 {
     GeneratedChunks.Empty();
     InFlightChunks.Empty();
-    FPendingChunk Discard;
-    while (ReadyQueue.Dequeue(Discard)) {}
+    // Replace queue instead of draining: any in-flight tasks holding the old shared ptr
+    // will enqueue into the orphaned queue harmlessly; results won't be applied (E-2 fix)
+    ReadyQueue = MakeShared<TQueue<FPendingChunk, EQueueMode::Mpsc>>();
 }
 
 // ============================================================
@@ -240,7 +244,9 @@ void FMapGenerator3D::EnsureChunksAround(FTileWorld3D& World,
 
         int32 Seed   = WorldSeed;
         int32 Height = WorldH;
-        TQueue<FPendingChunk, EQueueMode::Mpsc>* Queue = &ReadyQueue;
+        // Capture by value: lambda holds a shared ref, queue stays alive even if
+        // FMapGenerator3D is destroyed before this task finishes (E-2 fix, 2026-06-28)
+        TSharedPtr<TQueue<FPendingChunk, EQueueMode::Mpsc>> Queue = ReadyQueue;
         // 拷貝水池佈局（POD 陣列）進閉包，背景 thread 只讀，thread-safe
         TArray<FSurfaceWaterPool::FPoolDesc> Pools = WaterPool.GetPools();
 
@@ -267,7 +273,7 @@ void FMapGenerator3D::ApplyPendingChunks(FTileWorld3D& World, int32 MaxPerFrame)
     constexpr int32 S = WorldScale::ChunkSize;
     int32 Applied = 0;
     FPendingChunk Pending;
-    while (Applied < MaxPerFrame && ReadyQueue.Dequeue(Pending))
+    while (Applied < MaxPerFrame && ReadyQueue->Dequeue(Pending))
     {
         FIntVector CC = Pending.Coord;
         InFlightChunks.Remove(CC);

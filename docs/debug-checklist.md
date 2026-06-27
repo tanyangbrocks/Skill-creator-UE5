@@ -103,19 +103,18 @@ grep -rn "Chunks\[.\|Registry\[.\|Slots\[.\|ItemMap\[." Source/ Plugins/ --inclu
 
 ### B-3 Godot 預設值核對（數值未移植 / 移植錯誤）
 
-**風險**：攻擊倍率、狀態持續時間、MP 消耗係數、堆疊閾值等數值在 docs/plan-*.md 描述時可能已被簡化；實際 UE5 值只有對照 Godot `.cs` 原始碼才算正確。
+**2026-06-28 核對結果**：
 
-**高風險欄位**（依過往踩坑頻率排序）：
+| 系統 | Godot 值 | UE5 值 | 結論 |
+|------|---------|--------|------|
+| MP 係數 Instant/Declare/Sustained | 0.8 / 1.0 / 1.5（`AbilityPointCalculator.cs:11`） | `FAbilityPointCalculator::GetMpMultiplier` 0.8/1.0/1.5 | ✅ 一致 |
+| 重力加速度 | 30 tile/s²（`PlayerController.cs:143`） | `GravityScaleMult=TileSizeCm/30`→有效重力=980/30=32.67 tile/s² | ⚠️ ~9% 偏差；但 JumpZVelocityCm=TileSizeCm×14 使跳高 = 精確 3 tile，設計意圖明確 |
+| GrowthSlow speedPenalty | 0.15/stack, 5 stack 上限（`ElementalStatusEffect.cs:60-62`） | `AbnormalStatusEffects.h` 系統不同（GAS vs Elemental Aura） | N/A：UE5 走 GAS GE Blueprint，非 C++ 硬碼 |
+| FrozenEffect 效果 | `DamageTakenBonus=0.20`（`ElementalStatusEffect.cs:117`） | `FFrozenStatus::GetDefensePenalty()=1.0f` | ⚠️ 機制不同（增傷 20% vs 防禦歸零）；Godot 原始碼標 `⚠️ 待平衡`，視為設計改動 |
+| FrozenEffect duration | 1.0s（`ElementalStatusEffect.cs:118`） | `FFrozenStatus` duration=2.0s | ⚠️ 倍增；同上，待平衡 |
+| Frostbite→Frozen 機制 | 無（Godot 無凍傷疊層系統，走 Water+Ice 直接反應） | `USpecialStatusComponent::ProcessEffects()`：FFrostbiteStatus 5 層疊滿觸發 | UE5 新增系統，非移植 |
 
-| 系統 | Godot 檔案 | UE5 對應位置 | 確認重點 |
-|------|-----------|------------|---------|
-| 狀態持續時間 | `AbnormalEffect.cs` / 各 `XXXEffect.cs` | `UGasEffectRegistry::Initialize()` | `RemainingDuration` 預設值 |
-| Frostbite→Frozen 堆疊閾值 | `FrostbiteEffect.cs` | `USpecialStatusComponent::ProcessEffects()` | `FrostbiteToFrozenThreshold` |
-| MP 消耗係數 | `AbilityPointCalculator.cs` | `FAbilityPointCalculator::CalculateCost()` | 各 block 類型的係數 |
-| 攻擊倍率 | `ItemData.cs` / `EntityStats.cs` | `ItemRegistry.cpp` / `ASkillCreatorCharacter` | `AtkMult` / `BaseDamage` |
-| 重力加速度 | `WorldPhysics.cs` | `ASkillCreatorCharacter::ApplyGravity()` | `GravityAccel` tiles/s² |
-
-**確認方式**：對照 `C:\skill-creator\Scripts\` 對應 `.cs` 檔案，用 Read 工具逐行比對有號數和係數，不能只看 docs/plan-*.md（可能已簡化）。
+**總結**：無緊急數值 bug。兩項 FrozenEffect 差異是 UE5 設計改動（Godot 原作者自標 `⚠️ 待平衡`）；重力略偏高但跳高正確。
 
 ---
 
@@ -292,16 +291,16 @@ grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/
 
 ---
 
-### E-2 背景 chunk 生成 lambda 的閉包生命週期
+### E-2 背景 chunk 生成 lambda 的閉包生命週期（**已修 2026-06-28**）
 
-**風險**：`MapGenerator3D::EnsureChunksAround()` 的背景 lambda 閉包需捕獲地形生成所需的全部資料。若閉包裡有任何對 `MapGenerator3D` 成員的隱式 `this` 依賴（透過 `[&]` 或 member function call），而 `MapGenerator3D` 在 lambda 執行中被摧毀，會 use-after-free。
+**原始風險**：`EnsureChunksAround()` 捕獲 `TQueue* Queue = &ReadyQueue`（原始指標），`~FMapGenerator3D() = default` 不等待 in-flight task，若物件先析構 → lambda 的 `Queue->Enqueue()` dangling pointer。
 
-**確認方式**：
-```cpp
-// MapGenerator3D.cpp EnsureChunksAround() 的 Async lambda
-// 確認捕獲清單：只有值拷貝（TSharedRef / TArray copy / POD value）
-// 不可以有 [this] 或 [&] 捕獲 MapGenerator3D 成員
-```
+**修法（2026-06-28）**：
+- `MapGenerator3D.h`：`ReadyQueue` 改為 `TSharedPtr<TQueue<FPendingChunk, EQueueMode::Mpsc>>`
+- Constructor：`ReadyQueue = MakeShared<TQueue<...>>()`
+- `EnsureChunksAround()`：`TSharedPtr<TQueue<...>> Queue = ReadyQueue;`（按值捕獲 → lambda 持有 shared ref，queue lifetime ≥ lambda）
+- `ResetGenerationState()`：`ReadyQueue = MakeShared<TQueue<...>>()`（拋棄舊 queue，舊世界 in-flight task 寫入孤立 queue 不影響新世界）
+- `ApplyPendingChunks()`：`ReadyQueue->Dequeue(Pending)`
 
 ---
 
@@ -333,4 +332,4 @@ grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/
 
 ---
 
-*最後更新：2026-06-28（B-3 Godot 數值核對；C-9 AlwaysCook 可達性；E-1/E-2 多執行緒生命週期；F-1 GE Blueprint cook 缺失根本原因與修法；preflight 13af/13ag/13ah 新增；PASS 53 / FAIL 0）*
+*最後更新：2026-06-28（B-3 Godot 數值核對；C-9 AlwaysCook 可達性；E-1 GPU readback fence PASS；E-2 MapGenerator3D Queue dangling pointer 已修（TSharedPtr）；F-1 GE Blueprint cook 缺失根本原因與修法；preflight 13af/13ag/13ah 新增；PASS 53 / FAIL 0）*

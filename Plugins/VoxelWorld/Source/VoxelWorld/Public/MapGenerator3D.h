@@ -71,9 +71,11 @@ private:
     // EnsureChunksAround 把 GetPools() 的拷貝傳進背景 thread，thread-safe）
     FSurfaceWaterPool WaterPool;
 
-    TSet<FIntVector>                         GeneratedChunks;
-    TSet<FIntVector>                         InFlightChunks;
-    TQueue<FPendingChunk, EQueueMode::Mpsc>  ReadyQueue;
+    TSet<FIntVector>                                         GeneratedChunks;
+    TSet<FIntVector>                                         InFlightChunks;
+    // TSharedPtr: lambda captures by value → keeps queue alive even if FMapGenerator3D is
+    // destroyed before the background task finishes (E-2 fix, 2026-06-28)
+    TSharedPtr<TQueue<FPendingChunk, EQueueMode::Mpsc>>     ReadyQueue;
 
     // 純函數（thread-safe）：計算一個 chunk 的所有 tile（含礦脈/裝飾/可行進洞穴/地表水池覆寫）
     static void ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
