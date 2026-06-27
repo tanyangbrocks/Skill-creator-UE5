@@ -14,6 +14,7 @@
 #include "MaterialRegistry.h"
 #include "DrawDebugHelpers.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "BiomeRegistry.h"
 
 // ============================================================
 // 構造
@@ -203,6 +204,10 @@ void AVoxelWorldActor::InitializeWorldState()
         RMCMesh->SetupMaterialSlot(i, *FString::Printf(TEXT("TileMat_%d"), i), Mat);
         RMCPassthroughMesh->SetupMaterialSlot(i, *FString::Printf(TEXT("TileMat_%d"), i), Mat);
     }
+
+    // BIO-4：群系表初始化（ComputeChunkData 在 background thread 呼叫 Query()，
+    // 必須在任何 Streaming.Tick() 之前完成，InitializeWorldState 在 BeginPlay 中呼叫，時序保證）
+    FBiomeRegistry::Initialize();
 }
 
 // ============================================================

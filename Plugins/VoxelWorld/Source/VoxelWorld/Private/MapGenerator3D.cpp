@@ -4,6 +4,7 @@
 #include "WorldScale.h"
 #include "Tasks/Task.h"
 #include "SurfaceWaterPool.h"
+#include "BiomeRegistry.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "FastNoiseLite.h"
@@ -96,8 +97,35 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
     WN.SetSeed(Seed ^ 0xCAFEBABE);
     WN.SetFrequency(0.02f);
 
+    // BIO-2：群系 noise（溫度/濕度），seed 從 Seed 衍生，不改函數簽名，thread-safe
+    FastNoiseLite TN, HN2;
+    TN.SetSeed(Seed ^ 0xFEEDF00D);
+    TN.SetFrequency(0.0003f);
+    TN.SetFractalType(FastNoiseLite::FractalType::FBm);
+    TN.SetFractalOctaves(3);
+    TN.SetFractalLacunarity(2.f);
+    TN.SetFractalGain(0.5f);
+
+    HN2.SetSeed(Seed ^ 0xC0FFEE01);
+    HN2.SetFrequency(0.0005f);
+    HN2.SetFractalType(FastNoiseLite::FractalType::FBm);
+    HN2.SetFractalOctaves(3);
+    HN2.SetFractalLacunarity(2.f);
+    HN2.SetFractalGain(0.5f);
+
     constexpr int32 S = WorldScale::ChunkSize;
     OutCells.SetNumZeroed(S * S * S);
+
+    // BIO-2：預計算此 chunk 內每個 XZ 欄的群系（避免三維迴圈中重複查 noise）
+    // BiomeGrid[lz * S + lx] → 群系指針（指向 FBiomeRegistry::Biomes 靜態陣列，生命週期安全）
+    const FBiomeDef* BiomeGrid[WorldScale::ChunkSize * WorldScale::ChunkSize];
+    for (int32 lz = 0; lz < S; ++lz)
+    for (int32 lx = 0; lx < S; ++lx)
+    {
+        float Temp  = TN.GetNoise((float)(CC.X * S + lx), (float)(CC.Z * S + lz));
+        float Humid = HN2.GetNoise((float)(CC.X * S + lx), (float)(CC.Z * S + lz));
+        BiomeGrid[lz * S + lx] = &FBiomeRegistry::Query(Temp, Humid);
+    }
 
     for (int32 lz = 0; lz < S; ++lz)
     for (int32 ly = 0; ly < S; ++ly)
@@ -129,6 +157,9 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         const bool bPoolHit = FSurfaceWaterPool::QueryOverride(WaterPools, wx, wz, SurfaceY, EffSurfaceY, PoolMat);
         const bool bIsWaterPool = bPoolHit && PoolMat == EMaterialType::Water;
 
+        // BIO-2：查詢此 XZ 欄的群系（預計算陣列，O(1) 查表）
+        const FBiomeDef& Biome = *BiomeGrid[lz * S + lx];
+
         uint8 MatID = 0;  // Air
         if (wy < EffSurfaceY)
         {
@@ -141,15 +172,16 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
         }
         else if (wy == EffSurfaceY)
         {
-            MatID = bPoolHit ? (uint8)PoolMat : (uint8)EMaterialType::Grass;
+            // 水池命中時保持水池材質；否則用群系地表材質（沙漠→Sand，凍原→Stone_Cobble，etc.）
+            MatID = bPoolHit ? (uint8)PoolMat : (uint8)Biome.SurfaceMat;
         }
         else if (wy > EffSurfaceY && wy <= EffSurfaceY + 3)
         {
-            MatID = (uint8)EMaterialType::Dirt_Dry;
+            MatID = (uint8)Biome.SubsurfaceMat;  // 次表材質（沙漠→Sand，溫帶→Dirt_Dry，etc.）
         }
         else if (wy > EffSurfaceY + 3)
         {
-            MatID = (uint8)EMaterialType::Stone_Cobble;
+            MatID = (uint8)EMaterialType::Stone_Cobble;  // 深層岩石，所有群系相同
         }
         // wy < EffSurfaceY → Air（保持 0，上面已處理）
 
@@ -393,6 +425,22 @@ static void PlantTreesForChunk(FTileWorld3D& World, FIntVector CC, int32 Seed)
     constexpr int32 CrownH   = 3;   // 樹冠層數（往上）
     constexpr int32 MinSpacing = 6; // 樹幹間距（保證樹冠不相連，決策 4）
 
+    // BIO-3：群系 noise，用於查詢 TreeDensityMult（與 ComputeChunkData 相同 seed 衍生，thread-safe）
+    FastNoiseLite TN_Tree, HN_Tree;
+    TN_Tree.SetSeed(Seed ^ 0xFEEDF00D);
+    TN_Tree.SetFrequency(0.0003f);
+    TN_Tree.SetFractalType(FastNoiseLite::FractalType::FBm);
+    TN_Tree.SetFractalOctaves(3);
+    TN_Tree.SetFractalLacunarity(2.f);
+    TN_Tree.SetFractalGain(0.5f);
+
+    HN_Tree.SetSeed(Seed ^ 0xC0FFEE01);
+    HN_Tree.SetFrequency(0.0005f);
+    HN_Tree.SetFractalType(FastNoiseLite::FractalType::FBm);
+    HN_Tree.SetFractalOctaves(3);
+    HN_Tree.SetFractalLacunarity(2.f);
+    HN_Tree.SetFractalGain(0.5f);
+
     // 確定性隨機（根據 CC + Seed）
     uint32 St = (uint32)(CC.X * 1013904223u ^ CC.Z * 1664525u ^ (uint32)Seed ^ 0xF00Du);
     auto RandU = [&]() -> uint32 { return St = St * 1664525u + 1013904223u; };
@@ -408,11 +456,19 @@ static void PlantTreesForChunk(FTileWorld3D& World, FIntVector CC, int32 Seed)
         int32 oz = lz + RandN(MinSpacing);
         if (ox >= S || oz >= S) continue;
 
-        // 20% 機率在此位置嘗試種樹
-        if (RandF() > 0.20f) continue;
+        // BIO-3：查詢此位置的群系密度乘數（沙漠/凍原因地表非 Grass 自然無樹；沼澤降低密度）
+        int32 wx_tree = CC.X * S + ox;
+        int32 wz_tree = CC.Z * S + oz;
+        float Temp_tree  = TN_Tree.GetNoise((float)wx_tree, (float)wz_tree);
+        float Humid_tree = HN_Tree.GetNoise((float)wx_tree, (float)wz_tree);
+        const FBiomeDef& Biome_tree = FBiomeRegistry::Query(Temp_tree, Humid_tree);
+        const float TreeProb = 0.20f * Biome_tree.TreeDensityMult;
 
-        int32 wx = CC.X * S + ox;
-        int32 wz = CC.Z * S + oz;
+        // TreeProb 決定種樹機率（基礎 20%，沼澤 12%，高地/凍原更低）
+        if (RandF() > TreeProb) continue;
+
+        const int32 wx = wx_tree;
+        const int32 wz = wz_tree;
 
         // 找地表（從 chunk 頂往下掃，找第一個 Grass tile）
         int32 SurfaceY = -1;
