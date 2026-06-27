@@ -747,6 +747,26 @@ if ($badDynamic.Count -eq 0) {
 }
 
 # ==================================================================
+Head "13ab. [Tier1] BindRaw(this, ...) 使用偵測 — UObject 上應改 BindUObject/BindWeakLambda"
+# BindRaw 不持有 weak ref；UObject（U/A 前綴）被 GC 後 delegate 執行 → 懸空指標 crash。
+# 排除 Plugins/VibeUE（第三方插件，FLLMClientBase 是純 C++ F 類，BindRaw 合法）。
+$projectCpp = $allWidgetCpp | Where-Object { $_.FullName -notmatch '\\VibeUE\\' }
+$bindRawMatches = @()
+foreach ($f in $projectCpp) {
+    $lines = [System.IO.File]::ReadAllLines($f.FullName, [System.Text.Encoding]::UTF8)
+    for ($li = 0; $li -lt $lines.Count; $li++) {
+        if ($lines[$li] -match 'BindRaw\s*\(\s*this') {
+            $bindRawMatches += "$($f.Name):$($li+1): $($lines[$li].Trim())"
+        }
+    }
+}
+if ($bindRawMatches.Count -eq 0) {
+    Pass "未發現 BindRaw(this, ...) 使用（UObject delegate 安全）"
+} else {
+    Warn "發現 BindRaw(this, ...) — 確認是否應改 BindUObject/BindWeakLambda：`n    $($bindRawMatches -join "`n    ")"
+}
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"

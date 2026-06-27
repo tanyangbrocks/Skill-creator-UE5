@@ -135,6 +135,91 @@ Btn->OnClicked.AddDynamic(this, Callbacks[i]);  // 炸 Assertion
 
 ---
 
+### C-4 BindRaw 在 UObject 上 → GC 後懸空指標
+
+**風險**：`Delegate.BindRaw(this, &UMyClass::Method)` 對 UObject 是危險的——`BindRaw` 不持有弱參考，GC 回收 `this` 後 delegate 執行時直接 crash，且無法偵測。
+
+**正確替換**：
+- 非同步 HTTP / 廣播 delegate → `BindWeakLambda(this, [this](...) { ... })`（UE5 會在呼叫前檢查 weak 有效性）
+- 一般 delegate → `BindUObject(this, &UMyClass::Method)`（持有 strong reference，但不 GC-safe；適用於確定 owner lifetime 的情境）
+
+**掃法**：
+```powershell
+grep -rn "BindRaw\s*(\s*this" Source/ Plugins/ --include="*.cpp"
+# 任何 match 都應改為 BindUObject 或 BindWeakLambda
+```
+
+**preflight-check.ps1 13ab 已自動偵測。**
+
+---
+
+### C-5 Async/Thread lambda 直接捕獲 UObject `this`
+
+**風險**：`Async(EAsyncExecution::Thread, [this]() { ... })` 中，lambda 可能在 `this` 被 GC 回收後才執行，造成 null dereference 或 use-after-free。
+
+**正確模式**：
+```cpp
+TWeakObjectPtr<UMyClass> WeakThis(this);
+Async(EAsyncExecution::Thread, [WeakThis]()
+{
+    if (!WeakThis.IsValid()) return;
+    WeakThis->DoWork();
+});
+```
+
+或使用 `BindWeakLambda(this, [this](...) { ... })`（delegate context 內的 async callback）。
+
+**本專案現況**：`UNPCBrainSubsystem` HTTP callback 已正確使用 `BindWeakLambda`。VoxelWorld 背景 chunk 生成的 lambda 捕獲的是 `TSharedPtr` 資料（非 UObject 指標），也安全。
+
+**未來新增 Async 呼叫時確認**：lambda capture list 中的 UObject 指標一律改成 `TWeakObjectPtr`。
+
+---
+
+### C-6 前進 TArray 迴圈內呼叫 RemoveAt → 跳元素
+
+**風險**：
+```cpp
+for (int32 i = 0; i < Array.Num(); ++i)
+{
+    if (ShouldRemove(Array[i]))
+        Array.RemoveAt(i);  // 移除後 i 不減，下一個元素被跳過
+}
+```
+靜默跳元素，邏輯不炸但行為錯誤。
+
+**正確模式**：
+```cpp
+for (int32 i = Array.Num() - 1; i >= 0; --i)
+    if (ShouldRemove(Array[i])) Array.RemoveAt(i);
+// 或用 RemoveAll：Array.RemoveAll([](const T& E) { return ShouldRemove(E); });
+```
+
+**本專案現況**：所有移除迴圈（USpecialStatusComponent、UDroppedItemManager 等）已確認使用反向迴圈。
+
+---
+
+### C-7 GetWorld() 在純 UObject 建構子裡呼叫 → 回傳 null
+
+**風險**：CDO 建構期（Class Default Object 初始化，發生在引擎啟動）呼叫 `GetWorld()` 回傳 null；`UActorComponent` / `AActor` 的 constructor 也是 CDO context，不可在此呼叫 `GetWorld()`。正確位置是 `BeginPlay()` 或 `Initialize()`。
+
+**掃法**：
+```powershell
+# 找在 ::ClassName() 建構子函式體內直接呼叫 GetWorld() 的情況
+grep -rn "GetWorld()" Source/ Plugins/ --include="*.cpp" -B5 | grep -B5 "GetWorld()" | grep "::[A-Z]\w*()"
+```
+
+---
+
+### C-8 UWidget* 快取在 WidgetTree 重建後失效
+
+**風險**：若程式碼先快取 `UTextBlock* MyLabel` 指標，之後呼叫 `WidgetTree->RebuildWidget()` 或 Widget 被 Removed 再 Added，舊指標指向已釋放的物件。
+
+**本專案模式**：所有 Widget 用 `UPROPERTY(meta=(BindWidget))` 或在 `NativeOnInitialized()` 一次性初始化後不重建，目前無此風險。
+
+**未來警戒情境**：如果呼叫 `ClearChildren()` 後再重建 WidgetTree，要同步清空所有快取 UWidget 指標。
+
+---
+
 ---
 
 ## 類別 D：GAS Loose Tag 特有陷阱（2026-06-28 新增）
