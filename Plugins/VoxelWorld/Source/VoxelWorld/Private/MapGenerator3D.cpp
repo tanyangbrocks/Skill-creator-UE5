@@ -56,7 +56,7 @@ int32 FMapGenerator3D::GetHeightAt(int32 WorldX, int32 WorldZ) const
     N.SetSeed(WorldSeed);
     N.SetFrequency(0.001f);
     N.SetFractalType(FastNoiseLite::FractalType::FBm);
-    N.SetFractalOctaves(7);
+    N.SetFractalOctaves(4);  // 同 ComputeChunkData 的修正，保持一致
     N.SetFractalLacunarity(2.f);
     N.SetFractalGain(0.5f);
     float v = N.GetNoise((float)WorldX, (float)WorldZ);
@@ -85,7 +85,10 @@ void FMapGenerator3D::ComputeChunkData(FIntVector CC, int32 Seed, int32 Height,
     HN.SetSeed(Seed);
     HN.SetFrequency(0.001f);  // G-9：Godot=0.001f（原 0.005f 差 5 倍，地形破碎感 5 倍）
     HN.SetFractalType(FastNoiseLite::FractalType::FBm);
-    HN.SetFractalOctaves(7);  // G-9：Godot=7（原 4，少 75% 細節層）
+    HN.SetFractalOctaves(4);  // UE5 greedy-mesh 修正：7 octave 產生週期 3 tile 的高頻微起伏，
+                             // 阻止 GreedyMesher 合併相鄰格子 → 棋盤格網格視覺。
+                             // 4 octave 最高頻週期 ~25 tile，允許大面積合併，Godot 不受此限制
+                             // 因為它逐 tile 個別渲染，不依賴 greedy merge。
     HN.SetFractalLacunarity(2.f);
     HN.SetFractalGain(0.5f);
 

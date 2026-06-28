@@ -1012,7 +1012,12 @@ void ASkillCreatorCharacter::Move(const FInputActionValue& Value)
     }
     else
     {
-        const FRotator YawOnly(0.f, GetControlRotation().Yaw, 0.f);
+        // 固定鏡頭模式（Isometric/SideScroll：bUsePawnControlRotation=false）用春臂實際 Yaw，
+        // 避免 GetControlRotation().Yaw 因滑鼠移動偏離視覺鏡頭固定方向（45°/90°）。
+        const float YawDeg = SpringArm->bUsePawnControlRotation
+            ? GetControlRotation().Yaw
+            : SpringArm->GetComponentRotation().Yaw;
+        const FRotator YawOnly(0.f, YawDeg, 0.f);
         if (Axis.Y != 0.f) AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::X), Axis.Y);
         if (Axis.X != 0.f) AddMovementInput(FRotationMatrix(YawOnly).GetUnitAxis(EAxis::Y), Axis.X);
     }
@@ -1289,8 +1294,9 @@ void ASkillCreatorCharacter::ToggleFlight()
         GetCharacterMovement()->GravityScale = WorldScale::GravityScaleMult;
         ApplyMovementState();
     }
-    else if (GetCharacterMovement()->IsFalling())
+    else
     {
+        // 允許從任意狀態（空中或地面）進入飛行，避免 K 在跳躍同幀按下時 IsFalling() 尚未更新而靜默失敗。
         MovementState = EPlayerMovementState::Flying;
         GetCharacterMovement()->SetMovementMode(MOVE_Flying);
         GetCharacterMovement()->GravityScale = 0.f;

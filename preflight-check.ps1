@@ -912,6 +912,119 @@ if ($badRuntimeLoad.Count -eq 0) {
 }
 
 # ==================================================================
+Head "13ai. [Tier1] Widget NativeConstruct 呼叫 BuildLayout()（首次顯示必定空白）"
+# 正確生命週期：BuildLayout() 必須在 NativeOnInitialized() 而非 NativeConstruct()
+# 原因：RebuildWidget() 在 AddToViewport() 觸發，早於 NativeConstruct()；NativeConstruct 裡
+# 才設 RootWidget 永遠太晚，快取定型後空白永久（UserWidget.cpp:1203 論據）。
+$badWidgetLifecycle = @()
+$opts13ai = [System.Text.RegularExpressions.RegexOptions]::Singleline
+foreach ($f in $projectCpp) {
+    $t = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+    $ms = [System.Text.RegularExpressions.Regex]::Matches($t,
+        '::NativeConstruct\s*\(\s*\)[^{]{0,50}\{[^}]{0,2000}BuildLayout\s*\(',
+        $opts13ai)
+    foreach ($m in $ms) {
+        $ln = ($t.Substring(0, $m.Index) -split '\n').Count
+        $badWidgetLifecycle += "$($f.Name):$ln"
+    }
+}
+if ($badWidgetLifecycle.Count -eq 0) {
+    Pass "未發現 NativeConstruct() 內呼叫 BuildLayout()（Widget 生命週期正確）"
+} else {
+    Fail "Widget 在 NativeConstruct() 呼叫 BuildLayout()（AddToViewport 後顯示必定空白）：`n    $($badWidgetLifecycle -join "`n    ")"
+}
+
+# ==================================================================
+Head "13aj. [Tier1] HUD CreatePanel 後立刻 SetVisibility(Visible)（設計圖無此元素卻常駐顯示）"
+# ASkillCreatorHUD::CreatePanel<T>() 預設將 widget Collapsed；若緊接著 Visible 代表該元素
+# 打算常駐，必須確認設計圖有此元素，否則就是不應存在的「多出來的 UI 元素」。
+$hudCppFile = "$root\Source\SkillCreatorRuntime\Private\ASkillCreatorHUD.cpp"
+$badHudVisible = @()
+if (Test-Path $hudCppFile) {
+    $hudLines = [System.IO.File]::ReadAllLines($hudCppFile, [System.Text.Encoding]::UTF8)
+    for ($i = 0; $i -lt $hudLines.Count - 2; $i++) {
+        if ($hudLines[$i] -match 'CreatePanel\s*<') {
+            # 檢查後 3 行有沒有 SetVisibility(ESlateVisibility::Visible)
+            for ($j = $i+1; $j -le [Math]::Min($i+3, $hudLines.Count-1); $j++) {
+                if ($hudLines[$j] -match 'SetVisibility\s*\(\s*ESlateVisibility::Visible\s*\)') {
+                    $badHudVisible += "ASkillCreatorHUD.cpp:$($j+1): $($hudLines[$j].Trim())"
+                }
+            }
+        }
+    }
+    if ($badHudVisible.Count -eq 0) {
+        Pass "HUD CreatePanel 後無立即強制 Visible（全部 widget 預設 Collapsed，按設計圖按需顯示）"
+    } else {
+        Fail "HUD CreatePanel 後立即 SetVisibility(Visible)（請確認設計圖有此元素，否則是多餘 UI）：`n    $($badHudVisible -join "`n    ")"
+    }
+} else { Warn "ASkillCreatorHUD.cpp 未找到 -- 跳過 13aj" }
+
+# ==================================================================
+Head "13ak. [Tier1] MapGenerator3D 地形 FractalOctaves > 4（Greedy Mesh 產生棋盤格格紋）"
+# Greedy Mesh 合併相鄰等高 tile；≥5 octaves 在每 3~4 tile 尺度產生微凹凸，阻止合併 → 棋盤格。
+# UE5 特有問題：Godot 逐 tile 渲染無此問題。正確值 ≤ 4。
+$mapGenCppFile = "$root\Plugins\VoxelWorld\Source\VoxelWorld\Private\MapGenerator3D.cpp"
+if (Test-Path $mapGenCppFile) {
+    $mapGenText = Read-UTF8 $mapGenCppFile
+    $opts13ak = [System.Text.RegularExpressions.RegexOptions]::None
+    $octaveMatches = [System.Text.RegularExpressions.Regex]::Matches($mapGenText, 'SetFractalOctaves\s*\(\s*(\d+)\s*\)', $opts13ak)
+    $badOctaves = @()
+    foreach ($m in $octaveMatches) {
+        $val = [int]$m.Groups[1].Value
+        if ($val -gt 4) {
+            $ln = ($mapGenText.Substring(0, $m.Index) -split '\n').Count
+            $badOctaves += "MapGenerator3D.cpp:$ln SetFractalOctaves($val) > 4"
+        }
+    }
+    if ($badOctaves.Count -eq 0) {
+        Pass "MapGenerator3D FractalOctaves ≤ 4（Greedy Mesh 不產生棋盤格格紋）"
+    } else {
+        Fail "MapGenerator3D FractalOctaves > 4（Greedy Mesh 棋盤格風險）：`n    $($badOctaves -join "`n    ")"
+    }
+} else { Warn "MapGenerator3D.cpp 未找到 -- 跳過 13ak" }
+
+# ==================================================================
+Head "13al. [Tier1] ASkillCreatorCharacter::Move() 固定鏡頭模式使用 GetControlRotation().Yaw（W/S 方向偏移）"
+# 固定鏡頭（Isometric/SideScroll：bUsePawnControlRotation=false）用 GetControlRotation().Yaw
+# 會隨滑鼠移動，不對齊視覺鏡頭固定方向（45°/90°），應改用 SpringArm->GetComponentRotation().Yaw。
+# 正確模式：Move() 裡有 bUsePawnControlRotation 條件分支。
+$charCppFile = "$root\Source\SkillCreatorRuntime\Private\ASkillCreatorCharacter.cpp"
+if (Test-Path $charCppFile) {
+    $charText = Read-UTF8 $charCppFile
+    # 找 Move() 函式起始位置，再往後 1500 字元內找 bUsePawnControlRotation
+    $opts13al = [System.Text.RegularExpressions.RegexOptions]::Singleline
+    $moveFnStart = [System.Text.RegularExpressions.Regex]::Match($charText,
+        'void\s+\w+::Move\s*\([^)]*\)\s*\{', $opts13al)
+    if ($moveFnStart.Success) {
+        $searchWindow = $charText.Substring($moveFnStart.Index, [Math]::Min(1500, $charText.Length - $moveFnStart.Index))
+        if ($searchWindow -match 'bUsePawnControlRotation') {
+            Pass "ASkillCreatorCharacter::Move() 有 bUsePawnControlRotation 固定鏡頭分支（W/S 方向正確）"
+        } else {
+            Fail "ASkillCreatorCharacter::Move() 未處理 bUsePawnControlRotation=false 情況（Isometric/SideScroll 模式 W/S 方向偏移）"
+        }
+    } else { Warn "無法定位 Move() 函式體 -- 跳過 13al" }
+} else { Warn "ASkillCreatorCharacter.cpp 未找到 -- 跳過 13al" }
+
+# ==================================================================
+Head "13am. [Tier1] ToggleFlight() 只允許從 IsFalling() 進入（K 鍵地面/跳躍同幀靜默失敗）"
+# ToggleFlight() 若只有 else if (IsFalling()) 才能進入飛行，地面按 K 或跳躍同幀（IsFalling
+# 尚未更新）按 K 均靜默忽略，玩家感覺 K 鍵無效。正確：else 無條件允許進入飛行。
+if (Test-Path $charCppFile) {
+    $charText = Read-UTF8 $charCppFile
+    $opts13am = [System.Text.RegularExpressions.RegexOptions]::Singleline
+    $toggleFn = [System.Text.RegularExpressions.Regex]::Match($charText,
+        'void\s+\w+::ToggleFlight\s*\(\s*\)\s*\{[^}]{0,600}\}', $opts13am)
+    if ($toggleFn.Success) {
+        # 壞的：有 else if (.*IsFalling) 限制
+        if ($toggleFn.Value -match 'else\s+if\s*\([^)]*IsFalling') {
+            Fail "ToggleFlight() 有 else if (IsFalling()) 限制（K 鍵在地面/跳躍同幀靜默失敗，應改為無條件 else）"
+        } else {
+            Pass "ToggleFlight() 無 IsFalling 限制（K 鍵從任意狀態均可進入飛行）"
+        }
+    } else { Warn "無法定位 ToggleFlight() 函式體 -- 跳過 13am" }
+} else { Warn "ASkillCreatorCharacter.cpp 未找到 -- 跳過 13am（依賴 13al 的檔案路徑）" }
+
+# ==================================================================
 # TIER 2 — 演算法刻意不同，只驗證「功能覆蓋契約」
 # ==================================================================
 Head "14. [Tier2] 技能編輯 UI（Scratch Canvas -> SGraphEditor，演算法刻意不同）"

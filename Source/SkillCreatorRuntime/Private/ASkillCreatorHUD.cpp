@@ -340,9 +340,8 @@ void ASkillCreatorHUD::BeginPlay()
     // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六；非常駐 Toggle，由 OpenChest() 帶資料開啟）
     ChestPanel = CreatePanel<UChestWidget>();
 
-    // 加工選單提示圖卡（常駐左側，不按鍵開關）
+    // 加工選單提示圖卡（設計圖無此元素 → 預設 Collapsed，由 UpdateCraftingHint 按需顯示）
     CraftingHintCard = CreatePanel<UCraftingHintCardWidget>();
-    if (CraftingHintCard) CraftingHintCard->SetVisibility(ESlateVisibility::Visible);
 
     // 加工選單完整面板（Shift 展開/收起，預設 Collapsed）
     CraftingPanel = CreatePanel<UCraftingPanelWidget>();

@@ -599,8 +599,8 @@ void ASkillCreatorPlayerController::OnGuardBreakOrFly()
         return;
     }
 
-    // 地面無目標：無動作
-    UE_LOG(LogTemp, Verbose, TEXT("[K] 地面按下，無鎖定目標，忽略"));
+    // 地面無目標 → 直接進入飛行（ToggleFlight 現已允許從地面起飛，避免需要精確抓住空中幀）
+    Char->ToggleFlight();
 }
 
 void ASkillCreatorPlayerController::OnXPressed()

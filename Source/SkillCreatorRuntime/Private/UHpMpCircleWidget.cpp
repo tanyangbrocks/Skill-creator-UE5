@@ -112,17 +112,19 @@ int32 UHpMpCircleWidget::NativePaint(
 
     for (int32 i = 0; i < NumSegs; i++)
     {
-        const float A0 = -PI * 0.5f + i * (SegArc + GapRad);
-        const float A1 = A0 + SegArc;
+        // 逆時針：從 12 點鐘往左（CCW）展開
+        // A0 = 靠近起點的 CW 錨；A1 = CCW 端（A1 < A0，負 span → DrawArcSeg CCW）
+        const float A0 = -PI * 0.5f - i * (SegArc + GapRad);
+        const float A1 = A0 - SegArc;
 
-        // 暗底
+        // 暗底（A1 < A0，DrawArcSeg 現已支援負 span = CCW 弧）
         DrawArcSeg(OutDrawElements, Base + 2, AllottedGeometry, CtrD, MpMidR, MpThick, A0, A1, DarkSeg);
 
-        // 填充（從 segment 0 往後消耗）
+        // 填充（Fill 減少時 CCW 端縮回 A0 → 逆時針消耗）
         const float Fill = FMath::Clamp(MpPercent * NumSegs - i, 0.f, 1.f);
         if (Fill > 0.01f)
             DrawArcSeg(OutDrawElements, Base + 3, AllottedGeometry, CtrD, MpMidR, MpThick,
-                A0, A0 + SegArc * Fill, SegColor(i, ManaSlots));
+                A0, A0 - SegArc * Fill, SegColor(i, ManaSlots));
     }
 
     return Base + 4;
@@ -147,13 +149,14 @@ void UHpMpCircleWidget::DrawArcSeg(
     const FGeometry& Geo, FVector2D Center, float MidR, float Thickness,
     float A0, float A1, FLinearColor Col)
 {
-    if (A1 <= A0 + 0.001f) return;
-    const int32 Steps = FMath::Max(2, (int32)((A1 - A0) / (2.f * PI) * 64.f));
+    const float Span = A1 - A0;
+    if (FMath::Abs(Span) < 0.001f) return;  // 支援負 Span（A1 < A0）= CCW 弧
+    const int32 Steps = FMath::Max(2, (int32)(FMath::Abs(Span) / (2.f * PI) * 64.f));
     TArray<FVector2D> Pts;
     Pts.Reserve(Steps + 1);
     for (int32 s = 0; s <= Steps; s++)
     {
-        const float a = A0 + (A1 - A0) * (float)s / Steps;
+        const float a = A0 + Span * (float)s / Steps;  // Span 可負 → CCW
         Pts.Add(FVector2D(Center.X + FMath::Cos(a) * MidR, Center.Y + FMath::Sin(a) * MidR));
     }
     FSlateDrawElement::MakeLines(Out, Layer,

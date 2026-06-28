@@ -304,6 +304,85 @@ grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/
 
 ---
 
+## 類別 G：UI 佈局與移動語意陷阱（2026-06-28 新增）
+
+### G-1 Widget NativeConstruct 呼叫 BuildLayout()（首次顯示必定空白）
+
+**風險**：`NativeConstruct()` 在 `AddToViewport()` → `TakeWidget_Private()` → `RebuildWidget()` 完成快取後才執行；此時 `WidgetTree->RootWidget` 已被快取為 null（`UserWidget.cpp:1203` 回退成空 SSpacer）。結果：首次顯示永久空白，且因 `MyWidget` 快取不重建，無法自動修復。
+
+**正確模式**：`BuildLayout()` 呼叫必須在 `NativeOnInitialized()`（在 `CreateWidget()` 當下觸發，早於任何 `AddToViewport()`）。
+
+**掃法（preflight 13ai 已自動偵測）**：
+```powershell
+grep -rn "NativeConstruct" Source/ Plugins/ --include="*.cpp" -A 5 | grep "BuildLayout"
+```
+
+---
+
+### G-2 HUD Widget 預設 Visible 但設計圖無此元素
+
+**風險**：`ASkillCreatorHUD::CreatePanel<T>()` 預設將 widget 設為 `Collapsed`。若緊接著呼叫 `SetVisibility(ESlateVisibility::Visible)`，該 widget 會常駐顯示。若設計圖沒有這個元素，結果就是畫面多出不應存在的 UI 區塊（如 `UCraftingHintCardWidget` 的「0 格」問題）。
+
+**掃法（preflight 13aj 已自動偵測）**：對照設計圖確認每一個 `SetVisibility(Visible)` 調用的 widget 是否在設計圖中有對應元素。
+
+---
+
+### G-3 地形 FractalOctaves > 4 → Greedy Mesh 棋盤格格紋
+
+**風險**：UE5 Greedy Mesh 把相鄰等高 tile 合併成大四邊形渲染。Fractal Brownian Motion ≥5 個 octave 在每 3~4 tile 尺度製造微凹凸，阻止 Greedy 合併，產生明顯棋盤格格紋。Godot 每 tile 單獨渲染，無此問題，故 Godot 端 7 octaves 移植到 UE5 必須改為 ≤4。
+
+**掃法（preflight 13ak 已自動偵測）**：
+```powershell
+grep -n "SetFractalOctaves" Plugins/VoxelWorld/Source/VoxelWorld/Private/MapGenerator3D.cpp
+```
+
+---
+
+### G-4 固定鏡頭模式 W/S 方向偏移（GetControlRotation().Yaw 而非春臂 Yaw）
+
+**風險**：Isometric / SideScroll2D 相機模式下 `SpringArm->bUsePawnControlRotation = false`，春臂鎖定在固定世界旋轉（45°/90° Yaw）。但若 `Move()` 仍使用 `GetControlRotation().Yaw`，方向取決於滑鼠上次的位置，與視覺鏡頭朝向不同，W/S 移動感覺「奇怪」。
+
+**正確模式**：`Move()` 需根據 `SpringArm->bUsePawnControlRotation` 選擇 Yaw 來源：
+```cpp
+const float YawDeg = SpringArm->bUsePawnControlRotation
+    ? GetControlRotation().Yaw
+    : SpringArm->GetComponentRotation().Yaw;
+```
+
+**掃法（preflight 13al 已自動偵測）**：確認 `Move()` 函式體有 `bUsePawnControlRotation` 條件分支。
+
+---
+
+### G-5 K 鍵飛行模式僅從 IsFalling() 進入（地面/跳躍同幀靜默失敗）
+
+**風險**：`ToggleFlight()` 若僅以 `else if (GetCharacterMovement()->IsFalling())` 為進入飛行條件：
+- 在地面直接按 K → 條件失敗 → 靜默忽略
+- 跳躍按 Space 的同一幀按 K → `IsFalling()` 尚未更新（MOVE_Falling 在下一幀物理更新後才生效）→ 同樣靜默忽略
+
+**正確模式**：改為無條件 `else`，允許從任意狀態進入飛行（由 `OnGuardBreakOrFly` 的更上層條件做守衛，如鎖定目標→破防優先）。
+
+**掃法（preflight 13am 已自動偵測）**：確認 `ToggleFlight()` 無 `else if (.*IsFalling)` 限制。
+
+---
+
+### G-6 HUD 生存條順序（設計圖 vs 程式碼順序不一致）
+
+**風險**：設計圖規定順序（左→右）為 **溫度 / 飢餓 / 口渴 / 氧氣 / 體力**。程式碼若使用固定位置 `StartX + i * GapX`（i=0 對應飢餓）則溫度顯示在最右側，與設計圖相反。
+
+**確認方式**：對照 `UPlayerHUDWidget::BuildSurvivalBars()` 中溫度（Temperature）的 X 座標是否最小（最左）。
+
+---
+
+### G-7 MP 弧段方向（預設 CW，設計圖要求 CCW）
+
+**風險**：`DrawArcSeg()` 中若 A0 隨 i 遞增（`A0 = start + i * (Arc + Gap)`），弧段順時針展開，與設計圖「逆時針消耗」方向相反。
+
+**正確模式**：A0 隨 i 遞減（`A0 = start - i * (Arc + Gap)`），DrawArcSeg 傳入 A1 < A0（負 span），讓函式支援 CCW 弧。
+
+**確認方式**：`UHpMpCircleWidget::NativePaint()` 中 MP 弧段迴圈，確認 A0 遞減而非遞增。
+
+---
+
 ## 類別 F：已 runtime 實測確認的已知問題（2026-06-28）
 
 ### F-1 GE Blueprint 資產未被 cook（已修）
@@ -332,4 +411,4 @@ grep -n "AddLooseGameplayTag\|GetStackCount" Source/SkillCreatorRuntime/Private/
 
 ---
 
-*最後更新：2026-06-28（B-3 Godot 數值核對；C-9 AlwaysCook 可達性；E-1 GPU readback fence PASS；E-2 MapGenerator3D Queue dangling pointer 已修（TSharedPtr）；F-1 GE Blueprint cook 缺失根本原因與修法；preflight 13af/13ag/13ah 新增；PASS 53 / FAIL 0）*
+*最後更新：2026-06-28（G 類 UI/移動語意陷阱 7 條新增：G-1 Widget lifecycle；G-2 HUD default Visible；G-3 地形 octaves greedy mesh；G-4 固定鏡頭 W/S 方向；G-5 K 鍵飛行 IsFalling 限制；G-6 生存條順序；G-7 MP CCW；preflight 13ai/13aj/13ak/13al/13am 新增自動偵測）*

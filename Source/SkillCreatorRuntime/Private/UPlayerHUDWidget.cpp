@@ -190,6 +190,7 @@ void UPlayerHUDWidget::NativeOnInitialized()
     HpLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.30f, 0.30f)));
     Root->AddChild(HpLabel);
     PinBL(HpLabel, { 10.f, -92.f }, { 180.f, 16.f });
+    HpLabel->SetVisibility(ESlateVisibility::Collapsed);  // 設計圖無此文字標籤
 
     // ④ 副手欄（熱鍵欄左側圓形槽）+ 物品熱鍵欄（底部 10 槽）+ 拿取槽（右側）
     BuildOffhandSlot(Root);
@@ -432,7 +433,7 @@ void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
 
     for (int32 i = 0; i < NStd; ++i)
     {
-        float X = StartX + i * GapX;
+        float X = StartX + (i + 1) * GapX;  // 溫度佔 i=0 位置(StartX=10)，標準條從 StartX+GapX=28 起
 
         // 背景（暗色）
         UBorder* BarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
@@ -465,7 +466,7 @@ void UPlayerHUDWidget::BuildSurvivalBars(UCanvasPanel* Root)
     // ── 體溫雙向條（第 5 格）──────────────────────────────────────────
     // 正常體溫時游標在中點；偏熱往上（橙紅填充，從中點向上）；偏冷往下（藍色填充，從中點向下）
     constexpr float TempBarCenterAbove = BarBottomAbove + BarH * 0.5f;  // 190px above screen
-    float TempX = StartX + NStd * GapX;  // X = 10 + 4*18 = 82
+    float TempX = StartX;  // 設計圖：溫度在最左側（X=10），飢餓/口渴/氧氣/體力在其右
 
     // 背景
     TempBarBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
@@ -517,6 +518,7 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
     EquipLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.85f, 0.65f)));
     Root->AddChild(EquipLabel);
     PinBL(EquipLabel, { 106.f, -248.f }, { 300.f, 14.f });
+    EquipLabel->SetVisibility(ESlateVisibility::Collapsed);  // 設計圖無裝備文字列
 
     // LV 標籤（底部中央，XP 條左上方）：anchor 底部中央
     LevelLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("LvLabel"));
