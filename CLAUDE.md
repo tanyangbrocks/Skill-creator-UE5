@@ -9,11 +9,11 @@ Unreal Engine 5.4+ / C++ 技能設計系統。從 Godot 4 遷移而來。
 **Godot 原始碼參照**：`C:\skill-creator\`（封存，邏輯對照用，不再修改）
 
 ### 遊戲啟動 & Log 位置
-**啟動方式**：雙擊 `C:\SkillCreatorUE5\RunGame.bat`（自動帶 -log 參數）
-**Log 固定路徑**：`C:\SkillCreatorUE5\GameLogs\latest.log`（每次啟動覆蓋）
+**啟動方式**：直接雙擊 `C:\SkillCreatorUE5\Packaged\Windows\SkillCreatorUE5.exe`
+**Log 路徑**：`C:\SkillCreatorUE5\Packaged\Windows\SkillCreatorUE5\Saved\Logs\SkillCreatorUE5.log`
 **執行檔**：`C:\SkillCreatorUE5\Packaged\Windows\SkillCreatorUE5.exe`
 
-> 📌 **其他 AI 要讀 log**：直接 Read `C:\SkillCreatorUE5\GameLogs\latest.log`，不要去找 `Packaged/...Saved/Logs/`。若 `latest.log` 不存在或為空，代表使用者沒用 `RunGame.bat` 啟動（改用直接執行 exe），提醒改用 bat。
+> 📌 **其他 AI 要讀 log**：直接 Read `C:\SkillCreatorUE5\Packaged\Windows\SkillCreatorUE5\Saved\Logs\SkillCreatorUE5.log`。
 
 ---
 
