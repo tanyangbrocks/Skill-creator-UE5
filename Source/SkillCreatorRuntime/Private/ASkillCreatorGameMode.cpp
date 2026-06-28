@@ -279,6 +279,9 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
             // FFlowSaveSystem::WorldRoot(Id) == ProjectSaved/Worlds/{Id}，與 WorldId 同義。
             VW->WorldSaveDir  = WorldId;
             VW->FinishSpawning(T);
+            // BeginPlay 不再自動呼叫 InitializeWorldState（避免 RMC 雙重初始化），
+            // 動態生成的 VW 需在此補一次首次初始化。
+            VW->ReinitializeForWorld(WorldSeed, WorldId);
         }
         UE_LOG(LogTemp, Log, TEXT("[GameMode] SpawnWorldAndMobs: fresh VW spawned"));
     }

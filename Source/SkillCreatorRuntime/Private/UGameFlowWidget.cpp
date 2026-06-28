@@ -398,6 +398,21 @@ UWidget* UGameFlowWidget::BuildWorldCreateScreen()
     if (UHorizontalBoxSlot* S = NameRow->AddChildToHorizontalBox(WorldNameInput))
         S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
+    // 種子碼輸入列
+    UHorizontalBox* SeedRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+    if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(SeedRow))
+        S->SetPadding(FMargin(20.f, 12.f, 20.f, 0.f));
+
+    UTextBlock* SeedLbl = WidgetTree->ConstructWidget<UTextBlock>();
+    SeedLbl->SetText(FText::FromString(TEXT("種子碼：")));
+    if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(SeedLbl))
+        S->SetVerticalAlignment(VAlign_Center);
+
+    WorldSeedInput = WidgetTree->ConstructWidget<UEditableText>();
+    WorldSeedInput->SetHintText(FText::FromString(TEXT("留空則隨機生成")));
+    if (UHorizontalBoxSlot* S = SeedRow->AddChildToHorizontalBox(WorldSeedInput))
+        S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
     // 彈性空白：把下面的確認鈕推到畫面最底，理由同 BuildCharCreateScreen()
     USpacer* FillSpacer = WidgetTree->ConstructWidget<USpacer>();
     if (UVerticalBoxSlot* S = Root->AddChildToVerticalBox(FillSpacer))
@@ -579,12 +594,21 @@ void UGameFlowWidget::OnWorldCreateConfirmClicked()
     if (Name.IsEmpty())
         Name = TEXT("新世界");
 
+    // 種子碼：有輸入且為合法整數就用，否則隨機
+    int32 Seed = FMath::RandRange(1000, 99999);
+    if (WorldSeedInput)
+    {
+        const FString SeedStr = WorldSeedInput->GetText().ToString().TrimStartAndEnd();
+        if (!SeedStr.IsEmpty() && SeedStr.IsNumeric())
+            Seed = FCString::Atoi(*SeedStr);
+    }
+
     if (WorldGenLoadingLabel)
-        WorldGenLoadingLabel->SetText(FText::FromString(FString::Printf(TEXT("正在生成世界「%s」…"), *Name)));
+        WorldGenLoadingLabel->SetText(FText::FromString(FString::Printf(TEXT("正在生成世界「%s」（種子：%d）…"), *Name, Seed)));
     if (WorldGenLoadingOverlay)
         WorldGenLoadingOverlay->SetVisibility(ESlateVisibility::Visible);
 
-    StartWorldGeneration(Name, FMath::RandRange(1000, 99999));
+    StartWorldGeneration(Name, Seed);
 }
 
 void UGameFlowWidget::StartWorldGeneration(const FString& Name, int32 Seed)
@@ -659,6 +683,8 @@ void UGameFlowWidget::FinishWorldGeneration()
         WorldGenLoadingOverlay->SetVisibility(ESlateVisibility::Collapsed);
     if (WorldNameInput)
         WorldNameInput->SetText(FText::GetEmpty());
+    if (WorldSeedInput)
+        WorldSeedInput->SetText(FText::GetEmpty());
     ShowScreen(WorldSelectScreen);
 }
 

@@ -167,4 +167,8 @@ private:
 
     // Bug-4 修復：防止同一 MegaChunk 連續重建（記錄上次重建時間，最短間距 0.5s）
     TMap<FIntVector, double> MCLastRebuildTime;
+
+    // 防止 BeginPlay（預設 Seed/Dir）與 ReinitializeForWorld 雙重初始化 RMC mesh。
+    // true = InitializeWorldState 已呼叫完畢，Tick/Streaming 才開始運作。
+    bool bWorldStateInitialized = false;
 };

@@ -117,7 +117,11 @@ int32 AVoxelWorldActor::MegaFloorDiv(int32 a, int32 b)
 void AVoxelWorldActor::BeginPlay()
 {
     Super::BeginPlay();
-    InitializeWorldState();
+    // 不在此呼叫 InitializeWorldState()：placed actor 的 WorldSeed/WorldSaveDir 是
+    // 編輯器 CDO 預設值（12345 / "World_0001"），真正的 seed/dir 由
+    // ASkillCreatorGameMode::SpawnWorldAndMobs 呼叫 ReinitializeForWorld 設定。
+    // 在此呼叫會讓 InitializeRealtimeMesh 被執行兩次（BeginPlay + ReinitializeForWorld），
+    // 導致 RMC 元件狀態不確定。由 SpawnWorldAndMobs 統一負責首次初始化。
 }
 
 void AVoxelWorldActor::ReinitializeForWorld(int32 NewWorldSeed, const FString& NewWorldSaveDir)
@@ -208,8 +212,9 @@ void AVoxelWorldActor::InitializeWorldState()
     }
 
     // BIO-4：群系表初始化（ComputeChunkData 在 background thread 呼叫 Query()，
-    // 必須在任何 Streaming.Tick() 之前完成，InitializeWorldState 在 BeginPlay 中呼叫，時序保證）
+    // 必須在任何 Streaming.Tick() 之前完成；Tick 有 bWorldStateInitialized guard 保證時序）
     FBiomeRegistry::Initialize();
+    bWorldStateInitialized = true;
 }
 
 // ============================================================
@@ -219,6 +224,7 @@ void AVoxelWorldActor::InitializeWorldState()
 void AVoxelWorldActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
+    if (!bWorldStateInitialized) return;
 
     // ── Player chunk coordinate (tile→chunk conversion) ────────
     FVector Loc = FVector::ZeroVector;

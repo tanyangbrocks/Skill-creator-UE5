@@ -134,6 +134,7 @@ private:
     UPROPERTY() TObjectPtr<UVerticalBox> WorldListContainer = nullptr;
     // 世界創建畫面
     UPROPERTY() TObjectPtr<UEditableText> WorldNameInput = nullptr;
+    UPROPERTY() TObjectPtr<UEditableText> WorldSeedInput = nullptr;
 
     // 世界生成 loading 遮罩（對應 Godot _genLoadingOverlay/_genLoadingLabel，GameFlowUI.cs:399-480）
     UPROPERTY() TObjectPtr<UWidget>       WorldGenLoadingOverlay = nullptr;
