@@ -122,6 +122,10 @@ void AVoxelWorldActor::BeginPlay()
     // ASkillCreatorGameMode::SpawnWorldAndMobs 呼叫 ReinitializeForWorld 設定。
     // 在此呼叫會讓 InitializeRealtimeMesh 被執行兩次（BeginPlay + ReinitializeForWorld），
     // 導致 RMC 元件狀態不確定。由 SpawnWorldAndMobs 統一負責首次初始化。
+    //
+    // BiomeRegistry 例外：必須在任何背景 chunk 生成（包含 PregenWorld 獨立路徑）
+    // 之前初始化，且本身 idempotent（bInitialized guard），在此單獨呼叫安全。
+    FBiomeRegistry::Initialize();
 }
 
 void AVoxelWorldActor::ReinitializeForWorld(int32 NewWorldSeed, const FString& NewWorldSaveDir)
