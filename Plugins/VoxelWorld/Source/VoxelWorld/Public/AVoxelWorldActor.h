@@ -54,9 +54,9 @@ public:
     int32 WorldDepth  = 0;
 
     // Relative path under {ProjectSaved}/Worlds/ for chunk + meta files.
-    // Leave empty to disable disk save/load (generate-only mode).
+    // Empty = not yet assigned by GameMode (disk I/O disabled until SpawnWorldAndMobs sets this).
     UPROPERTY(EditAnywhere, Category="VoxelWorld")
-    FString WorldSaveDir = TEXT("World_0001");
+    FString WorldSaveDir = TEXT("");
 
     // ── Rendering (M-6) ───────────────────────────────────────────
     // Fallback：無 Registry 或 Registry 缺某材質時使用
