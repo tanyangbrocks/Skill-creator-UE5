@@ -359,8 +359,7 @@ void ASkillCreatorPlayerController::OnPickupOrPanel()
         return;
     }
 
-    // 附近無物 → 開玩家面板（原 G 鍵行為）
-    OnOpenPlayerPanel();
+    // 附近無物 → 無操作（G 鍵只處理撿取/放下，開面板由 T 鍵負責）
 }
 
 void ASkillCreatorPlayerController::OnOpenSpellGroupPanel()

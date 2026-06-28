@@ -203,8 +203,8 @@ void UPlayerHUDWidget::NativeOnInitialized()
     // ⑥ 等級 / XP / 境界
     BuildLevelHud(Root);
 
-    // ⑦ 動態法力條 VBox（底部左側，向上生長）
-    BuildManaHud(Root);
+    // ⑦ 動態法力條 VBox 移除：其位置（底部 y=-30 to -230）與生存條重疊，
+    // 顯示為多餘的藍色橫條。UpdateManaSlots 已有 null check，仍可用 HpMpCircle 顯示法力。
 
     // ⑧ 法術熱鍵欄文字（底部中央）—— 2026-06-22 使用者要求不要顯示這個文字提示，
     // 直接 Collapsed。底層 UpdateSpellHotBar() 邏輯不變，繼續更新 HotBarBox 的子項，

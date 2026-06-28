@@ -164,4 +164,7 @@ private:
     void RebuildChunkLights(FIntVector MegaChunkCoord);
     void ClearChunkLights(FIntVector MegaChunkCoord);
     void ClearAllChunkLights();
+
+    // Bug-4 修復：防止同一 MegaChunk 連續重建（記錄上次重建時間，最短間距 0.5s）
+    TMap<FIntVector, double> MCLastRebuildTime;
 };

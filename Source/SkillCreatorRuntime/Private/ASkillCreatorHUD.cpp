@@ -28,6 +28,7 @@
 #include "TileWorld3D.h"
 #include "MaterialType.h"
 #include "Engine/Canvas.h"
+#include "Engine/GameViewportClient.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 
@@ -84,6 +85,11 @@ void ASkillCreatorHUD::TogglePlayerPanel()
             UiMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
             UiMode.SetWidgetToFocus(PlayerPanel->TakeWidget());
             PC->SetInputMode(UiMode);
+            // Bug-2 修復：GameAndUI 預設 CaptureDuringMouseDown，viewport 在 mouse-down 時
+            // 搶走 mouse-up，UButton::OnClicked（需配對 down+up）永遠不觸發。
+            // 改成 NoCapture：所有滑鼠事件完全由 Slate hit-test 路由，按鈕正常響應。
+            if (UGameViewportClient* GVC = GetWorld()->GetGameViewport())
+                GVC->SetMouseCaptureMode(EMouseCaptureMode::NoCapture);
         }
     }
     else
@@ -93,6 +99,9 @@ void ASkillCreatorHUD::TogglePlayerPanel()
         {
             PC->SetShowMouseCursor(false);
             PC->SetInputMode(FInputModeGameOnly());
+            // 面板關閉後恢復 viewport 滑鼠捕捉（遊戲模式正常操作需要）
+            if (UGameViewportClient* GVC = GetWorld()->GetGameViewport())
+                GVC->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
         }
     }
 }

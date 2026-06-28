@@ -277,8 +277,17 @@ void AVoxelWorldActor::Tick(float DeltaTime)
         }
     }
 
+    // Bug-4 修復：每個 MegaChunk 最短 0.5s 才能重建一次，防止 chunk 持續生成觸發連鎖重建
+    // （根因：新 chunk 加入時 constructor 設 bMeshNeedsRebuild=true，async 生成速度快過
+    //  重建速度時，會在每次重建剛完成後立刻觸發下一輪，造成每幀 250ms 的重建迴圈）
+    const double NowSec = FPlatformTime::Seconds();
     for (const FIntVector& MC : DirtyMegaChunks)
+    {
+        if (const double* Last = MCLastRebuildTime.Find(MC))
+            if (NowSec - *Last < 0.5) continue;
+        MCLastRebuildTime.FindOrAdd(MC) = NowSec;
         RebuildMegaChunk(MC);
+    }
 
     // W-E：草地回復
     TickGrassRegrowth(DeltaTime);
