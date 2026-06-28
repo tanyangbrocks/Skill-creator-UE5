@@ -150,6 +150,8 @@ void AVoxelWorldActor::InitializeWorldState()
         ? FString()
         : FPaths::ProjectSavedDir() / TEXT("Worlds") / WorldSaveDir;
 
+    UE_LOG(LogTemp, Log, TEXT("[VoxelWorld] InitializeWorldState: Seed=%d SaveDir=%s AbsDir=%s"),
+        WorldSeed, *WorldSaveDir, *AbsWorldDir);
     Streaming.Init(WorldWidth, WorldHeight, WorldDepth, WorldSeed, AbsWorldDir);
 
     // D-3：將 TileWorld 的爆炸聚合事件轉發給外部訂閱者（UDroppedItemManager 等）
@@ -346,6 +348,9 @@ void AVoxelWorldActor::TriggerVoxelDestruction(FIntVector BoundsMin, FIntVector 
 void AVoxelWorldActor::RebuildMegaChunk(FIntVector MC)
 {
     using namespace RealtimeMesh;
+
+    UE_LOG(LogTemp, Log, TEXT("[VoxelWorld] RebuildMegaChunk MC(%d,%d,%d) alreadyCreated=%d"),
+        MC.X, MC.Y, MC.Z, CreatedMegaChunks.Contains(MC) ? 1 : 0);
 
     FRealtimeMeshStreamSet StreamSet = FGreedyMesher::Build(TileWorld, MC);
 

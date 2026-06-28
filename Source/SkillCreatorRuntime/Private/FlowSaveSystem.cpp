@@ -101,17 +101,32 @@ void FFlowSaveSystem::StartPregenerateSpawnArea(FTileWorld3D& World, FMapGenerat
     const int32 CCY = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Y) / WorldScale::ChunkSize);
     const int32 CCZ = FMath::FloorToInt(static_cast<float>(Spawn.PlayerSpawn.Z) / WorldScale::ChunkSize);
 
+    UE_LOG(LogTemp, Log, TEXT("[FlowSave] StartPregenerate: WorldDir=%s Spawn=(%d,%d,%d) CenterChunk=(%d,%d,%d)"),
+        *WorldMeta.WorldDir, Spawn.PlayerSpawn.X, Spawn.PlayerSpawn.Y, Spawn.PlayerSpawn.Z, CCX, CCY, CCZ);
+
     Gen.EnsureChunksAround(World, CCX, CCY, CCZ, /*Radius=*/2, /*MaxPerCall=*/999);
 
     WorldMeta.PlayerSpawn = Spawn.PlayerSpawn;
+
+    UE_LOG(LogTemp, Log, TEXT("[FlowSave] StartPregenerate: launched %d chunk tasks"), Gen.GetPendingChunkCount());
 }
 
 void FFlowSaveSystem::FinishPregenerateSpawnArea(FTileWorld3D& World, FWorldSaveData& WorldMeta)
 {
+    int32 DirtyCount = 0;
+    for (const auto& Pair : World.GetActiveChunks())
+        if (Pair.Value && Pair.Value->bNeedsSave) ++DirtyCount;
+
+    UE_LOG(LogTemp, Log, TEXT("[FlowSave] FinishPregenerate: WorldDir=%s ActiveChunks=%d DirtyChunks=%d"),
+        *WorldMeta.WorldDir, World.GetActiveChunks().Num(), DirtyCount);
+
     World.SaveDirtyChunks(WorldMeta.WorldDir);
 
     WorldMeta.bIsFirstEnter = false;
     WorldMeta.SaveMeta(MetaPath(WorldMeta.WorldDir));
+
+    UE_LOG(LogTemp, Log, TEXT("[FlowSave] FinishPregenerate: saved. PlayerSpawn=(%d,%d,%d)"),
+        WorldMeta.PlayerSpawn.X, WorldMeta.PlayerSpawn.Y, WorldMeta.PlayerSpawn.Z);
 }
 
 void FFlowSaveSystem::ListAllCharacters(TArray<FCharacterSaveData>& Out)

@@ -8,7 +8,9 @@ void FChunkStreamingManager::Init(int32 WorldW, int32 WorldH, int32 WorldD,
 {
     WorldDir = InWorldDir;
     DiskAttempted.Empty();
+    DebugLoadLogCount = 0;
     MapGen.InitTerrainParams(WorldW, WorldH, WorldD, Seed);
+    UE_LOG(LogTemp, Log, TEXT("[Streaming] Init: WorldDir=%s Seed=%d"), *WorldDir, Seed);
 
     // 2026-06-23：換世界（AVoxelWorldActor::ReinitializeForWorld）也會呼叫到這裡。
     // InitTerrainParams() 只重設地表水池佈局，沒有清 GeneratedChunks——這個 TSet 紀錄
@@ -40,8 +42,20 @@ void FChunkStreamingManager::Tick(FTileWorld3D& World, int32 CX, int32 CY, int32
             DiskAttempted.Add(CC);
             if (!World.TryLoadChunk(CC.X, CC.Y, CC.Z, WorldDir))
             {
+                if (DebugLoadLogCount < 30)
+                {
+                    ++DebugLoadLogCount;
+                    UE_LOG(LogTemp, Log, TEXT("[Streaming] chunk (%d,%d,%d): disk miss → procedural. Dir=%s"),
+                        CC.X, CC.Y, CC.Z, *WorldDir);
+                }
                 // No save file → generate procedurally.
                 MapGen.EnsureChunksAround(World, CC.X, CC.Y, CC.Z, 0, 1);
+            }
+            else if (DebugLoadLogCount < 30)
+            {
+                ++DebugLoadLogCount;
+                UE_LOG(LogTemp, Log, TEXT("[Streaming] chunk (%d,%d,%d): loaded from disk"),
+                    CC.X, CC.Y, CC.Z);
             }
         }
     }

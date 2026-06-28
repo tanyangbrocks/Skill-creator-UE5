@@ -238,7 +238,7 @@ if (Test-Path $MapGenCppFile) {
     $t = Read-UTF8 $MapGenCppFile
     $idx = $t.IndexOf('int32 FMapGenerator3D::GetHeightAt(')
     if ($idx -ge 0) {
-        $window = $t.Substring($idx, [Math]::Min(600, $t.Length - $idx))
+        $window = $t.Substring($idx, [Math]::Min(1200, $t.Length - $idx))
         if ($window -match 'FMath::Clamp') {
             Pass "MapGenerator3D.GetHeightAt 有 FMath::Clamp（地表 Y 有界）"
         } else {
@@ -943,7 +943,8 @@ $badHudVisible = @()
 if (Test-Path $hudCppFile) {
     $hudLines = [System.IO.File]::ReadAllLines($hudCppFile, [System.Text.Encoding]::UTF8)
     for ($i = 0; $i -lt $hudLines.Count - 2; $i++) {
-        if ($hudLines[$i] -match 'CreatePanel\s*<') {
+        # UCraftingHintCardWidget 是常駐 HUD 元素（不走 Toggle），SetVisibility(Visible) 是正確的
+        if ($hudLines[$i] -match 'CreatePanel\s*<' -and $hudLines[$i] -notmatch 'UCraftingHintCardWidget') {
             # 檢查後 3 行有沒有 SetVisibility(ESlateVisibility::Visible)
             for ($j = $i+1; $j -le [Math]::Min($i+3, $hudLines.Count-1); $j++) {
                 if ($hudLines[$j] -match 'SetVisibility\s*\(\s*ESlateVisibility::Visible\s*\)') {

@@ -75,7 +75,12 @@ void ASkillCreatorHUD::TogglePlayerPanel()
         if (APlayerController* PC = GetOwningPlayerController())
         {
             PC->SetShowMouseCursor(true);
-            PC->SetInputMode(FInputModeGameAndUI());
+            // UIOnly 讓所有滑鼠事件直接送到 Slate；GameAndUI 沒有 SetWidgetToFocus
+            // 時 viewport 仍捕捉左鍵，Button.OnClicked 收不到（tab 切換失效的根因）
+            FInputModeUIOnly UiMode;
+            UiMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+            UiMode.SetWidgetToFocus(PlayerPanel->TakeWidget());
+            PC->SetInputMode(UiMode);
         }
     }
     else
@@ -84,7 +89,7 @@ void ASkillCreatorHUD::TogglePlayerPanel()
         if (APlayerController* PC = GetOwningPlayerController())
         {
             PC->SetShowMouseCursor(false);
-            PC->SetInputMode(FInputModeGameAndUI());
+            PC->SetInputMode(FInputModeGameOnly());
         }
     }
 }
@@ -340,8 +345,9 @@ void ASkillCreatorHUD::BeginPlay()
     // 寶箱雙欄面板（docs/plan-item-crafting-system.md §六；非常駐 Toggle，由 OpenChest() 帶資料開啟）
     ChestPanel = CreatePanel<UChestWidget>();
 
-    // 加工選單提示圖卡（設計圖無此元素 → 預設 Collapsed，由 UpdateCraftingHint 按需顯示）
+    // 加工選單提示圖卡（常駐左側，HP 圓形下方；CreatePanel 預設 Collapsed，必須手動改回 Visible）
     CraftingHintCard = CreatePanel<UCraftingHintCardWidget>();
+    if (CraftingHintCard) CraftingHintCard->SetVisibility(ESlateVisibility::Visible);
 
     // 加工選單完整面板（Shift 展開/收起，預設 Collapsed）
     CraftingPanel = CreatePanel<UCraftingPanelWidget>();

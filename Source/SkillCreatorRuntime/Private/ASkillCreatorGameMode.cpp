@@ -266,6 +266,7 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
 {
     // 若 MainMap 裡沒有手動放置的 AVoxelWorldActor，自動生成一個（用選定的 Seed）
     AVoxelWorldActor* VW = AVoxelWorldActor::FindInWorld(GetWorld());
+    UE_LOG(LogTemp, Log, TEXT("[GameMode] SpawnWorldAndMobs: Seed=%d Id=%s VW_exists=%d"), WorldSeed, *WorldId, VW ? 1 : 0);
     if (!VW)
     {
         const FTransform T = FTransform::Identity;
@@ -279,6 +280,7 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
             VW->WorldSaveDir  = WorldId;
             VW->FinishSpawning(T);
         }
+        UE_LOG(LogTemp, Log, TEXT("[GameMode] SpawnWorldAndMobs: fresh VW spawned"));
     }
     // 2026-06-23 修復：上面的 if(!VW) 只處理「這個遊戲進程第一次進世界」——AVoxelWorldActor
     // 是動態 Spawn 出來的單一實例，BeginPlay() 只在第一次 Spawn 時跑過一次。玩家在同一次
@@ -288,6 +290,8 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
     // 永遠都同一個」回報的根因），地表/chunk 全部對不上玩家剛建立的那個新世界的 meta 資料。
     else if (VW->WorldSeed != WorldSeed || VW->WorldSaveDir != WorldId)
     {
+        UE_LOG(LogTemp, Log, TEXT("[GameMode] SpawnWorldAndMobs: ReinitializeForWorld (Seed=%d→%d  Id=%s→%s)"),
+            VW->WorldSeed, WorldSeed, *VW->WorldSaveDir, *WorldId);
         VW->ReinitializeForWorld(WorldSeed, WorldId);
 
         // 同一批清理：AEnemyManager/UDroppedItemManager 跟 AVoxelWorldActor 一樣是
@@ -301,6 +305,10 @@ void ASkillCreatorGameMode::SpawnWorldAndMobs(int32 WorldSeed, const FString& Wo
             DropMgr->Clear();
         if (UCraftingStationSubsystem* CraftSub = GetWorld()->GetSubsystem<UCraftingStationSubsystem>())
             CraftSub->DestroyAllFixtures();
+    }
+    else
+    {
+        UE_LOG(LogTemp, Log, TEXT("[GameMode] SpawnWorldAndMobs: VW already correct (Seed=%d Id=%s), no reinit"), WorldSeed, *WorldId);
     }
 
     // 自動生成 AEnemyManager（若關卡中沒有手動放置）。必須在 AMobSpawnController 之前

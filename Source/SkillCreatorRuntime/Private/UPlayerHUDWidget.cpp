@@ -277,16 +277,17 @@ void UPlayerHUDWidget::BuildCrosshair(UCanvasPanel* Root)
 
 void UPlayerHUDWidget::BuildOffhandSlot(UCanvasPanel* Root)
 {
-    // 副手欄：圓形 48×48，位於熱鍵欄最左格再往左 8px（StartX=10, 方格 48+gap4=52, 再-8 gap = 10-52-8=-50... 用負值）
-    // 熱鍵欄已右移至 StartX=66，副手欄放在 10（與左側 HUD 齊）
+    // 副手欄：圓形 48×48。整個熱鍵列群組置中於螢幕底部。
+    // 群組總寬：48(副) + 8 + 10×52-4(熱，10格×(48+4)-尾部gap) + 8 + 48(拿) = 628px
+    // 副手左邊界距中心：-628/2 = -314
     constexpr float SlotW = 48.f, SlotH = 48.f;
-    constexpr float X = 10.f, Y = -132.f;
+    constexpr float X = -314.f, Y = -132.f;
     constexpr float CornerR = SlotW * 0.5f;  // 全圓角 = 圓形
 
     OffhandBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
     OffhandBorder->SetPadding(FMargin(0.f));
     Root->AddChild(OffhandBorder);
-    PinBL(OffhandBorder, { X, Y }, { SlotW, SlotH });
+    Pin(OffhandBorder, { X, Y }, { SlotW, SlotH }, FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D::ZeroVector);
 
     // 內層 CanvasPanel（承載 Icon / Count / Key 標籤）
     UCanvasPanel* SlotCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
@@ -336,8 +337,8 @@ void UPlayerHUDWidget::BuildOffhandSlot(UCanvasPanel* Root)
 void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
 {
     constexpr float SlotW = 48.f, SlotH = 48.f, Gap = 4.f;
-    // 副手欄佔 10（X） + 48（寬）+ 8（間距）= 66，熱鍵欄從此開始
-    constexpr float StartX = 66.f, StartY = -132.f;
+    // 群組置中：熱鍵欄左邊界距螢幕水平中心 -258px（-314 副手 + 48 + 8 gap）
+    constexpr float StartX = -258.f, StartY = -132.f;
     constexpr int32 Count  = 10;
 
     ItemSlotBorders.Reserve(Count);
@@ -357,7 +358,7 @@ void UPlayerHUDWidget::BuildItemHotbar(UCanvasPanel* Root)
         UBorder* HotbarBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         HotbarBorder->SetPadding(FMargin(0.f));
         Root->AddChild(HotbarBorder);
-        PinBL(HotbarBorder, { X, StartY }, { SlotW, SlotH });
+        Pin(HotbarBorder, { X, StartY }, { SlotW, SlotH }, FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D::ZeroVector);
         ItemSlotBorders.Add(HotbarBorder);
 
         // UBorder 只能一個子節點（UContentWidget），用內層 CanvasPanel 承載 Icon/Count/Key
@@ -527,7 +528,9 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
     }
     LevelLabel->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.25f)));
     Root->AddChild(LevelLabel);
-    Pin(LevelLabel, { -256.f, -84.f }, { 80.f, 14.f },
+    // LV 標籤：左對齊，位於 XP 條左端（對齊熱鍵格左邊界）
+    // Y=-136：熱鍵格頂 132px + 4px gap = 136px，正好在 XP 條高度範圍內
+    Pin(LevelLabel, { -256.f, -136.f }, { 80.f, 14.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
     // 境界標籤（LV 右側）
@@ -537,26 +540,27 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
     }
     TierLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.65f, 0.65f, 0.65f)));
     Root->AddChild(TierLabel);
-    Pin(TierLabel, { -174.f, -84.f }, { 120.f, 14.f },
+    Pin(TierLabel, { -174.f, -136.f }, { 120.f, 14.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
-    // XP 文字（XP 條右側外）
+    // XP 文字（XP 條右側）
     XpLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("XpLabel"));
     {
         FSlateFontInfo F = XpLabel->GetFont(); F.Size = 9; XpLabel->SetFont(F);
     }
     XpLabel->SetColorAndOpacity(FSlateColor(FLinearColor(0.50f, 0.50f, 0.55f)));
     Root->AddChild(XpLabel);
-    Pin(XpLabel, { 264.f, -84.f }, { 130.f, 14.f },
+    Pin(XpLabel, { 264.f, -136.f }, { 130.f, 14.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.f, 1.f));
 
-    // XP 條背景（底部水平置中，寬 520px，高 8px）
+    // XP 條背景（底部水平置中，寬 520px，高 14px）
+    // 位置：熱鍵格頂（132px）往上 4px gap → bottom=136px above screen bottom
     // anchor(0.5, 1)、alignment(0.5, 1)：widget 底部中心對齊 offset 點
     UBorder* XpBg = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("XpBg"));
     XpBg->SetBrush(MakeSolidBrush(FLinearColor(0.12f, 0.12f, 0.18f)));
     XpBg->SetPadding(FMargin(0.f));
     Root->AddChild(XpBg);
-    Pin(XpBg, { 0.f, -72.f }, { XpBarMaxWidth, 8.f },
+    Pin(XpBg, { 0.f, -136.f }, { XpBarMaxWidth, 14.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.5f, 1.f));
 
     // XP 填充（同位置，初始寬度 0）
@@ -564,7 +568,7 @@ void UPlayerHUDWidget::BuildLevelHud(UCanvasPanel* Root)
     XpBarFill->SetBrush(MakeSolidBrush(FLinearColor(0.25f, 0.65f, 0.95f)));
     XpBarFill->SetPadding(FMargin(0.f));
     Root->AddChild(XpBarFill);
-    Pin(XpBarFill, { 0.f, -72.f }, { 0.f, 8.f },
+    Pin(XpBarFill, { 0.f, -136.f }, { 0.f, 14.f },
         FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D(0.5f, 1.f));
 }
 
@@ -732,15 +736,15 @@ void UPlayerHUDWidget::BuildMinimap(UCanvasPanel* Root)
 
 void UPlayerHUDWidget::BuildCarrySlot(UCanvasPanel* Root)
 {
-    // 拿取槽：圓形 48×48，熱鍵欄右側（StartX=66, 10 格×52=520, gap=8 → X=594）
+    // 拿取槽：圓形 48×48，群組置中：拿取槽左邊界距中心 +266px（258 熱鍵欄右 + 8 gap）
     constexpr float SlotW = 48.f, SlotH = 48.f;
-    constexpr float X = 594.f, Y = -132.f;
+    constexpr float X = 266.f, Y = -132.f;
     constexpr float CornerR = SlotW * 0.5f;  // 全圓角 = 圓形
 
     CarryBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("CarryBorder"));
     CarryBorder->SetPadding(FMargin(0.f));
     Root->AddChild(CarryBorder);
-    PinBL(CarryBorder, { X, Y }, { SlotW, SlotH });
+    Pin(CarryBorder, { X, Y }, { SlotW, SlotH }, FAnchors(0.5f, 1.f, 0.5f, 1.f), FVector2D::ZeroVector);
 
     // 內層 Canvas
     UCanvasPanel* SlotCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
@@ -1009,7 +1013,7 @@ void UPlayerHUDWidget::UpdateSurvival(const UCharacterStateComponent* S)
     constexpr float HotRange  = UCharacterStateComponent::HeatstrokeThreshold - Normal;
     constexpr float TempBarCenterAbove = BarBottomAbove + BarH * 0.5f;  // 190px above screen
     constexpr float HalfH    = BarH * 0.5f;  // 40px (each half)
-    constexpr float TempX    = StartX + 4.f * GapX;  // X=82
+    constexpr float TempX    = StartX;  // X=10，對齊 BuildSurvivalBars 的 TempBarBg 位置
 
     const float T    = S->BodyTemperature;
     float HotF  = FMath::Clamp((T - Normal) / HotRange,  0.f, 1.f);
@@ -1060,11 +1064,11 @@ void UPlayerHUDWidget::UpdateLevelHUD(int32 Level, float Xp, int32 XpReq,
         {
             // XP 條置中：填充從左端開始，offset 維持與背景相同（alignment=0.5,1），
             // 只改寬度；position 已由 BuildLevelHud 設為置中
-            XS->SetSize(FVector2D(XpBarMaxWidth * Ratio, 8.f));
+            XS->SetSize(FVector2D(XpBarMaxWidth * Ratio, 14.f));
             // 填充須對齊背景左邊緣：background 左邊 = center - W/2，fill 左邊需一致
             // 改 alignment 為 (0,1) 後，調整 position 到背景左邊緣
             XS->SetAlignment(FVector2D(0.f, 1.f));
-            XS->SetPosition(FVector2D(-XpBarMaxWidth * 0.5f, -72.f));
+            XS->SetPosition(FVector2D(-XpBarMaxWidth * 0.5f, -136.f));
         }
     }
 }

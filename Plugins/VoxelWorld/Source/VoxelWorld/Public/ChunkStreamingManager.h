@@ -33,5 +33,6 @@ public:
 private:
     FMapGenerator3D  MapGen;
     FString          WorldDir;
-    TSet<FIntVector> DiskAttempted;  // chunks already tried from disk (hit or miss)
+    TSet<FIntVector> DiskAttempted;   // chunks already tried from disk (hit or miss)
+    int32            DebugLoadLogCount = 0;  // throttle diagnostic logs to first 30 hits
 };
