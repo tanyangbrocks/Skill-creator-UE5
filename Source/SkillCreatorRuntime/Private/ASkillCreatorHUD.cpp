@@ -75,9 +75,12 @@ void ASkillCreatorHUD::TogglePlayerPanel()
         if (APlayerController* PC = GetOwningPlayerController())
         {
             PC->SetShowMouseCursor(true);
-            // UIOnly 讓所有滑鼠事件直接送到 Slate；GameAndUI 沒有 SetWidgetToFocus
-            // 時 viewport 仍捕捉左鍵，Button.OnClicked 收不到（tab 切換失效的根因）
-            FInputModeUIOnly UiMode;
+            // GameAndUI + DoNotLock + SetWidgetToFocus：
+            //   DoNotLock  → viewport 不鎖滑鼠，點擊可到 Slate（原 GameAndUI 無此設定
+            //                時 LockOnCapture 預設讓 viewport 捕捉左鍵，tab 收不到）
+            //   SetWidgetToFocus → Slate 優先處理聚焦 widget 的事件
+            //   GameAndUI  → game action binding（T 鍵關面板）仍可觸發（UIOnly 會封鎖）
+            FInputModeGameAndUI UiMode;
             UiMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
             UiMode.SetWidgetToFocus(PlayerPanel->TakeWidget());
             PC->SetInputMode(UiMode);
